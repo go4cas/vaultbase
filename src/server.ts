@@ -79,9 +79,15 @@ async function verifyTokenForWS(token: string, jwtSecret: string): Promise<WSAut
  * True if `origin` is in the configured allowlist. Empty/missing settings →
  * deny cross-origin (WS upgrades from any non-same-origin caller fail).
  * Comma-separated list under `security.allowed_origins`.
+ *
+ * Null Origin: handled per call-site — pass `requireOrigin: true` for WS/SSE
+ * upgrade paths where browsers ALWAYS send Origin (so a missing header is
+ * either a non-browser client we can't authenticate by origin, or a
+ * deliberate spoof attempt). Pass false (the default) for cross-cutting
+ * checks where same-origin browser fetches may legitimately omit Origin.
  */
-function isOriginAllowed(origin: string | null): boolean {
-  if (!origin) return true; // same-origin requests omit Origin in some clients
+function isOriginAllowed(origin: string | null, requireOrigin = false): boolean {
+  if (!origin) return !requireOrigin;
   const settings = getAllSettings();
   const raw = settings["security.allowed_origins"] ?? "";
   if (!raw) return false;
@@ -243,7 +249,10 @@ export function createServer(config: Config) {
     // `POST /api/v1/realtime` for setting subscriptions.
     .get("/api/v1/realtime", ({ request, set }) => {
       const origin = request.headers.get("origin");
-      if (!isOriginAllowed(origin)) {
+      // requireOrigin: true — browsers always send Origin on EventSource;
+      // a missing header here is either a non-browser client we can't
+      // authenticate by origin, or a deliberate spoof attempt.
+      if (!isOriginAllowed(origin, true)) {
         set.status = 403;
         return { error: "Origin not allowed", code: 403 };
       }
@@ -284,7 +293,8 @@ export function createServer(config: Config) {
         const req = (ws.data as { request?: Request } | undefined)?.request;
         if (req) {
           const origin = req.headers.get("origin");
-          if (!isOriginAllowed(origin)) {
+          // requireOrigin: true — browsers always send Origin on WS upgrades.
+          if (!isOriginAllowed(origin, true)) {
             ws.send(JSON.stringify({ type: "error", reason: "origin_not_allowed" }));
             ws.close();
             return;

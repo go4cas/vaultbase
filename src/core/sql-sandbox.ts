@@ -25,6 +25,11 @@ import { Database } from "bun:sqlite";
 
 export const SANDBOX_IDLE_TTL_SEC = 60 * 60; // 1h
 
+/** SQLite identifier quoting — doubles up embedded `"` per spec. */
+function quoteIdent(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
 interface SandboxSlot {
   db: Database;
   /** Unix-seconds the snapshot was created. */
@@ -103,7 +108,11 @@ export function resetSandbox(adminId: string, livePath: string): SandboxInfo {
       try {
         db.exec(obj.sql);
         if (obj.type === "table") {
-          db.exec(`INSERT INTO main."${obj.name}" SELECT * FROM _vb_live."${obj.name}"`);
+          // quoteIdent escapes embedded `"`. Tables created outside Vaultbase
+          // could conceivably have such names; the upstream `assertSqlIdent`
+          // path can't (rejects quote chars), so this is defense-in-depth.
+          const ident = quoteIdent(obj.name);
+          db.exec(`INSERT INTO main.${ident} SELECT * FROM _vb_live.${ident}`);
         }
       } catch { /* skip objects that fail to recreate (rare, e.g. virtual tables) */ }
     }

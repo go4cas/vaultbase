@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../db/client.ts";
 import { admin, apiTokens, tokenRevocations } from "../db/schema.ts";
 import type { AuthContext } from "./rules.ts";
+import { parseCidr, ipInCidr, type ParsedCidr } from "./hook-egress.ts";
 
 /**
  * Centralized auth-token verification.
@@ -265,14 +266,54 @@ export function isAllowedUploadMime(mime: string): boolean {
 }
 
 /**
- * IP extraction that respects only the immediate proxy when the listening
- * peer is in `VAULTBASE_TRUSTED_PROXIES`. Returns the socket peer otherwise.
+ * IP extraction that respects `X-Forwarded-For` only when the immediate peer
+ * is in `VAULTBASE_TRUSTED_PROXIES`. Returns the socket peer otherwise.
+ *
+ * Trust list accepts both bare IPs (`10.0.0.5`) and CIDR ranges
+ * (`10.0.0.0/8`, `2001:db8::/32`) — the typical "everything from my private
+ * cluster" case shouldn't require enumerating every replica IP. Backwards-
+ * compatible with the v0.10 string-set form: bare IPs without `/` are still
+ * matched as exact peers.
+ *
+ * Parsed CIDR list is cached per-process; env reads are cheap but the regex
+ * parse isn't.
  */
+let _trustedProxiesCache: { raw: string; cidrs: ParsedCidr[]; bare: Set<string> } | null = null;
+
+function getTrustedProxies(): { cidrs: ParsedCidr[]; bare: Set<string> } | null {
+  const raw = process.env["VAULTBASE_TRUSTED_PROXIES"] ?? "";
+  if (!raw) return null;
+  if (_trustedProxiesCache && _trustedProxiesCache.raw === raw) {
+    return { cidrs: _trustedProxiesCache.cidrs, bare: _trustedProxiesCache.bare };
+  }
+  const cidrs: ParsedCidr[] = [];
+  const bare = new Set<string>();
+  for (const tok of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
+    if (tok.includes("/")) {
+      const c = parseCidr(tok);
+      if (c) cidrs.push(c);
+      // Silently skip malformed entries; operator notices via logs/metrics.
+    } else {
+      bare.add(tok);
+    }
+  }
+  _trustedProxiesCache = { raw, cidrs, bare };
+  return { cidrs, bare };
+}
+
+function isTrustedProxy(ip: string): boolean {
+  const t = getTrustedProxies();
+  if (!t) return false;
+  if (t.bare.has(ip)) return true;
+  for (const c of t.cidrs) {
+    if (ipInCidr(ip, c)) return true;
+  }
+  return false;
+}
+
 export function trustedClientIp(request: Request, peerIp: string | null): string {
-  const trustedRaw = process.env["VAULTBASE_TRUSTED_PROXIES"] ?? "";
-  if (!trustedRaw || !peerIp) return peerIp ?? "unknown";
-  const trusted = new Set(trustedRaw.split(",").map((s) => s.trim()).filter(Boolean));
-  if (!trusted.has(peerIp)) return peerIp;
+  if (!peerIp) return "unknown";
+  if (!isTrustedProxy(peerIp)) return peerIp;
   const fwd = request.headers.get("x-forwarded-for");
   if (fwd) {
     const first = fwd.split(",")[0]?.trim();

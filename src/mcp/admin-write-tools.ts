@@ -529,21 +529,25 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
 
   // ── settings ───────────────────────────────────────────────────────────
 
+  // Settings tools require mcp:admin (not mcp:read) — the response decrypts
+  // smtp.password / oauth2.<provider>.client_secret / OneSignal app key /
+  // FCM service-account JSON / etc. An mcp:read token is the "least-privileged
+  // observer" scope and must never see operator secrets.
   reg.register({
-    requiredScope: "mcp:read",
+    requiredScope: "mcp:admin",
     definition: {
       name: "vaultbase.list_settings",
-      description: "List every setting key/value. Encrypted-at-rest keys are decrypted in this response (admin-equivalent visibility) — treat as sensitive.",
+      description: "List every setting key/value. Encrypted-at-rest keys are decrypted in this response (admin-equivalent visibility) — requires mcp:admin scope.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
     },
     handler: async () => asJsonText(getAllSettings()),
   });
 
   reg.register({
-    requiredScope: "mcp:read",
+    requiredScope: "mcp:admin",
     definition: {
       name: "vaultbase.get_setting",
-      description: "Read a single setting by key. Returns the (decrypted, when applicable) value.",
+      description: "Read a single setting by key. Returns the (decrypted, when applicable) value — requires mcp:admin scope.",
       inputSchema: {
         type: "object",
         properties: { key: { type: "string" } },
@@ -599,13 +603,32 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
     handler: async (args) => {
       const q = String(args.query ?? "").trim();
       if (!q) throw new Error("query is required");
-      const isSelect = /^\s*(WITH|SELECT|EXPLAIN|PRAGMA)\b/i.test(q);
-      if (!isSelect && args.allow_write !== true) {
-        throw new Error("non-SELECT requires allow_write: true (write paths bypass RBAC + validation; consider the typed tool instead)");
+      const looksLikeRead = /^\s*(WITH|SELECT|EXPLAIN|PRAGMA)\b/i.test(q);
+      if (args.allow_write !== true) {
+        // SQLite supports data-modifying CTEs (`WITH x AS (...) UPDATE ...`),
+        // and PRAGMA can mutate session state — the prefix check above is
+        // necessary but not sufficient. Strip comments + string literals so
+        // the literal "DELETE" inside a WHERE doesn't false-positive, then
+        // scan for any mutating keyword. Mirrors core/sql-runner.ts.
+        if (!looksLikeRead) {
+          throw new Error("non-SELECT requires allow_write: true (write paths bypass RBAC + validation; consider the typed tool instead)");
+        }
+        const stripped = q
+          .replace(/--[^\n]*/g, " ")
+          .replace(/\/\*[\s\S]*?\*\//g, " ")
+          .replace(/'(?:[^']|'')*'/g, "''")
+          .replace(/"(?:[^"]|"")*"/g, '""');
+        const upper = stripped.toUpperCase();
+        const banned = ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "REPLACE", "TRUNCATE", "ATTACH", "DETACH", "REINDEX", "VACUUM"];
+        for (const kw of banned) {
+          if (new RegExp(`\\b${kw}\\b`).test(upper)) {
+            throw new Error(`'${kw}' is blocked without allow_write: true (data-modifying ${kw} can hide inside a WITH-CTE).`);
+          }
+        }
       }
       const params = (Array.isArray(args.params) ? args.params : []) as Array<string | number | bigint | boolean | null | Uint8Array>;
       const client = getRawClient();
-      if (isSelect) {
+      if (looksLikeRead) {
         const stmt = client.query(q);
         const rows = stmt.all(...params) as unknown[];
         const truncated = rows.slice(0, 100);

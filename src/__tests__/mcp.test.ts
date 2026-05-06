@@ -376,12 +376,14 @@ describe("MCP — Phase 2 admin tools", () => {
     ) as JsonRpcSuccess;
     expect((set.result as CallToolResult).isError).toBeFalsy();
 
+    // get_setting requires mcp:admin — secrets are decrypted in the response,
+    // so a read-only token must not see them.
     const get = await dispatch(
       {
         jsonrpc: "2.0", id: 106, method: "tools/call",
         params: { name: "vaultbase.get_setting", arguments: { key: "test.foo" } },
       },
-      mkCtx(["mcp:read"]),
+      mkCtx(["mcp:admin"]),
     ) as JsonRpcSuccess;
     const text = ((get.result as CallToolResult).content[0] as { text: string }).text;
     const got = JSON.parse(text) as { value: string };

@@ -183,8 +183,15 @@ function rawClient(): Database {
   return (getDb() as unknown as { $client: Database }).$client;
 }
 
+/**
+ * SQLite identifier quoting — doubles up embedded `"` per spec. Mirrors
+ * `core/collections.ts::quoteIdent`. All identifier inputs at this layer
+ * already pass `assertSqlIdent` upstream (no quote chars possible), but the
+ * defense-in-depth match prevents future bypasses if a path skips that
+ * upstream check.
+ */
 function quoteIdent(name: string): string {
-  return `"${name}"`;
+  return `"${name.replace(/"/g, '""')}"`;
 }
 
 function isJsonField(field: FieldDef): boolean {
@@ -299,13 +306,35 @@ export async function listRecords(
   // Build ORDER BY. View collections don't necessarily expose created_at /
   // updated_at, so skip the default sort there — caller can opt in by passing
   // a `sort` they know is valid for their query.
+  //
+  // Whitelist sort columns against the actual collection schema to refuse any
+  // attacker-supplied identifier from reaching the SQL string. Without this
+  // gate, a value like `sort=name";<sql>;--` would land inside the prepared
+  // statement string. SQLite's prepare_v2 only compiles the first statement
+  // (so multi-statement injection is blocked today), but error-based oracles
+  // and any future API change to multi-statement exec would turn this into
+  // RCE — fail fast instead of relying on the prepare contract.
+  const sortableCols = new Set<string>([
+    "id", "created_at", "updated_at",
+    ...fields.filter((f) => !f.system).map((f) => f.name),
+  ]);
   const sortSpec = opts.sort ?? (col.type === "view" ? "" : "-created_at");
-  const orderClauses = sortSpec.split(",").map((s) => s.trim()).filter(Boolean).map((s) => {
+  const orderClauses: string[] = [];
+  for (const s of sortSpec.split(",").map((x) => x.trim()).filter(Boolean)) {
     const desc = s.startsWith("-");
     const field = desc ? s.slice(1) : s;
-    const colName = field === "created" ? "created_at" : field === "updated" ? "updated_at" : field;
-    return `${tableRef}.${quoteIdent(colName)} ${desc ? "DESC" : "ASC"}`;
-  });
+    const colName = field === "created" ? "created_at"
+      : field === "updated" ? "updated_at" : field;
+    // View collections accept any column name (the schema is inferred from
+    // the SELECT and may not be fully reflected in `fields`); base + auth
+    // collections strictly whitelist.
+    if (col.type !== "view" && !sortableCols.has(colName)) continue;
+    // Defense-in-depth even after whitelist: reject any value that doesn't
+    // match a SQL identifier regex. Whitelist covers it for non-view, this
+    // is the view-collection-fallback safety net.
+    if (!/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(colName)) continue;
+    orderClauses.push(`${tableRef}.${quoteIdent(colName)} ${desc ? "DESC" : "ASC"}`);
+  }
   const orderSql = orderClauses.length > 0 ? `ORDER BY ${orderClauses.join(", ")}` : "";
 
   // Execute SELECT — prepared statement cached by SQL string shape.

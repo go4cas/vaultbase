@@ -77,7 +77,7 @@ const DEFAULT_DENY: readonly string[] = [
 
 // ── CIDR parsing ────────────────────────────────────────────────────────────
 
-interface ParsedCidr {
+export interface ParsedCidr {
   /** "v4" or "v6" */
   family: "v4" | "v6";
   /** Network bytes — 4 for v4, 16 for v6. */

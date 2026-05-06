@@ -17,7 +17,7 @@
  */
 
 import Elysia from "elysia";
-import { verifyAuthToken, extractBearer } from "../core/sec.ts";
+import { verifyAuthToken, extractBearer, trustedClientIp } from "../core/sec.ts";
 import { hasScope } from "../core/api-tokens.ts";
 import { buildRegistry, createDispatcher } from "../mcp/server.ts";
 import { RPC_ERR, type JsonRpcRequest, type JsonRpcResponse } from "../mcp/types.ts";
@@ -84,7 +84,8 @@ function isJsonRpcRequest(v: unknown): v is JsonRpcRequest {
 
 export function makeMcpPlugin(jwtSecret: string) {
   return new Elysia({ name: "mcp-http" })
-    .post("/mcp", async ({ request, set, body }) => {
+    .post("/mcp", async ({ request, set, body, server }) => {
+      void server; // peer-IP not needed for the POST path
       const auth = await authenticate(request, jwtSecret);
       if ("status" in auth) {
         set.status = auth.status;
@@ -113,7 +114,7 @@ export function makeMcpPlugin(jwtSecret: string) {
       }
       return res;
     })
-    .get("/mcp/events", ({ request, set }) => {
+    .get("/mcp/events", ({ request, set, server }) => {
       // Auth gate: SSE handlers can't easily return JSON, so we return a
       // small text body with the right status. EventSource clients surface
       // this as `onerror` with the status; that's the Right Thing™.
@@ -141,10 +142,15 @@ export function makeMcpPlugin(jwtSecret: string) {
           controller = null;
         };
 
-        const ip =
-          request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-          request.headers.get("x-real-ip") ??
-          null;
+        // Honor VAULTBASE_TRUSTED_PROXIES: only consult X-Forwarded-For when
+        // the immediate peer is in the trust list. Otherwise the peer IP is
+        // authoritative — non-proxied clients can't spoof the origin field.
+        let peerIp: string | null = null;
+        try {
+          const s = server as { requestIP?: (r: Request) => { address: string } | null };
+          peerIp = s?.requestIP?.(request)?.address ?? null;
+        } catch { /* requestIP unsupported in tests */ }
+        const ip = trustedClientIp(request, peerIp);
         const ua = request.headers.get("user-agent");
 
         const stream = new ReadableStream<Uint8Array>({
@@ -156,7 +162,9 @@ export function makeMcpPlugin(jwtSecret: string) {
               scopes: auth.ctx.scopes,
               adminId: auth.ctx.adminId,
               adminEmail: auth.ctx.adminEmail,
-              ...(ip ? { ip } : {}),
+              // Skip the placeholder "unknown" trustedClientIp returns when
+              // no peer IP is resolvable (test transports / direct stdio).
+              ...(ip && ip !== "unknown" ? { ip } : {}),
               ...(ua ? { userAgent: ua } : {}),
               connectedAt: Math.floor(Date.now() / 1000),
               send(payload) {
