@@ -64,7 +64,7 @@ describe("shouldEncryptSettingKey", () => {
     expect(shouldEncryptSettingKey("update_check.enabled")).toBe(false);
     expect(shouldEncryptSettingKey("update_check.checked_at")).toBe(false);
     expect(shouldEncryptSettingKey("auth.lockout.duration_seconds")).toBe(false);
-    expect(shouldEncryptSettingKey("security.allowed_origins")).toBe(false);
+    expect(shouldEncryptSettingKey("cors.origins")).toBe(false);
   });
 });
 

@@ -79,9 +79,9 @@ Files served via `GET /api/files/:filename` always evaluate the parent record's 
 
 ## CORS and origin gating
 
-`/realtime` (WebSocket) and `GET /api/realtime` (SSE) reject upgrades whose `Origin` is not in the `security.allowed_origins` setting (comma-separated). Empty setting = same-origin only.
+`/realtime` (WebSocket) and `GET /api/realtime` (SSE) reject upgrades whose `Origin` is not in the `cors.origins` setting (comma-separated; configured in Admin → Settings → CORS). Empty setting = same-origin only; `*` permits any origin. This is the same allowlist used for HTTP CORS, so cross-origin browsers, WebSocket, and SSE are all governed by one key.
 
-Cross-origin API consumers should set `security.allowed_origins` and supply a CORS plugin in front of Elysia (out of scope here).
+Cross-origin API consumers should set `cors.origins` (and the rest of the `cors.*` settings) — Vaultbase applies CORS natively, no front proxy plugin required.
 
 ## Rate-limiting and proxy trust
 
@@ -104,7 +104,7 @@ The setup endpoint also enforces a 12-character minimum password and atomically 
 - Set `VAULTBASE_JWT_SECRET` (don't rely on `.secret` fallback).
 - Set `VAULTBASE_SETUP_KEY` on first boot. Unset after creating the seed admin.
 - Set `VAULTBASE_TRUSTED_PROXIES` to your front-door peer IPs.
-- Set `security.allowed_origins` for the admin SPA / user app origins.
+- Set `cors.origins` (Admin → Settings → CORS) for the admin SPA / user app origins.
 - Set `VAULTBASE_ENCRYPTION_KEY` (AES-GCM, 32 bytes base64) if any field type is `encrypted`.
 - Configure `oauth2.<provider>.allowed_redirect_uris` for every enabled IdP.
 - Front the binary with TLS termination that sets HSTS; the static landing/docs CF Pages projects already set `Strict-Transport-Security`.

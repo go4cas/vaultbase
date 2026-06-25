@@ -78,7 +78,9 @@ async function verifyTokenForWS(token: string, jwtSecret: string): Promise<WSAut
 /**
  * True if `origin` is in the configured allowlist. Empty/missing settings →
  * deny cross-origin (WS upgrades from any non-same-origin caller fail).
- * Comma-separated list under `security.allowed_origins`.
+ * Shares the single CORS origin allowlist — comma-separated `cors.origins`
+ * (Admin → Settings → CORS), the same key the HTTP CORS layer reads. `*`
+ * permits any origin.
  *
  * Null Origin: handled per call-site — pass `requireOrigin: true` for WS/SSE
  * upgrade paths where browsers ALWAYS send Origin (so a missing header is
@@ -89,7 +91,7 @@ async function verifyTokenForWS(token: string, jwtSecret: string): Promise<WSAut
 function isOriginAllowed(origin: string | null, requireOrigin = false): boolean {
   if (!origin) return !requireOrigin;
   const settings = getAllSettings();
-  const raw = settings["security.allowed_origins"] ?? "";
+  const raw = settings["cors.origins"] ?? "";
   if (!raw) return false;
   const list = raw.split(",").map((s) => s.trim()).filter(Boolean);
   return list.includes(origin) || list.includes("*");
