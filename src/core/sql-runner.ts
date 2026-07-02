@@ -38,8 +38,18 @@ export const SQL_QUERY_TIMEOUT_MS = 5000;
  * load-bearing protections; this is a friendlier error surface.
  */
 const FORBIDDEN_RO_KEYWORDS = [
-  "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "REPLACE",
-  "TRUNCATE", "ATTACH", "DETACH", "REINDEX", "VACUUM",
+  "INSERT",
+  "UPDATE",
+  "DELETE",
+  "DROP",
+  "ALTER",
+  "CREATE",
+  "REPLACE",
+  "TRUNCATE",
+  "ATTACH",
+  "DETACH",
+  "REINDEX",
+  "VACUUM",
 ];
 
 export interface RunSqlOptions {
@@ -83,10 +93,10 @@ export interface RunSqlResult {
  */
 export function detectMutation(sql: string): string | null {
   const stripped = sql
-    .replace(/--[^\n]*/g, " ")           // line comments
-    .replace(/\/\*[\s\S]*?\*\//g, " ")    // block comments
-    .replace(/'(?:[^']|'')*'/g, "''")     // single-quoted strings
-    .replace(/"(?:[^"]|"")*"/g, '""');    // double-quoted identifiers/strings
+    .replace(/--[^\n]*/g, " ") // line comments
+    .replace(/\/\*[\s\S]*?\*\//g, " ") // block comments
+    .replace(/'(?:[^']|'')*'/g, "''") // single-quoted strings
+    .replace(/"(?:[^"]|"")*"/g, '""'); // double-quoted identifiers/strings
   const upper = stripped.toUpperCase();
   for (const kw of FORBIDDEN_RO_KEYWORDS) {
     const re = new RegExp(`\\b${kw}\\b`);
@@ -105,7 +115,10 @@ export async function runSql(opts: RunSqlOptions): Promise<RunSqlResult> {
     if (bad) {
       return {
         ok: false,
-        columns: [], rows: [], rowCount: 0, truncated: false,
+        columns: [],
+        rows: [],
+        rowCount: 0,
+        truncated: false,
         durationMs: Date.now() - start,
         error: `${bad} statements are blocked in read-only mode. Switch to sandbox to run them safely.`,
         errorCode: "VAULTBASE_READONLY",
@@ -125,7 +138,10 @@ export async function runSql(opts: RunSqlOptions): Promise<RunSqlResult> {
       if (!opts.adminId) {
         return {
           ok: false,
-          columns: [], rows: [], rowCount: 0, truncated: false,
+          columns: [],
+          rows: [],
+          rowCount: 0,
+          truncated: false,
           durationMs: Date.now() - start,
           error: "adminId is required for sandbox mode",
           errorCode: "VAULTBASE_NO_SANDBOX",
@@ -135,7 +151,10 @@ export async function runSql(opts: RunSqlOptions): Promise<RunSqlResult> {
       if (!sb) {
         return {
           ok: false,
-          columns: [], rows: [], rowCount: 0, truncated: false,
+          columns: [],
+          rows: [],
+          rowCount: 0,
+          truncated: false,
           durationMs: Date.now() - start,
           error: "Sandbox not initialised — reset the sandbox first.",
           errorCode: "VAULTBASE_NO_SANDBOX",
@@ -145,14 +164,22 @@ export async function runSql(opts: RunSqlOptions): Promise<RunSqlResult> {
       ownsConnection = false;
     } else {
       db = new Database(opts.dbPath, { readonly: true, create: false });
-      try { db.exec("PRAGMA query_only = ON"); } catch { /* noop */ }
+      try {
+        db.exec("PRAGMA query_only = ON");
+      } catch {
+        /* noop */
+      }
     }
 
     timer = setTimeout(() => {
       timedOut = true;
       // bun:sqlite exposes `interrupt` to abort an in-flight statement.
       const anyDb = db as unknown as { interrupt?: () => void };
-      try { anyDb.interrupt?.(); } catch { /* noop */ }
+      try {
+        anyDb.interrupt?.();
+      } catch {
+        /* noop */
+      }
     }, timeout);
 
     const params = (opts.params ?? []) as ReadonlyArray<unknown>;
@@ -174,20 +201,21 @@ export async function runSql(opts: RunSqlOptions): Promise<RunSqlResult> {
     } else {
       // Database.run handles statements that don't return rows. Returns
       // { changes, lastInsertRowid }.
-      const r = (db as unknown as { run(sql: string, ...p: unknown[]): { changes: number } })
-        .run(opts.sql, ...params);
+      const r = (db as unknown as { run(sql: string, ...p: unknown[]): { changes: number } }).run(
+        opts.sql,
+        ...params,
+      );
       changes = typeof r.changes === "number" ? r.changes : undefined;
     }
 
     const total = rows.length;
     const truncated = total > MAX_SQL_RESULT_ROWS;
     const sliced = truncated ? rows.slice(0, MAX_SQL_RESULT_ROWS) : rows;
-    const columns = sliced[0] && typeof sliced[0] === "object"
-      ? Object.keys(sliced[0] as Record<string, unknown>)
-      : [];
-    const positional = sliced.map((r) =>
-      columns.map((c) => (r as Record<string, unknown>)[c]),
-    );
+    const columns =
+      sliced[0] && typeof sliced[0] === "object"
+        ? Object.keys(sliced[0] as Record<string, unknown>)
+        : [];
+    const positional = sliced.map((r) => columns.map((c) => (r as Record<string, unknown>)[c]));
 
     return {
       ok: true,
@@ -202,15 +230,22 @@ export async function runSql(opts: RunSqlOptions): Promise<RunSqlResult> {
     const msg = e instanceof Error ? e.message : String(e);
     return {
       ok: false,
-      columns: [], rows: [], rowCount: 0, truncated: false,
+      columns: [],
+      rows: [],
+      rowCount: 0,
+      truncated: false,
       durationMs: Date.now() - start,
       error: timedOut ? `Query exceeded ${timeout}ms time budget` : msg,
-      errorCode: timedOut ? "TIMEOUT" : extractSqliteCode(e) ?? "SQLITE_ERROR",
+      errorCode: timedOut ? "TIMEOUT" : (extractSqliteCode(e) ?? "SQLITE_ERROR"),
     };
   } finally {
     if (timer) clearTimeout(timer);
     if (ownsConnection) {
-      try { db?.close(); } catch { /* ignore */ }
+      try {
+        db?.close();
+      } catch {
+        /* ignore */
+      }
     }
   }
 }
@@ -222,4 +257,3 @@ function extractSqliteCode(e: unknown): string | null {
   }
   return null;
 }
-

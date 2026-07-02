@@ -136,9 +136,16 @@ export function makeMcpPlugin(jwtSecret: string) {
         const cleanup = (): void => {
           if (closed) return;
           closed = true;
-          if (heartbeat) { clearInterval(heartbeat); heartbeat = null; }
+          if (heartbeat) {
+            clearInterval(heartbeat);
+            heartbeat = null;
+          }
           if (clientId) unregisterMcpEventClient(clientId);
-          try { controller?.close(); } catch { /* already closed */ }
+          try {
+            controller?.close();
+          } catch {
+            /* already closed */
+          }
           controller = null;
         };
 
@@ -149,7 +156,9 @@ export function makeMcpPlugin(jwtSecret: string) {
         try {
           const s = server as { requestIP?: (r: Request) => { address: string } | null };
           peerIp = s?.requestIP?.(request)?.address ?? null;
-        } catch { /* requestIP unsupported in tests */ }
+        } catch {
+          /* requestIP unsupported in tests */
+        }
         const ip = trustedClientIp(request, peerIp);
         const ua = request.headers.get("user-agent");
 
@@ -188,18 +197,23 @@ export function makeMcpPlugin(jwtSecret: string) {
 
             heartbeat = setInterval(() => {
               if (closed || !controller) return;
-              try { controller.enqueue(encoder.encode(`: ping\n\n`)); }
-              catch { cleanup(); }
+              try {
+                controller.enqueue(encoder.encode(`: ping\n\n`));
+              } catch {
+                cleanup();
+              }
             }, HEARTBEAT_MS);
           },
-          cancel() { cleanup(); },
+          cancel() {
+            cleanup();
+          },
         });
 
         request.signal?.addEventListener("abort", cleanup);
 
         set.headers["content-type"] = "text/event-stream; charset=utf-8";
         set.headers["cache-control"] = "no-cache";
-        set.headers["connection"] = "keep-alive";
+        set.headers.connection = "keep-alive";
         return new Response(stream, { status: 200 });
       })();
     });

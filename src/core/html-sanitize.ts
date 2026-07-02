@@ -15,28 +15,56 @@
 
 const ALLOWED_TAGS: ReadonlySet<string> = new Set([
   // Block
-  "p", "div", "blockquote", "pre", "hr", "br",
-  "h1", "h2", "h3", "h4", "h5", "h6",
-  "ul", "ol", "li",
+  "p",
+  "div",
+  "blockquote",
+  "pre",
+  "hr",
+  "br",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "ul",
+  "ol",
+  "li",
   // Inline
-  "span", "strong", "b", "em", "i", "u", "s", "strike", "code", "sub", "sup",
-  "a", "img",
+  "span",
+  "strong",
+  "b",
+  "em",
+  "i",
+  "u",
+  "s",
+  "strike",
+  "code",
+  "sub",
+  "sup",
+  "a",
+  "img",
   // Tables (Quill table module emits these)
-  "table", "thead", "tbody", "tr", "th", "td",
+  "table",
+  "thead",
+  "tbody",
+  "tr",
+  "th",
+  "td",
 ]);
 
 const ALLOWED_ATTRS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
-  ["a",   new Set(["href", "title", "rel", "target"])],
+  ["a", new Set(["href", "title", "rel", "target"])],
   ["img", new Set(["src", "alt", "title", "width", "height"])],
-  ["span",new Set(["class"])],
-  ["p",   new Set(["class"])],
+  ["span", new Set(["class"])],
+  ["p", new Set(["class"])],
   ["pre", new Set(["class"])],
-  ["code",new Set(["class"])],
-  ["ol",  new Set(["start"])],
-  ["li",  new Set(["class"])],
+  ["code", new Set(["class"])],
+  ["ol", new Set(["start"])],
+  ["li", new Set(["class"])],
   ["table", new Set(["class"])],
-  ["th",  new Set(["colspan", "rowspan"])],
-  ["td",  new Set(["colspan", "rowspan"])],
+  ["th", new Set(["colspan", "rowspan"])],
+  ["td", new Set(["colspan", "rowspan"])],
 ]);
 
 const URL_ATTRS: ReadonlySet<string> = new Set(["href", "src", "xlink:href"]);
@@ -149,7 +177,7 @@ export function sanitizeHtml(input: string): string {
         if (lower.startsWith("on")) continue;
         if (lower === "style") continue; // CSS expressions / url() exfil
         if (!allowedAttrs.has(lower)) continue;
-        let v = value;
+        const v = value;
         if (URL_ATTRS.has(lower)) {
           // Browsers strip TAB / LF / CR from URL schemes before parsing
           // (see WHATWG URL §basic-url-parse), so `java&#9;script:` resolves
@@ -257,10 +285,7 @@ function safeFromCode(n: number): string {
  * characters that some browsers also remove during URL parsing.
  */
 const URL_STRIPPABLE_CODES = new Set<number>([
-  0x09, 0x0a, 0x0d,
-  0x200b, 0x200c, 0x200d,
-  0x2028, 0x2029,
-  0x202a, 0x202b, 0x202c, 0x202d, 0x202e,
+  0x09, 0x0a, 0x0d, 0x200b, 0x200c, 0x200d, 0x2028, 0x2029, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e,
   0x2060, 0xfeff,
 ]);
 function stripUrlControlChars(s: string): string {

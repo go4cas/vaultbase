@@ -1,6 +1,6 @@
 import Elysia from "elysia";
-import { gunzipSync } from "zlib";
-import { join } from "path";
+import { gunzipSync } from "node:zlib";
+import { join } from "node:path";
 import { embedAdminFiles } from "./embed.ts" with { type: "macro" };
 
 // EMBEDDED is a literal object inlined by the macro at compile time.
@@ -9,21 +9,21 @@ const EMBEDDED: Record<string, string> = embedAdminFiles();
 const HAS_EMBEDDED = Object.keys(EMBEDDED).length > 0;
 
 const MIME_TYPES: Record<string, string> = {
-  ".html":  "text/html; charset=utf-8",
-  ".js":    "application/javascript; charset=utf-8",
-  ".mjs":   "application/javascript; charset=utf-8",
-  ".css":   "text/css; charset=utf-8",
-  ".json":  "application/json; charset=utf-8",
-  ".svg":   "image/svg+xml",
-  ".png":   "image/png",
-  ".jpg":   "image/jpeg",
-  ".jpeg":  "image/jpeg",
-  ".gif":   "image/gif",
-  ".ico":   "image/x-icon",
-  ".woff":  "font/woff",
+  ".html": "text/html; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".mjs": "application/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
   ".woff2": "font/woff2",
-  ".ttf":   "font/ttf",
-  ".map":   "application/json",
+  ".ttf": "font/ttf",
+  ".map": "application/json",
 };
 
 function mimeType(path: string): string {
@@ -54,7 +54,10 @@ export function makeAdminPlugin() {
     if (HAS_EMBEDDED) {
       const key = EMBEDDED[pathname] ? pathname : "index.html";
       const b64 = EMBEDDED[key];
-      if (!b64) { set.status = 404; return "Not found"; }
+      if (!b64) {
+        set.status = 404;
+        return "Not found";
+      }
       set.headers["Content-Type"] = mimeType(key);
       return new Response(decodeFile(key, b64));
     }

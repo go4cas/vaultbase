@@ -13,15 +13,14 @@ import { getAllSettings } from "./settings.ts";
 const THEME_PREFIX = "theme.";
 
 export function makeThemePlugin() {
-  return new Elysia({ name: "theme" })
-    .get("/admin/theme", () => {
-      const all = getAllSettings();
-      const out: Record<string, string> = {};
-      for (const [k, v] of Object.entries(all)) {
-        if (!k.startsWith(THEME_PREFIX)) continue;
-        if (typeof v !== "string" || !v) continue;
-        out[k.slice(THEME_PREFIX.length)] = v;
-      }
-      return { data: out };
-    });
+  return new Elysia({ name: "theme" }).get("/admin/theme", () => {
+    const all = getAllSettings();
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(all)) {
+      if (!k.startsWith(THEME_PREFIX)) continue;
+      if (typeof v !== "string" || !v) continue;
+      out[k.slice(THEME_PREFIX.length)] = v;
+    }
+    return { data: out };
+  });
 }

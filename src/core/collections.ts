@@ -4,9 +4,21 @@ import { getDb } from "../db/client.ts";
 import { collections, type Collection, type NewCollection } from "../db/schema.ts";
 
 export type FieldType =
-  | "text" | "number" | "bool" | "file" | "relation"
-  | "select" | "autodate" | "email" | "url" | "date" | "json"
-  | "password" | "editor" | "geoPoint" | "vector";
+  | "text"
+  | "number"
+  | "bool"
+  | "file"
+  | "relation"
+  | "select"
+  | "autodate"
+  | "email"
+  | "url"
+  | "date"
+  | "json"
+  | "password"
+  | "editor"
+  | "geoPoint"
+  | "vector";
 
 export interface FieldOptions {
   min?: number;
@@ -94,8 +106,8 @@ export const AUTH_RESERVED_FIELD_NAMES = [
  * the per-collection table. Order matches admin display order.
  */
 export const AUTH_IMPLICIT_FIELDS: FieldDef[] = [
-  { name: "email",    type: "email", required: true, implicit: true, options: { unique: true } },
-  { name: "verified", type: "bool",  required: false, implicit: true },
+  { name: "email", type: "email", required: true, implicit: true, options: { unique: true } },
+  { name: "verified", type: "bool", required: false, implicit: true },
 ];
 
 /** Names of auth implicit fields, for quick membership checks. */
@@ -135,7 +147,9 @@ async function clearPreparedStatementsOnSchemaChange(): Promise<void> {
   try {
     const mod = await import("./records.ts");
     mod.invalidatePreparedStatements?.();
-  } catch { /* records module not loaded yet — nothing to clear */ }
+  } catch {
+    /* records module not loaded yet — nothing to clear */
+  }
 }
 
 /** Reset the in-memory collection cache. Exported for tests + DB-reset hooks. */
@@ -158,7 +172,9 @@ export function parseFields(raw: string): FieldDef[] {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? (parsed as FieldDef[]) : [];
   } catch (e) {
-    console.error(`[parseFields] malformed JSON in collection.fields — treating as empty: ${e instanceof Error ? e.message : String(e)}`);
+    console.error(
+      `[parseFields] malformed JSON in collection.fields — treating as empty: ${e instanceof Error ? e.message : String(e)}`,
+    );
     return [];
   }
 }
@@ -172,11 +188,15 @@ export function userTableName(collectionName: string): string {
 /** Map a field type to its SQLite storage type. */
 export function colSqlType(type: FieldType): string {
   switch (type) {
-    case "number":   return "REAL";
-    case "bool":     return "INTEGER";
+    case "number":
+      return "REAL";
+    case "bool":
+      return "INTEGER";
     case "date":
-    case "autodate": return "INTEGER";
-    default:         return "TEXT";
+    case "autodate":
+      return "INTEGER";
+    default:
+      return "TEXT";
   }
 }
 
@@ -210,9 +230,7 @@ export function createUserTable(collectionName: string, fields: FieldDef[]): voi
   assertSqlIdent(collectionName, "collection");
   for (const f of fields) if (!f.system) assertSqlIdent(f.name, "field");
   const tname = quoteIdent(userTableName(collectionName));
-  const userColDefs = fields
-    .filter((f) => !f.system && f.type !== "autodate")
-    .map(colDefSql);
+  const userColDefs = fields.filter((f) => !f.system && f.type !== "autodate").map(colDefSql);
   const cols = [
     `"id" TEXT PRIMARY KEY`,
     ...userColDefs,
@@ -239,12 +257,12 @@ export function dropUserTable(collectionName: string): void {
  * surface that flows into every `vb_<auth-col>`.
  */
 export const AUTH_SYSTEM_COLUMNS: ReadonlyArray<{ name: string; sql: string }> = [
-  { name: "email",             sql: "TEXT" },
-  { name: "password_hash",     sql: "TEXT" },
-  { name: "email_verified",    sql: "INTEGER NOT NULL DEFAULT 0" },
-  { name: "totp_secret",       sql: "TEXT" },
-  { name: "totp_enabled",      sql: "INTEGER NOT NULL DEFAULT 0" },
-  { name: "is_anonymous",      sql: "INTEGER NOT NULL DEFAULT 0" },
+  { name: "email", sql: "TEXT" },
+  { name: "password_hash", sql: "TEXT" },
+  { name: "email_verified", sql: "INTEGER NOT NULL DEFAULT 0" },
+  { name: "totp_secret", sql: "TEXT" },
+  { name: "totp_enabled", sql: "INTEGER NOT NULL DEFAULT 0" },
+  { name: "is_anonymous", sql: "INTEGER NOT NULL DEFAULT 0" },
   { name: "password_reset_at", sql: "INTEGER NOT NULL DEFAULT 0" },
 ];
 
@@ -262,13 +280,19 @@ export function ensureAuthColumns(collectionName: string): void {
   for (const c of AUTH_SYSTEM_COLUMNS) {
     try {
       client.exec(`ALTER TABLE ${tname} ADD COLUMN ${quoteIdent(c.name)} ${c.sql}`);
-    } catch { /* column exists — idempotent */ }
+    } catch {
+      /* column exists — idempotent */
+    }
   }
   // Unique email index — anonymous users get a synthetic uniqe email so the
   // unconditional UNIQUE works without a partial-index workaround.
   try {
-    client.exec(`CREATE UNIQUE INDEX IF NOT EXISTS "idx_${userTableName(collectionName)}_email" ON ${tname}(email)`);
-  } catch { /* may already exist or fail on duplicates pre-migration */ }
+    client.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS "idx_${userTableName(collectionName)}_email" ON ${tname}(email)`,
+    );
+  } catch {
+    /* may already exist or fail on duplicates pre-migration */
+  }
 }
 
 // ── View collections ────────────────────────────────────────────────────────
@@ -286,11 +310,10 @@ export function validateViewQuery(query: string): void {
   if (body.includes(";")) throw new Error("View query must be a single statement");
   // Strip /* ... */ and -- ... line comments before keyword scanning so
   // attackers can't hide banned tokens inside comments.
-  const stripped = body
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/--[^\n]*/g, " ");
+  const stripped = body.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ");
   if (!/^select\b/i.test(stripped.trim())) throw new Error("View query must begin with SELECT");
-  const banned = /\b(insert|update|delete|drop|create|alter|attach|detach|pragma|replace|truncate|vacuum|reindex|load_extension|with|recursive)\b/i;
+  const banned =
+    /\b(insert|update|delete|drop|create|alter|attach|detach|pragma|replace|truncate|vacuum|reindex|load_extension|with|recursive)\b/i;
   if (banned.test(stripped)) throw new Error("View query may only SELECT");
 }
 
@@ -317,23 +340,36 @@ export function inferViewColumns(query: string): string[] {
  * (their own clamps stack with ours). Rows are returned as plain objects keyed
  * by column name — useful for the admin UI's "preview rows" button.
  */
-export function previewViewRows(query: string, limit = 5): { columns: string[]; rows: Array<Record<string, unknown>> } {
+export function previewViewRows(
+  query: string,
+  limit = 5,
+): { columns: string[]; rows: Array<Record<string, unknown>> } {
   validateViewQuery(query);
   const body = query.trim().replace(/;\s*$/, "");
   const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
   const wrapped = `SELECT * FROM (${body}) LIMIT ${safeLimit}`;
   const stmt = rawClient().prepare(wrapped);
   const rows = stmt.all() as Array<Record<string, unknown>>;
-  const columns = (stmt as unknown as { columnNames?: string[] }).columnNames ?? Object.keys(rows[0] ?? {});
+  const columns =
+    (stmt as unknown as { columnNames?: string[] }).columnNames ?? Object.keys(rows[0] ?? {});
   return { columns, rows };
 }
 
 /** Build default text-typed field defs from inferred column names. id/created/updated remain implicit. */
 export function fieldsFromViewColumns(columns: string[]): FieldDef[] {
-  return columns
-    // id/created/updated are surfaced via record meta, not as user fields
-    .filter((c) => c !== "id" && c !== "created" && c !== "created_at" && c !== "updated" && c !== "updated_at")
-    .map((c) => ({ name: c, type: "text" as const, required: false }));
+  return (
+    columns
+      // id/created/updated are surfaced via record meta, not as user fields
+      .filter(
+        (c) =>
+          c !== "id" &&
+          c !== "created" &&
+          c !== "created_at" &&
+          c !== "updated" &&
+          c !== "updated_at",
+      )
+      .map((c) => ({ name: c, type: "text" as const, required: false }))
+  );
 }
 
 const VIEW_META_COLUMNS = new Set(["id", "created", "created_at", "updated", "updated_at"]);
@@ -352,7 +388,7 @@ function classifyValue(value: unknown, columnName: string): FieldType {
 
   if (typeof value === "boolean") return "bool";
 
-  if (typeof value === "number" && !isNaN(value)) {
+  if (typeof value === "number" && !Number.isNaN(value)) {
     // 0/1 with a bool-ish column name → bool. Otherwise number.
     if ((value === 0 || value === 1) && BOOL_NAME_RE.test(columnName)) return "bool";
     // 10-digit unix epoch in *_at column → date.
@@ -439,15 +475,19 @@ export function dropUserView(collectionName: string): void {
 export function alterUserTable(
   collectionName: string,
   oldFields: FieldDef[],
-  newFields: FieldDef[]
+  newFields: FieldDef[],
 ): void {
   assertSqlIdent(collectionName, "collection");
   for (const f of newFields) if (!f.system) assertSqlIdent(f.name, "field");
   const tname = quoteIdent(userTableName(collectionName));
   const client = rawClient();
 
-  const oldByName = new Map(oldFields.filter((f) => !f.system && f.type !== "autodate").map((f) => [f.name, f]));
-  const newByName = new Map(newFields.filter((f) => !f.system && f.type !== "autodate").map((f) => [f.name, f]));
+  const oldByName = new Map(
+    oldFields.filter((f) => !f.system && f.type !== "autodate").map((f) => [f.name, f]),
+  );
+  const newByName = new Map(
+    newFields.filter((f) => !f.system && f.type !== "autodate").map((f) => [f.name, f]),
+  );
 
   // Drop fields removed in new
   for (const oldName of oldByName.keys()) {
@@ -473,7 +513,7 @@ export function alterUserTable(
     if (!oldField) continue;
     if (oldField.type !== newField.type) {
       throw new Error(
-        `Cannot change type of field '${name}' from '${oldField.type}' to '${newField.type}'. Drop the field and re-add it with the new type.`
+        `Cannot change type of field '${name}' from '${oldField.type}' to '${newField.type}'. Drop the field and re-add it with the new type.`,
       );
     }
   }
@@ -516,7 +556,8 @@ function assertValidFieldsForType(type: string, fields: FieldDef[]): void {
   for (const f of fields) {
     if (f.system || f.implicit) continue;
     if (reserved.has(f.name)) {
-      errors[f.name] = `'${f.name}' is reserved on auth collections (managed by the implicit auth schema)`;
+      errors[f.name] =
+        `'${f.name}' is reserved on auth collections (managed by the implicit auth schema)`;
     }
   }
   if (Object.keys(errors).length > 0) throw new CollectionValidationError(errors);
@@ -532,7 +573,7 @@ function ensureImplicitFields(type: string, fields: FieldDef[]): FieldDef[] {
 }
 
 export async function createCollection(
-  data: Omit<NewCollection, "id" | "created_at" | "updated_at">
+  data: Omit<NewCollection, "id" | "created_at" | "updated_at">,
 ): Promise<Collection> {
   const db = getDb();
   const type = data.type ?? "base";
@@ -569,7 +610,10 @@ export async function createCollection(
     createUserView(row.name, data.view_query!);
   } else {
     // Per-collection real table excludes implicit fields — those live on vaultbase_users.
-    createUserTable(row.name, fields.filter((f) => !f.implicit));
+    createUserTable(
+      row.name,
+      fields.filter((f) => !f.implicit),
+    );
     if (type === "auth") {
       // v0.11+: auth columns (email/password_hash/...) live on `vb_<name>`
       // alongside the per-collection custom fields. Existing v0.10 installs
@@ -588,7 +632,7 @@ export async function createCollection(
 
 export async function updateCollection(
   id: string,
-  data: Partial<Omit<NewCollection, "id" | "created_at">>
+  data: Partial<Omit<NewCollection, "id" | "created_at">>,
 ): Promise<Collection> {
   const db = getDb();
   const now = Math.floor(Date.now() / 1000);
@@ -630,12 +674,15 @@ export async function updateCollection(
     alterUserTable(
       before.name,
       oldFields.filter((f) => !f.implicit),
-      newFields.filter((f) => !f.implicit)
+      newFields.filter((f) => !f.implicit),
     );
     data = { ...data, fields: JSON.stringify(newFields) };
   }
 
-  await db.update(collections).set({ ...data, updated_at: now }).where(eq(collections.id, id));
+  await db
+    .update(collections)
+    .set({ ...data, updated_at: now })
+    .where(eq(collections.id, id));
   cache.delete(id);
   cache.delete(before.name);
 

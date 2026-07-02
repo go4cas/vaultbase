@@ -40,18 +40,19 @@ interface WorkerHandle {
   startedAt: number;
 }
 
-const N = parseInt(
-  process.env["VAULTBASE_WORKERS"] ?? String(availableParallelism()),
-  10,
-);
+const N = parseInt(process.env.VAULTBASE_WORKERS ?? String(availableParallelism()), 10);
 
 if (!Number.isFinite(N) || N < 1) {
-  process.stderr.write(`vaultbase-cluster: VAULTBASE_WORKERS must be a positive integer (got ${process.env["VAULTBASE_WORKERS"]})\n`);
+  process.stderr.write(
+    `vaultbase-cluster: VAULTBASE_WORKERS must be a positive integer (got ${process.env.VAULTBASE_WORKERS})\n`,
+  );
   process.exit(1);
 }
 
 if (N === 1) {
-  process.stderr.write(`vaultbase-cluster: only 1 worker requested — running directly without cluster overhead\n`);
+  process.stderr.write(
+    `vaultbase-cluster: only 1 worker requested — running directly without cluster overhead\n`,
+  );
 }
 
 const workers: WorkerHandle[] = [];
@@ -105,35 +106,48 @@ function spawnWorker(id: number): WorkerHandle {
 async function shutdown(signal: string): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
-  process.stderr.write(`\nvaultbase-cluster: received ${signal}, draining ${workers.length} worker(s)...\n`);
+  process.stderr.write(
+    `\nvaultbase-cluster: received ${signal}, draining ${workers.length} worker(s)...\n`,
+  );
 
   // Forward the signal so children run their own graceful drain (file logger,
   // realtime disconnect, DB close). Bun.spawn's `kill()` sends SIGTERM by
   // default on POSIX; pass the explicit number on Windows since signal names
   // there are limited.
   for (const w of workers) {
-    try { w.proc.kill(); } catch { /* already gone */ }
+    try {
+      w.proc.kill();
+    } catch {
+      /* already gone */
+    }
   }
 
   const deadline = Date.now() + SHUTDOWN_TIMEOUT_MS;
   for (const w of workers) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
-      try { w.proc.kill(9); } catch { /* already gone */ }
+      try {
+        w.proc.kill(9);
+      } catch {
+        /* already gone */
+      }
       continue;
     }
     try {
-      await Promise.race([
-        w.proc.exited,
-        new Promise<void>((res) => setTimeout(res, remaining)),
-      ]);
-    } catch { /* swallow */ }
+      await Promise.race([w.proc.exited, new Promise<void>((res) => setTimeout(res, remaining))]);
+    } catch {
+      /* swallow */
+    }
   }
   process.exit(0);
 }
 
-process.on("SIGTERM", () => { void shutdown("SIGTERM"); });
-process.on("SIGINT",  () => { void shutdown("SIGINT");  });
+process.on("SIGTERM", () => {
+  void shutdown("SIGTERM");
+});
+process.on("SIGINT", () => {
+  void shutdown("SIGINT");
+});
 
 process.stderr.write(`vaultbase-cluster: spawning ${N} worker(s)...\n`);
 for (let i = 0; i < N; i++) {

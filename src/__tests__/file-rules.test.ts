@@ -8,9 +8,9 @@
  */
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
 import * as jose from "jose";
-import { mkdtempSync, rmSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { initDb, closeDb, getDb } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
@@ -43,7 +43,11 @@ afterEach(() => {
 async function signUser(id: string, email: string): Promise<string> {
   const { seedAuthUser, signUserJwt } = await import("./_helpers.ts");
   // Idempotent — duplicate seed swallowed.
-  try { await seedAuthUser({ collection: "users", id, email }); } catch { /* dup */ }
+  try {
+    await seedAuthUser({ collection: "users", id, email });
+  } catch {
+    /* dup */
+  }
   return signUserJwt(id, email, "users", SECRET);
 }
 
@@ -52,10 +56,15 @@ async function signAdmin(id: string): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   try {
     await getDb().insert(admin).values({
-      id, email: "admin@test.local", password_hash: "x",
-      password_reset_at: 0, created_at: now,
+      id,
+      email: "admin@test.local",
+      password_hash: "x",
+      password_reset_at: 0,
+      created_at: now,
     });
-  } catch { /* dup */ }
+  } catch {
+    /* dup */
+  }
   return await new jose.SignJWT({ id, email: "admin@test.local" })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuer("vaultbase")
@@ -111,16 +120,26 @@ async function setupFile(opts: SetupOpts) {
   return { col, rec, filename };
 }
 
-function tokenReq(token: string | null, recId: string, filename: string, headers: Record<string, string> = {}): Request {
+function tokenReq(
+  token: string | null,
+  recId: string,
+  filename: string,
+  headers: Record<string, string> = {},
+): Request {
   const h: Record<string, string> = { ...headers };
   if (token) h.authorization = `Bearer ${token}`;
-  return new Request(
-    `http://localhost/files/notes/${recId}/attachment/${filename}/token`,
-    { method: "POST", headers: h },
-  );
+  return new Request(`http://localhost/files/notes/${recId}/attachment/${filename}/token`, {
+    method: "POST",
+    headers: h,
+  });
 }
 
-function getReq(filename: string, query: Record<string, string> = {}, token: string | null = null, headers: Record<string, string> = {}): Request {
+function getReq(
+  filename: string,
+  query: Record<string, string> = {},
+  token: string | null = null,
+  headers: Record<string, string> = {},
+): Request {
   const qs = new URLSearchParams(query).toString();
   const url = `http://localhost/files/${filename}${qs ? `?${qs}` : ""}`;
   const h: Record<string, string> = { ...headers };
@@ -133,8 +152,8 @@ function getReq(filename: string, query: Record<string, string> = {}, token: str
 describe("file viewRule — per-field rule", () => {
   it("inherits collection rule when undefined (default)", async () => {
     const { rec, filename } = await setupFile({
-      collectionViewRule: null,           // public
-      fieldOptions: {},                    // no field rule
+      collectionViewRule: null, // public
+      fieldOptions: {}, // no field rule
       owner: "u1",
     });
     const app = makeFilesPlugin(tmpDir, SECRET);
@@ -145,8 +164,8 @@ describe("file viewRule — per-field rule", () => {
 
   it("denies token mint when field rule fails even though collection rule passes", async () => {
     const { rec, filename } = await setupFile({
-      collectionViewRule: null,                                     // public collection
-      fieldOptions: { viewRule: "owner = @request.auth.id" },       // owner-only at field
+      collectionViewRule: null, // public collection
+      fieldOptions: { viewRule: "owner = @request.auth.id" }, // owner-only at field
       owner: "u-other",
     });
     const userToken = await signUser("u1", "u1@test.local");
@@ -170,8 +189,8 @@ describe("file viewRule — per-field rule", () => {
 
   it("admin bypasses field rule", async () => {
     const { rec, filename } = await setupFile({
-      collectionViewRule: "",                                       // admin-only collection
-      fieldOptions: { viewRule: "owner = 'never-matches'" },        // also strict at field
+      collectionViewRule: "", // admin-only collection
+      fieldOptions: { viewRule: "owner = 'never-matches'" }, // also strict at field
       owner: "u-other",
     });
     const adminToken = await signAdmin("a1");
@@ -180,7 +199,7 @@ describe("file viewRule — per-field rule", () => {
     expect(res.status).toBe(200);
   });
 
-  it("field rule \"\" forces admin-only even when collection is public", async () => {
+  it('field rule "" forces admin-only even when collection is public', async () => {
     const { rec, filename } = await setupFile({
       collectionViewRule: null,
       fieldOptions: { viewRule: "" },
@@ -233,7 +252,7 @@ describe("file oneTimeToken", () => {
     });
     const app = makeFilesPlugin(tmpDir, SECRET);
     const mint = await app.handle(tokenReq(null, rec.id, filename));
-    const body = await mint.json() as { data: { token: string } };
+    const body = (await mint.json()) as { data: { token: string } };
     const tok = body.data.token;
 
     const a = await app.handle(getReq(filename, { token: tok }));
@@ -264,7 +283,7 @@ describe("file bindTokenIp", () => {
     // rejected — this proves the comparison runs.
     const mint = await app.handle(tokenReq(null, rec.id, filename));
     expect(mint.status).toBe(200);
-    const body = await mint.json() as { data: { token: string } };
+    const body = (await mint.json()) as { data: { token: string } };
     void body;
 
     const forged = await new jose.SignJWT({ filename, ip: "9.9.9.9" })

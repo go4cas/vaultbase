@@ -38,21 +38,19 @@ function seedSource(): void {
       empty_col TEXT
     )
   `);
-  client.prepare(
-    `INSERT INTO src VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
+  client.prepare(`INSERT INTO src VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     "r1",
     "hi",
     42,
-    1,                            // 'active' — INTEGER 1, will be classified by sqlite driver as number
+    1, // 'active' — INTEGER 1, will be classified by sqlite driver as number
     "https://x.io",
     "a@b.io",
     `{"foo":1}`,
-    1745700000,                   // 10-digit unix epoch
+    1745700000, // 10-digit unix epoch
     "2026-04-27T10:00:00Z",
-    1,                            // is_admin — bool by name hint
-    1,                            // flag_count — number, no bool name hint
-    null
+    1, // is_admin — bool by name hint
+    1, // flag_count — number, no bool name hint
+    null,
   );
 }
 
@@ -60,7 +58,7 @@ describe("inferViewFields()", () => {
   it("classifies number, url, email, json, date, and text from a sample row", async () => {
     seedSource();
     const fields = inferViewFields(
-      `SELECT id, title, score, link, contact, body, published_at, iso_when FROM src`
+      `SELECT id, title, score, link, contact, body, published_at, iso_when FROM src`,
     );
     const byName = new Map(fields.map((f) => [f.name, f.type]));
     // id is filtered (meta column)
@@ -150,7 +148,9 @@ describe("inferViewFields()", () => {
       CREATE TABLE m (id TEXT, created INTEGER, created_at INTEGER, updated INTEGER, updated_at INTEGER, payload TEXT)
     `);
     client.prepare(`INSERT INTO m VALUES (?, ?, ?, ?, ?, ?)`).run("1", 1, 1, 1, 1, "x");
-    const fields = inferViewFields(`SELECT id, created, created_at, updated, updated_at, payload FROM m`);
+    const fields = inferViewFields(
+      `SELECT id, created, created_at, updated, updated_at, payload FROM m`,
+    );
     expect(fields.map((f) => f.name)).toEqual(["payload"]);
   });
 });

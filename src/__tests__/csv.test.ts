@@ -34,7 +34,13 @@ describe("encodeField", () => {
 
 describe("encodeCsv", () => {
   it("emits header + rows joined with CRLF", () => {
-    const out = encodeCsv(["a", "b"], [[1, 2], [3, 4]]);
+    const out = encodeCsv(
+      ["a", "b"],
+      [
+        [1, 2],
+        [3, 4],
+      ],
+    );
     expect(out).toBe("a,b\r\n1,2\r\n3,4");
   });
 });
@@ -118,7 +124,7 @@ describe("parseCsvToObjects", () => {
   it("pivots rows under header keys", () => {
     expect(parseCsvToObjects("name,age\nalice,30\nbob,25")).toEqual([
       { name: "alice", age: "30" },
-      { name: "bob",   age: "25" },
+      { name: "bob", age: "25" },
     ]);
   });
 

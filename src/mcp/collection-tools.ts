@@ -27,7 +27,7 @@ import {
   type ListOptions,
 } from "../core/records.ts";
 import { listCollections, parseFields, type FieldDef } from "../core/collections.ts";
-import { ToolRegistry, asJsonText, asUntrustedJsonText } from "./tools.ts";
+import { type ToolRegistry, asJsonText, asUntrustedJsonText } from "./tools.ts";
 
 const HARD_PER_PAGE_CAP = 100;
 
@@ -42,24 +42,22 @@ function fieldTypeSchema(f: FieldDef): Record<string, unknown> {
     case "autodate":
       return { type: "integer", description: `${hint(f)} (unix-seconds)` };
     case "select": {
-      const values = (f.options?.["values"] as string[] | undefined) ?? [];
+      const values = (f.options?.values as string[] | undefined) ?? [];
       const single = { type: "string", enum: values, description: hint(f) };
-      return f.options?.["multiple"]
-        ? { type: "array", items: single, description: hint(f) }
-        : single;
+      return f.options?.multiple ? { type: "array", items: single, description: hint(f) } : single;
     }
     case "geoPoint":
       return {
         type: "object",
         properties: {
-          lat: { type: "number", minimum: -90,  maximum: 90 },
+          lat: { type: "number", minimum: -90, maximum: 90 },
           lng: { type: "number", minimum: -180, maximum: 180 },
         },
         required: ["lat", "lng"],
         description: hint(f),
       };
     case "vector": {
-      const dims = (f.options?.["dimensions"] as number | undefined) ?? null;
+      const dims = (f.options?.dimensions as number | undefined) ?? null;
       return {
         type: "array",
         items: { type: "number" },
@@ -71,13 +69,16 @@ function fieldTypeSchema(f: FieldDef): Record<string, unknown> {
       return { description: hint(f) }; // open-ended
     case "file":
       return {
-        ...(f.options?.["multiple"]
+        ...(f.options?.multiple
           ? { type: "array", items: { type: "string" } }
           : { type: "string" }),
         description: `${hint(f)} (filename — files must be uploaded via the file upload endpoint, not this tool)`,
       };
     case "relation":
-      return { type: "string", description: `${hint(f)} (id of a record in the '${f.collection}' collection)` };
+      return {
+        type: "string",
+        description: `${hint(f)} (id of a record in the '${f.collection}' collection)`,
+      };
     case "email":
       return { type: "string", format: "email", description: hint(f) };
     case "url":
@@ -132,23 +133,42 @@ export async function registerCollectionTools(reg: ToolRegistry): Promise<void> 
         inputSchema: {
           type: "object",
           properties: {
-            filter:    { type: "string",  description: "vaultbase rule-expression filter, e.g. \"status = 'live' && created > 1700000000\"" },
-            sort:      { type: "string",  description: "Comma-separated. Prefix '-' for desc. Example: '-created,title'" },
-            page:      { type: "integer", minimum: 1 },
-            perPage:   { type: "integer", minimum: 1, maximum: HARD_PER_PAGE_CAP, description: `Default 30, max ${HARD_PER_PAGE_CAP}` },
-            fields:    { type: "string",  description: "Comma-separated projection, e.g. 'id,title,created'" },
-            skipTotal: { type: "boolean", description: "Skip COUNT(*) for huge tables. Default false." },
+            filter: {
+              type: "string",
+              description:
+                "vaultbase rule-expression filter, e.g. \"status = 'live' && created > 1700000000\"",
+            },
+            sort: {
+              type: "string",
+              description: "Comma-separated. Prefix '-' for desc. Example: '-created,title'",
+            },
+            page: { type: "integer", minimum: 1 },
+            perPage: {
+              type: "integer",
+              minimum: 1,
+              maximum: HARD_PER_PAGE_CAP,
+              description: `Default 30, max ${HARD_PER_PAGE_CAP}`,
+            },
+            fields: {
+              type: "string",
+              description: "Comma-separated projection, e.g. 'id,title,created'",
+            },
+            skipTotal: {
+              type: "boolean",
+              description: "Skip COUNT(*) for huge tables. Default false.",
+            },
           },
           additionalProperties: false,
         },
       },
       handler: async (args) => {
         const opts: ListOptions = {};
-        if (typeof args.filter    === "string")  opts.filter    = args.filter;
-        if (typeof args.sort      === "string")  opts.sort      = args.sort;
-        if (typeof args.page      === "number")  opts.page      = args.page;
-        if (typeof args.perPage   === "number")  opts.perPage   = Math.min(args.perPage, HARD_PER_PAGE_CAP);
-        if (typeof args.fields    === "string")  opts.fields    = args.fields;
+        if (typeof args.filter === "string") opts.filter = args.filter;
+        if (typeof args.sort === "string") opts.sort = args.sort;
+        if (typeof args.page === "number") opts.page = args.page;
+        if (typeof args.perPage === "number")
+          opts.perPage = Math.min(args.perPage, HARD_PER_PAGE_CAP);
+        if (typeof args.fields === "string") opts.fields = args.fields;
         if (typeof args.skipTotal === "boolean") opts.skipTotal = args.skipTotal;
         const r = await listRecords(slug, opts);
         return asUntrustedJsonText(`${slug} list`, r);
@@ -195,7 +215,11 @@ export async function registerCollectionTools(reg: ToolRegistry): Promise<void> 
       handler: async (args, ctx) => {
         const data = args.data as Record<string, unknown> | undefined;
         if (!data || typeof data !== "object") throw new Error("data (object) is required");
-        const r = await createRecord(slug, data, { id: ctx.adminId, type: "admin", email: ctx.adminEmail });
+        const r = await createRecord(slug, data, {
+          id: ctx.adminId,
+          type: "admin",
+          email: ctx.adminEmail,
+        });
         return asJsonText(r);
       },
     });
@@ -209,7 +233,7 @@ export async function registerCollectionTools(reg: ToolRegistry): Promise<void> 
         inputSchema: {
           type: "object",
           properties: {
-            id:   { type: "string", description: "Record id" },
+            id: { type: "string", description: "Record id" },
             data: dataObjectSchema(fields, "update"),
           },
           required: ["id", "data"],
@@ -220,7 +244,11 @@ export async function registerCollectionTools(reg: ToolRegistry): Promise<void> 
         if (typeof args.id !== "string") throw new Error("id (string) is required");
         const data = args.data as Record<string, unknown> | undefined;
         if (!data || typeof data !== "object") throw new Error("data (object) is required");
-        const r = await updateRecord(slug, args.id, data, { id: ctx.adminId, type: "admin", email: ctx.adminEmail });
+        const r = await updateRecord(slug, args.id, data, {
+          id: ctx.adminId,
+          type: "admin",
+          email: ctx.adminEmail,
+        });
         return asJsonText(r);
       },
     });
@@ -242,7 +270,11 @@ export async function registerCollectionTools(reg: ToolRegistry): Promise<void> 
       },
       handler: async (args, ctx) => {
         if (typeof args.id !== "string") throw new Error("id (string) is required");
-        await deleteRecord(slug, args.id, { id: ctx.adminId, type: "admin", email: ctx.adminEmail });
+        await deleteRecord(slug, args.id, {
+          id: ctx.adminId,
+          type: "admin",
+          email: ctx.adminEmail,
+        });
         return asJsonText({ deleted: true, collection: slug, id: args.id });
       },
     });

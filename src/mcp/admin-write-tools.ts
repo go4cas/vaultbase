@@ -35,26 +35,40 @@ import { invalidateRoutesCache, ROUTE_METHODS } from "../core/routes.ts";
 import { invalidateHookCache } from "../core/hooks.ts";
 import { getSetting, setSetting, getAllSettings } from "../api/settings.ts";
 import { createRecord } from "../core/records.ts";
-import { ToolRegistry, asJsonText } from "./tools.ts";
+import { type ToolRegistry, asJsonText } from "./tools.ts";
 
 export function registerAdminWriteTools(reg: ToolRegistry): void {
-
   // ── collections: create / alter / delete ───────────────────────────────
 
   reg.register({
     requiredScope: "mcp:admin",
     definition: {
       name: "vaultbase.create_collection",
-      description: "Create a new collection (base/auth/view). Pass fields as a JSON-shaped FieldDef[] array. Optional rules: list/view/create/update/delete. Returns the created collection row.",
+      description:
+        "Create a new collection (base/auth/view). Pass fields as a JSON-shaped FieldDef[] array. Optional rules: list/view/create/update/delete. Returns the created collection row.",
       inputSchema: {
         type: "object",
         properties: {
-          name:        { type: "string", pattern: "^[A-Za-z_][A-Za-z0-9_]{0,62}$", description: "SQL-safe identifier; will form `vb_<name>` table" },
-          type:        { type: "string", enum: ["base", "auth", "view"] },
-          fields:      { type: "array", items: { type: "object" }, description: "FieldDef[]; see /reference/field-types" },
-          view_query:  { type: "string", description: "Required + only allowed for type='view' — SELECT statement" },
-          list_rule:   { type: ["string", "null"], description: "null = public; \"\" = admin only; expression otherwise" },
-          view_rule:   { type: ["string", "null"] },
+          name: {
+            type: "string",
+            pattern: "^[A-Za-z_][A-Za-z0-9_]{0,62}$",
+            description: "SQL-safe identifier; will form `vb_<name>` table",
+          },
+          type: { type: "string", enum: ["base", "auth", "view"] },
+          fields: {
+            type: "array",
+            items: { type: "object" },
+            description: "FieldDef[]; see /reference/field-types",
+          },
+          view_query: {
+            type: "string",
+            description: "Required + only allowed for type='view' — SELECT statement",
+          },
+          list_rule: {
+            type: ["string", "null"],
+            description: 'null = public; "" = admin only; expression otherwise',
+          },
+          view_rule: { type: ["string", "null"] },
           create_rule: { type: ["string", "null"] },
           update_rule: { type: ["string", "null"] },
           delete_rule: { type: ["string", "null"] },
@@ -72,9 +86,9 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
         type: (args.type ?? "base") as "base" | "auth" | "view",
         fields: JSON.stringify(fields),
       };
-      if (typeof args.view_query  === "string") input.view_query  = args.view_query;
-      if ("list_rule" in args)   input.list_rule   = args.list_rule as string | null;
-      if ("view_rule" in args)   input.view_rule   = args.view_rule as string | null;
+      if (typeof args.view_query === "string") input.view_query = args.view_query;
+      if ("list_rule" in args) input.list_rule = args.list_rule as string | null;
+      if ("view_rule" in args) input.view_rule = args.view_rule as string | null;
       if ("create_rule" in args) input.create_rule = args.create_rule as string | null;
       if ("update_rule" in args) input.update_rule = args.update_rule as string | null;
       if ("delete_rule" in args) input.delete_rule = args.delete_rule as string | null;
@@ -88,15 +102,20 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
     requiredScope: "mcp:admin",
     definition: {
       name: "vaultbase.alter_collection",
-      description: "Update a collection: rename, alter rules, replace the field set. Field changes ALTER TABLE the underlying SQL table — risky on populated collections, validate the change in dev first.",
+      description:
+        "Update a collection: rename, alter rules, replace the field set. Field changes ALTER TABLE the underlying SQL table — risky on populated collections, validate the change in dev first.",
       inputSchema: {
         type: "object",
         properties: {
           id_or_name: { type: "string", description: "Collection id or name" },
-          name:       { type: "string", description: "New name (SQL-safe)" },
-          fields:     { type: "array", items: { type: "object" }, description: "Replacement FieldDef[]" },
-          list_rule:   { type: ["string", "null"] },
-          view_rule:   { type: ["string", "null"] },
+          name: { type: "string", description: "New name (SQL-safe)" },
+          fields: {
+            type: "array",
+            items: { type: "object" },
+            description: "Replacement FieldDef[]",
+          },
+          list_rule: { type: ["string", "null"] },
+          view_rule: { type: ["string", "null"] },
           create_rule: { type: ["string", "null"] },
           update_rule: { type: ["string", "null"] },
           delete_rule: { type: ["string", "null"] },
@@ -113,12 +132,13 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
       const patch: Parameters<typeof updateCollection>[1] = {};
       if (typeof args.name === "string") patch.name = args.name;
       if (Array.isArray(args.fields)) patch.fields = JSON.stringify(args.fields);
-      if ("list_rule" in args)   patch.list_rule   = args.list_rule as string | null;
-      if ("view_rule" in args)   patch.view_rule   = args.view_rule as string | null;
+      if ("list_rule" in args) patch.list_rule = args.list_rule as string | null;
+      if ("view_rule" in args) patch.view_rule = args.view_rule as string | null;
       if ("create_rule" in args) patch.create_rule = args.create_rule as string | null;
       if ("update_rule" in args) patch.update_rule = args.update_rule as string | null;
       if ("delete_rule" in args) patch.delete_rule = args.delete_rule as string | null;
-      if (typeof args.history_enabled === "boolean") patch.history_enabled = args.history_enabled ? 1 : 0;
+      if (typeof args.history_enabled === "boolean")
+        patch.history_enabled = args.history_enabled ? 1 : 0;
       const updated = await updateCollection(col.id, patch);
       return asJsonText(updated);
     },
@@ -128,7 +148,8 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
     requiredScope: "mcp:admin",
     definition: {
       name: "vaultbase.delete_collection",
-      description: "Drop a collection — drops the underlying vb_<name> table. Cascade rules on referencing relation fields fire as configured. Irreversible.",
+      description:
+        "Drop a collection — drops the underlying vb_<name> table. Cascade rules on referencing relation fields fire as configured. Irreversible.",
       inputSchema: {
         type: "object",
         properties: { id_or_name: { type: "string" } },
@@ -151,7 +172,8 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
     requiredScope: "mcp:read",
     definition: {
       name: "vaultbase.list_hooks",
-      description: "List every server-side JS hook (before/after × CRUD). Returns id, name, collection, event, enabled flag, and the source code.",
+      description:
+        "List every server-side JS hook (before/after × CRUD). Returns id, name, collection, event, enabled flag, and the source code.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
     },
     handler: async () => asJsonText(await getDb().select().from(hooks)),
@@ -161,15 +183,29 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
     requiredScope: "mcp:admin",
     definition: {
       name: "vaultbase.create_hook",
-      description: "Register a new JS hook. Code is admin-trusted and runs in-process via `new AsyncFunction('ctx', code)` — has access to the full helper standard library (db, fs, http, mails, flags, webhooks). Hook lifecycle events are camelCase (beforeCreate / afterCreate / …).",
+      description:
+        "Register a new JS hook. Code is admin-trusted and runs in-process via `new AsyncFunction('ctx', code)` — has access to the full helper standard library (db, fs, http, mails, flags, webhooks). Hook lifecycle events are camelCase (beforeCreate / afterCreate / …).",
       inputSchema: {
         type: "object",
         properties: {
-          name:            { type: "string" },
-          collection_name: { type: "string", description: "Collection this hook fires for; '' for global" },
-          event:           { type: "string", enum: ["beforeCreate", "afterCreate", "beforeUpdate", "afterUpdate", "beforeDelete", "afterDelete"] },
-          code:            { type: "string", description: "Hook body — receives a single `ctx` object" },
-          enabled:         { type: "boolean" },
+          name: { type: "string" },
+          collection_name: {
+            type: "string",
+            description: "Collection this hook fires for; '' for global",
+          },
+          event: {
+            type: "string",
+            enum: [
+              "beforeCreate",
+              "afterCreate",
+              "beforeUpdate",
+              "afterUpdate",
+              "beforeDelete",
+              "afterDelete",
+            ],
+          },
+          code: { type: "string", description: "Hook body — receives a single `ctx` object" },
+          enabled: { type: "boolean" },
         },
         required: ["name", "event", "code"],
         additionalProperties: false,
@@ -181,20 +217,29 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
       // Normalise snake_case → camelCase so older LLM hint memory still works.
       const eventRaw = String(args.event ?? "");
       const event = eventRaw.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
-      const allowed = ["beforeCreate", "afterCreate", "beforeUpdate", "afterUpdate", "beforeDelete", "afterDelete"];
+      const allowed = [
+        "beforeCreate",
+        "afterCreate",
+        "beforeUpdate",
+        "afterUpdate",
+        "beforeDelete",
+        "afterDelete",
+      ];
       if (!allowed.includes(event)) {
         throw new Error(`Invalid event '${eventRaw}'. Allowed: ${allowed.join(", ")}`);
       }
-      await getDb().insert(hooks).values({
-        id,
-        name: String(args.name ?? ""),
-        collection_name: String(args.collection_name ?? ""),
-        event,
-        code: String(args.code ?? ""),
-        enabled: args.enabled === false ? 0 : 1,
-        created_at: now,
-        updated_at: now,
-      });
+      await getDb()
+        .insert(hooks)
+        .values({
+          id,
+          name: String(args.name ?? ""),
+          collection_name: String(args.collection_name ?? ""),
+          event,
+          code: String(args.code ?? ""),
+          enabled: args.enabled === false ? 0 : 1,
+          created_at: now,
+          updated_at: now,
+        });
       invalidateHookCache();
       return asJsonText({ created: true, id, event });
     },
@@ -208,12 +253,12 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
       inputSchema: {
         type: "object",
         properties: {
-          id:              { type: "string" },
-          name:            { type: "string" },
+          id: { type: "string" },
+          name: { type: "string" },
           collection_name: { type: "string" },
-          event:           { type: "string" },
-          code:            { type: "string" },
-          enabled:         { type: "boolean" },
+          event: { type: "string" },
+          code: { type: "string" },
+          enabled: { type: "boolean" },
         },
         required: ["id"],
         additionalProperties: false,
@@ -228,7 +273,10 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
         patch.event = args.event.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
       }
       if (typeof args.enabled === "boolean") patch.enabled = args.enabled ? 1 : 0;
-      await getDb().update(hooks).set(patch).where(eq(hooks.id, String(args.id)));
+      await getDb()
+        .update(hooks)
+        .set(patch)
+        .where(eq(hooks.id, String(args.id)));
       invalidateHookCache();
       return asJsonText({ updated: true, id: args.id });
     },
@@ -247,7 +295,9 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
       },
     },
     handler: async (args) => {
-      await getDb().delete(hooks).where(eq(hooks.id, String(args.id)));
+      await getDb()
+        .delete(hooks)
+        .where(eq(hooks.id, String(args.id)));
       invalidateHookCache();
       return asJsonText({ deleted: true, id: args.id });
     },
@@ -259,7 +309,8 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
     requiredScope: "mcp:read",
     definition: {
       name: "vaultbase.list_routes",
-      description: "List custom HTTP routes admins have authored (mounted under /api/v1/custom/<path>).",
+      description:
+        "List custom HTTP routes admins have authored (mounted under /api/v1/custom/<path>).",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
     },
     handler: async () => asJsonText(await getDb().select().from(routes)),
@@ -269,14 +320,15 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
     requiredScope: "mcp:admin",
     definition: {
       name: "vaultbase.create_route",
-      description: "Author a new custom HTTP route. Mounted at /api/v1/custom/<path>. Code receives ctx (req/params/query/body/auth/helpers/set).",
+      description:
+        "Author a new custom HTTP route. Mounted at /api/v1/custom/<path>. Code receives ctx (req/params/query/body/auth/helpers/set).",
       inputSchema: {
         type: "object",
         properties: {
-          name:    { type: "string" },
-          method:  { type: "string", enum: ["GET", "POST", "PATCH", "PUT", "DELETE"] },
-          path:    { type: "string", description: "Inner path, e.g. /hello or /users/:id" },
-          code:    { type: "string", description: "Body — receives `ctx`" },
+          name: { type: "string" },
+          method: { type: "string", enum: ["GET", "POST", "PATCH", "PUT", "DELETE"] },
+          path: { type: "string", description: "Inner path, e.g. /hello or /users/:id" },
+          code: { type: "string", description: "Body — receives `ctx`" },
           enabled: { type: "boolean" },
         },
         required: ["method", "path", "code"],
@@ -289,22 +341,24 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
       // Mirror REST POST /admin/routes: uppercase method, validate, then
       // invalidate the runtime cache so the route is live immediately.
       const method = String(args.method ?? "GET").toUpperCase();
-      if (!ROUTE_METHODS.includes(method as typeof ROUTE_METHODS[number])) {
+      if (!ROUTE_METHODS.includes(method as (typeof ROUTE_METHODS)[number])) {
         throw new Error(`Invalid method: ${method}. Allowed: ${ROUTE_METHODS.join(", ")}`);
       }
       const rawPath = String(args.path ?? "");
-      const path = rawPath.startsWith("/") ? rawPath : "/" + rawPath;
+      const path = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
       if (path.includes("..")) throw new Error("path cannot contain '..'");
-      await getDb().insert(routes).values({
-        id,
-        name:    String(args.name ?? ""),
-        method,
-        path,
-        code:    String(args.code ?? ""),
-        enabled: args.enabled === false ? 0 : 1,
-        created_at: now,
-        updated_at: now,
-      });
+      await getDb()
+        .insert(routes)
+        .values({
+          id,
+          name: String(args.name ?? ""),
+          method,
+          path,
+          code: String(args.code ?? ""),
+          enabled: args.enabled === false ? 0 : 1,
+          created_at: now,
+          updated_at: now,
+        });
       invalidateRoutesCache();
       return asJsonText({ created: true, id, method, path });
     },
@@ -323,7 +377,9 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
       },
     },
     handler: async (args) => {
-      await getDb().delete(routes).where(eq(routes.id, String(args.id)));
+      await getDb()
+        .delete(routes)
+        .where(eq(routes.id, String(args.id)));
       invalidateRoutesCache();
       return asJsonText({ deleted: true, id: args.id });
     },
@@ -345,14 +401,15 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
     requiredScope: "mcp:admin",
     definition: {
       name: "vaultbase.create_job",
-      description: "Author a new cron job. cron is a 5-field UTC expression. mode 'inline' runs the body in the cron tick; 'worker:<queue>' enqueues onto a queue worker.",
+      description:
+        "Author a new cron job. cron is a 5-field UTC expression. mode 'inline' runs the body in the cron tick; 'worker:<queue>' enqueues onto a queue worker.",
       inputSchema: {
         type: "object",
         properties: {
-          name:    { type: "string" },
-          cron:    { type: "string", description: "5-field UTC cron expression" },
-          code:    { type: "string", description: "Body — receives `ctx`" },
-          mode:    { type: "string", enum: ["inline", "worker"], default: "inline" },
+          name: { type: "string" },
+          cron: { type: "string", description: "5-field UTC cron expression" },
+          code: { type: "string", description: "Body — receives `ctx`" },
+          mode: { type: "string", enum: ["inline", "worker"], default: "inline" },
           enabled: { type: "boolean" },
         },
         required: ["name", "cron", "code"],
@@ -365,16 +422,18 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
       if (cronErr) throw new Error(`invalid cron: ${cronErr}`);
       const id = crypto.randomUUID();
       const now = Math.floor(Date.now() / 1000);
-      await getDb().insert(jobs).values({
-        id,
-        name:    String(args.name ?? ""),
-        cron:    cronExpr,
-        code:    String(args.code ?? ""),
-        mode:    args.mode === "worker" ? "worker:default" : "inline",
-        enabled: args.enabled === false ? 0 : 1,
-        created_at: now,
-        updated_at: now,
-      });
+      await getDb()
+        .insert(jobs)
+        .values({
+          id,
+          name: String(args.name ?? ""),
+          cron: cronExpr,
+          code: String(args.code ?? ""),
+          mode: args.mode === "worker" ? "worker:default" : "inline",
+          enabled: args.enabled === false ? 0 : 1,
+          created_at: now,
+          updated_at: now,
+        });
       invalidateJobsCache();
       return asJsonText({ created: true, id });
     },
@@ -384,7 +443,8 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
     requiredScope: "mcp:admin",
     definition: {
       name: "vaultbase.run_job_now",
-      description: "Run a cron job immediately, regardless of its schedule. Useful for debugging / one-shot scripted ops.",
+      description:
+        "Run a cron job immediately, regardless of its schedule. Useful for debugging / one-shot scripted ops.",
       inputSchema: {
         type: "object",
         properties: { id: { type: "string" } },
@@ -411,7 +471,9 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
       },
     },
     handler: async (args) => {
-      await getDb().delete(jobs).where(eq(jobs.id, String(args.id)));
+      await getDb()
+        .delete(jobs)
+        .where(eq(jobs.id, String(args.id)));
       invalidateJobsCache();
       return asJsonText({ deleted: true, id: args.id });
     },
@@ -423,19 +485,27 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
     requiredScope: "mcp:read",
     definition: {
       name: "vaultbase.evaluate_flag",
-      description: "Evaluate a feature flag against a context object. Returns the resolved value (bool/string/number/json) plus the rule that won.",
+      description:
+        "Evaluate a feature flag against a context object. Returns the resolved value (bool/string/number/json) plus the rule that won.",
       inputSchema: {
         type: "object",
         properties: {
-          key:     { type: "string" },
-          context: { type: "object", additionalProperties: true, description: "Targeting context, e.g. { userId, email, plan, country }" },
+          key: { type: "string" },
+          context: {
+            type: "object",
+            additionalProperties: true,
+            description: "Targeting context, e.g. { userId, email, plan, country }",
+          },
         },
         required: ["key"],
         additionalProperties: false,
       },
     },
     handler: async (args) => {
-      const r = await evaluateFlag(String(args.key), (args.context ?? {}) as Record<string, unknown>);
+      const r = await evaluateFlag(
+        String(args.key),
+        (args.context ?? {}) as Record<string, unknown>,
+      );
       return asJsonText(r);
     },
   });
@@ -444,17 +514,18 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
     requiredScope: "mcp:admin",
     definition: {
       name: "vaultbase.update_flag",
-      description: "Upsert a feature flag — type, default value, rules, variations. Existing flag at this key is replaced wholesale.",
+      description:
+        "Upsert a feature flag — type, default value, rules, variations. Existing flag at this key is replaced wholesale.",
       inputSchema: {
         type: "object",
         properties: {
-          key:           { type: "string" },
-          description:   { type: "string" },
-          type:          { type: "string", enum: ["bool", "string", "number", "json"] },
-          enabled:       { type: "boolean", description: "Master kill-switch" },
+          key: { type: "string" },
+          description: { type: "string" },
+          type: { type: "string", enum: ["bool", "string", "number", "json"] },
+          enabled: { type: "boolean", description: "Master kill-switch" },
           default_value: { description: "JSON-encoded scalar matching `type`" },
-          variations:    { type: "array",  description: "Multivariate variation list" },
-          rules:         { type: "array",  description: "Ordered evaluation rules" },
+          variations: { type: "array", description: "Multivariate variation list" },
+          rules: { type: "array", description: "Ordered evaluation rules" },
         },
         required: ["key"],
         additionalProperties: false,
@@ -462,11 +533,14 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
     },
     handler: async (args) => {
       const input: UpsertInput = { key: String(args.key) } as UpsertInput;
-      if (typeof args.description === "string") (input as { description: string }).description = args.description;
+      if (typeof args.description === "string")
+        (input as { description: string }).description = args.description;
       if (typeof args.type === "string") (input as { type: string }).type = args.type;
       if (typeof args.enabled === "boolean") (input as { enabled: boolean }).enabled = args.enabled;
-      if ("default_value" in args) (input as { default_value: unknown }).default_value = args.default_value;
-      if (Array.isArray(args.variations)) (input as { variations: unknown[] }).variations = args.variations;
+      if ("default_value" in args)
+        (input as { default_value: unknown }).default_value = args.default_value;
+      if (Array.isArray(args.variations))
+        (input as { variations: unknown[] }).variations = args.variations;
       if (Array.isArray(args.rules)) (input as { rules: unknown[] }).rules = args.rules;
       const r = await upsertFlag(input);
       return asJsonText(r);
@@ -497,7 +571,8 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
     requiredScope: "mcp:read",
     definition: {
       name: "vaultbase.list_webhooks",
-      description: "List configured webhooks (URL, events, retry config, secret). Secret values are NOT redacted — treat the response as sensitive.",
+      description:
+        "List configured webhooks (URL, events, retry config, secret). Secret values are NOT redacted — treat the response as sensitive.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
     },
     handler: async () => asJsonText(await getDb().select().from(webhooks)),
@@ -507,11 +582,12 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
     requiredScope: "mcp:write",
     definition: {
       name: "vaultbase.dispatch_webhook_event",
-      description: "Fire a custom webhook event. Subscribers matching the event pattern receive an HMAC-signed POST. Use to test integrations without creating a real record.",
+      description:
+        "Fire a custom webhook event. Subscribers matching the event pattern receive an HMAC-signed POST. Use to test integrations without creating a real record.",
       inputSchema: {
         type: "object",
         properties: {
-          event:   { type: "string", description: "Event label, e.g. 'billing.invoice_paid'" },
+          event: { type: "string", description: "Event label, e.g. 'billing.invoice_paid'" },
           payload: { type: "object", additionalProperties: true },
         },
         required: ["event"],
@@ -537,7 +613,8 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
     requiredScope: "mcp:admin",
     definition: {
       name: "vaultbase.list_settings",
-      description: "List every setting key/value. Encrypted-at-rest keys are decrypted in this response (admin-equivalent visibility) — requires mcp:admin scope.",
+      description:
+        "List every setting key/value. Encrypted-at-rest keys are decrypted in this response (admin-equivalent visibility) — requires mcp:admin scope.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
     },
     handler: async () => asJsonText(getAllSettings()),
@@ -547,7 +624,8 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
     requiredScope: "mcp:admin",
     definition: {
       name: "vaultbase.get_setting",
-      description: "Read a single setting by key. Returns the (decrypted, when applicable) value — requires mcp:admin scope.",
+      description:
+        "Read a single setting by key. Returns the (decrypted, when applicable) value — requires mcp:admin scope.",
       inputSchema: {
         type: "object",
         properties: { key: { type: "string" } },
@@ -565,11 +643,12 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
     requiredScope: "mcp:admin",
     definition: {
       name: "vaultbase.update_setting",
-      description: "Write a setting key. Encryption-at-rest applies automatically for known sensitive keys (smtp.password, oauth2.<provider>.client_secret, etc).",
+      description:
+        "Write a setting key. Encryption-at-rest applies automatically for known sensitive keys (smtp.password, oauth2.<provider>.client_secret, etc).",
       inputSchema: {
         type: "object",
         properties: {
-          key:   { type: "string" },
+          key: { type: "string" },
           value: { type: "string" },
         },
         required: ["key", "value"],
@@ -588,13 +667,17 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
     requiredScope: "mcp:sql",
     definition: {
       name: "vaultbase.run_sql",
-      description: "Run a raw SQL query against the live SQLite DB. Read-only by default — write/DDL queries require `allow_write: true` and tear through every safety net (RBAC, validation, hooks, audit). Avoid unless absolutely necessary; use the typed tools instead. Bound result set: 100 rows.\n\nSchema convention: every collection (base + auth) has a `vb_<name>` table. Auth collections additionally have inline columns for `email`, `password_hash`, `email_verified`, `totp_secret`, `totp_enabled`, `is_anonymous`, `password_reset_at`. Inserting auth users via raw SQL bypasses password hashing + email-verification flows — prefer `POST /api/v1/auth/<col>/register` (or the existing typed CRUD path) for login-capable users.",
+      description:
+        "Run a raw SQL query against the live SQLite DB. Read-only by default — write/DDL queries require `allow_write: true` and tear through every safety net (RBAC, validation, hooks, audit). Avoid unless absolutely necessary; use the typed tools instead. Bound result set: 100 rows.\n\nSchema convention: every collection (base + auth) has a `vb_<name>` table. Auth collections additionally have inline columns for `email`, `password_hash`, `email_verified`, `totp_secret`, `totp_enabled`, `is_anonymous`, `password_reset_at`. Inserting auth users via raw SQL bypasses password hashing + email-verification flows — prefer `POST /api/v1/auth/<col>/register` (or the existing typed CRUD path) for login-capable users.",
       inputSchema: {
         type: "object",
         properties: {
-          query:  { type: "string", description: "SQL — typically a SELECT" },
+          query: { type: "string", description: "SQL — typically a SELECT" },
           params: { type: "array", description: "Bound parameters (positional)" },
-          allow_write: { type: "boolean", description: "Permit non-SELECT statements. Default false." },
+          allow_write: {
+            type: "boolean",
+            description: "Permit non-SELECT statements. Default false.",
+          },
         },
         required: ["query"],
         additionalProperties: false,
@@ -611,7 +694,9 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
         // the literal "DELETE" inside a WHERE doesn't false-positive, then
         // scan for any mutating keyword. Mirrors core/sql-runner.ts.
         if (!looksLikeRead) {
-          throw new Error("non-SELECT requires allow_write: true (write paths bypass RBAC + validation; consider the typed tool instead)");
+          throw new Error(
+            "non-SELECT requires allow_write: true (write paths bypass RBAC + validation; consider the typed tool instead)",
+          );
         }
         const stripped = q
           .replace(/--[^\n]*/g, " ")
@@ -619,14 +704,31 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
           .replace(/'(?:[^']|'')*'/g, "''")
           .replace(/"(?:[^"]|"")*"/g, '""');
         const upper = stripped.toUpperCase();
-        const banned = ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "REPLACE", "TRUNCATE", "ATTACH", "DETACH", "REINDEX", "VACUUM"];
+        const banned = [
+          "INSERT",
+          "UPDATE",
+          "DELETE",
+          "DROP",
+          "ALTER",
+          "CREATE",
+          "REPLACE",
+          "TRUNCATE",
+          "ATTACH",
+          "DETACH",
+          "REINDEX",
+          "VACUUM",
+        ];
         for (const kw of banned) {
           if (new RegExp(`\\b${kw}\\b`).test(upper)) {
-            throw new Error(`'${kw}' is blocked without allow_write: true (data-modifying ${kw} can hide inside a WITH-CTE).`);
+            throw new Error(
+              `'${kw}' is blocked without allow_write: true (data-modifying ${kw} can hide inside a WITH-CTE).`,
+            );
           }
         }
       }
-      const params = (Array.isArray(args.params) ? args.params : []) as Array<string | number | bigint | boolean | null | Uint8Array>;
+      const params = (Array.isArray(args.params) ? args.params : []) as Array<
+        string | number | bigint | boolean | null | Uint8Array
+      >;
       const client = getRawClient();
       if (looksLikeRead) {
         const stmt = client.query(q);
@@ -650,13 +752,18 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
     requiredScope: "mcp:write",
     definition: {
       name: "vaultbase.seed",
-      description: "Generate fake records for a collection. Per-field-type defaults: text → Lorem-ipsum, number → bounded random, bool → coin flip, email → fake address, date/autodate → recent random, geoPoint → random world coords, select → random from values, relation → random existing target. Hard cap: 1000 records per call.",
+      description:
+        "Generate fake records for a collection. Per-field-type defaults: text → Lorem-ipsum, number → bounded random, bool → coin flip, email → fake address, date/autodate → recent random, geoPoint → random world coords, select → random from values, relation → random existing target. Hard cap: 1000 records per call.",
       inputSchema: {
         type: "object",
         properties: {
           collection: { type: "string" },
-          count:      { type: "integer", minimum: 1, maximum: 1000 },
-          overrides:  { type: "object", additionalProperties: true, description: "Per-field literal values applied to every seeded record" },
+          count: { type: "integer", minimum: 1, maximum: 1000 },
+          overrides: {
+            type: "object",
+            additionalProperties: true,
+            description: "Per-field literal values applied to every seeded record",
+          },
         },
         required: ["collection", "count"],
         additionalProperties: false,
@@ -675,7 +782,10 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
         const data: Record<string, unknown> = {};
         for (const f of fields) {
           if (f.system || f.implicit || f.type === "autodate") continue;
-          if (f.name in overrides) { data[f.name] = overrides[f.name]; continue; }
+          if (f.name in overrides) {
+            data[f.name] = overrides[f.name];
+            continue;
+          }
           data[f.name] = generateFakeValue(f, i);
         }
         try {
@@ -697,11 +807,27 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
 // ── Fake-value generator ───────────────────────────────────────────────
 
 const LOREM = [
-  "lorem", "ipsum", "dolor", "sit", "amet", "consectetur", "adipiscing", "elit",
-  "sed", "do", "eiusmod", "tempor", "incididunt", "labore", "magna", "aliqua",
+  "lorem",
+  "ipsum",
+  "dolor",
+  "sit",
+  "amet",
+  "consectetur",
+  "adipiscing",
+  "elit",
+  "sed",
+  "do",
+  "eiusmod",
+  "tempor",
+  "incididunt",
+  "labore",
+  "magna",
+  "aliqua",
 ];
 
-function pick<T>(arr: readonly T[]): T { return arr[Math.floor(Math.random() * arr.length)] as T; }
+function pick<T>(arr: readonly T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)] as T;
+}
 
 function generateFakeValue(f: FieldDef, idx: number): unknown {
   switch (f.type) {

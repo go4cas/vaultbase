@@ -19,20 +19,26 @@ async function requireAdmin(request: Request, jwtSecret: string): Promise<boolea
 
 export function makeSecurityPlugin(jwtSecret: string, encryptionKey: string | undefined) {
   return new Elysia({ name: "security" })
-    .get("/admin/security/sessions", async ({ request, query, set }) => {
-      if (!(await requireAdmin(request, jwtSecret))) {
-        set.status = 401; return { error: "Unauthorized", code: 401 };
-      }
-      const activeOnly = query.activeOnly !== "0";
-      const sessions = await listAdminSessions({ activeOnly });
-      return { data: sessions };
-    }, {
-      query: t.Object({ activeOnly: t.Optional(t.String()) }),
-    })
+    .get(
+      "/admin/security/sessions",
+      async ({ request, query, set }) => {
+        if (!(await requireAdmin(request, jwtSecret))) {
+          set.status = 401;
+          return { error: "Unauthorized", code: 401 };
+        }
+        const activeOnly = query.activeOnly !== "0";
+        const sessions = await listAdminSessions({ activeOnly });
+        return { data: sessions };
+      },
+      {
+        query: t.Object({ activeOnly: t.Optional(t.String()) }),
+      },
+    )
 
     .delete("/admin/security/sessions/:jti", async ({ request, params, set }) => {
       if (!(await requireAdmin(request, jwtSecret))) {
-        set.status = 401; return { error: "Unauthorized", code: 401 };
+        set.status = 401;
+        return { error: "Unauthorized", code: 401 };
       }
       await revokeAdminSession(params.jti);
       return { data: { revoked: params.jti } };
@@ -40,7 +46,8 @@ export function makeSecurityPlugin(jwtSecret: string, encryptionKey: string | un
 
     .post("/admin/security/force-logout-all", async ({ request, set }) => {
       if (!(await requireAdmin(request, jwtSecret))) {
-        set.status = 401; return { error: "Unauthorized", code: 401 };
+        set.status = 401;
+        return { error: "Unauthorized", code: 401 };
       }
       const result = await forceLogoutAllAdmins();
       return { data: result };
@@ -48,7 +55,8 @@ export function makeSecurityPlugin(jwtSecret: string, encryptionKey: string | un
 
     .get("/admin/security/fingerprints", async ({ request, set }) => {
       if (!(await requireAdmin(request, jwtSecret))) {
-        set.status = 401; return { error: "Unauthorized", code: 401 };
+        set.status = 401;
+        return { error: "Unauthorized", code: 401 };
       }
       const [jwtFp, aesFp] = await Promise.all([
         shortFingerprint(jwtSecret),
@@ -65,12 +73,13 @@ export function makeSecurityPlugin(jwtSecret: string, encryptionKey: string | un
 
     .get("/admin/security/headers-preview", async ({ request, set }) => {
       if (!(await requireAdmin(request, jwtSecret))) {
-        set.status = 401; return { error: "Unauthorized", code: 401 };
+        set.status = 401;
+        return { error: "Unauthorized", code: 401 };
       }
       return {
         data: {
           api: securityHeaders({ isApi: true }),
-          ui:  securityHeaders({ isApi: false }),
+          ui: securityHeaders({ isApi: false }),
         },
       };
     });

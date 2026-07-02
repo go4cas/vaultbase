@@ -12,11 +12,11 @@
  *     switched over yet — that lands in phase 2).
  */
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { initDb, closeDb, getDb, getRawClient } from "../db/client.ts";
+import { initDb, closeDb, getRawClient } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
 import { setLogsDir } from "../core/file-logger.ts";
 import { createCollection } from "../core/collections.ts";
@@ -35,18 +35,24 @@ beforeEach(async () => {
 
 afterEach(() => {
   closeDb();
-  try { rmSync(tmpDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }); }
-  catch { /* swallow */ }
+  try {
+    rmSync(tmpDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  } catch {
+    /* swallow */
+  }
 });
 
 describe("v0.11 phase 1 — auth columns added to vb_<col>", () => {
   it("createCollection(type='auth') puts auth columns on vb_<name>", async () => {
     await createCollection({
-      name: "users", type: "auth",
+      name: "users",
+      type: "auth",
       fields: JSON.stringify([{ name: "display_name", type: "text" }]),
       view_rule: null,
     });
-    const cols = getRawClient().prepare(`PRAGMA table_info("vb_users")`).all() as Array<{ name: string }>;
+    const cols = getRawClient().prepare(`PRAGMA table_info("vb_users")`).all() as Array<{
+      name: string;
+    }>;
     const names = cols.map((c) => c.name);
     // Custom field
     expect(names).toContain("display_name");
@@ -62,11 +68,14 @@ describe("v0.11 phase 1 — auth columns added to vb_<col>", () => {
 
   it("base collections do NOT get auth columns", async () => {
     await createCollection({
-      name: "posts", type: "base",
+      name: "posts",
+      type: "base",
       fields: JSON.stringify([{ name: "title", type: "text" }]),
       view_rule: null,
     });
-    const cols = getRawClient().prepare(`PRAGMA table_info("vb_posts")`).all() as Array<{ name: string }>;
+    const cols = getRawClient().prepare(`PRAGMA table_info("vb_posts")`).all() as Array<{
+      name: string;
+    }>;
     const names = cols.map((c) => c.name);
     expect(names).toContain("title");
     expect(names).not.toContain("password_hash");
@@ -78,9 +87,9 @@ describe("v0.11 migration — vaultbase_users → vb_<col> + drop legacy", () =>
   it("on a fresh install drops the empty vaultbase_users at end of migration", async () => {
     // runMigrations already ran in beforeEach. With no v0.10 rows present,
     // FinalizeAuthMigration drops the legacy table.
-    const exists = getRawClient().prepare(
-      `SELECT name FROM sqlite_master WHERE type='table' AND name='vaultbase_users'`,
-    ).get();
+    const exists = getRawClient()
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='vaultbase_users'`)
+      .get();
     expect(exists).toBeFalsy();
   });
 
@@ -99,7 +108,8 @@ describe("v0.11 migration — vaultbase_users → vb_<col> + drop legacy", () =>
       )
     `);
     const col = await createCollection({
-      name: "members", type: "auth",
+      name: "members",
+      type: "auth",
       fields: JSON.stringify([
         { name: "display_name", type: "text" },
         { name: "handle", type: "text" },
@@ -111,22 +121,33 @@ describe("v0.11 migration — vaultbase_users → vb_<col> + drop legacy", () =>
       `INSERT INTO vaultbase_users (id, collection_id, email, password_hash, email_verified,
         totp_enabled, is_anonymous, data, created_at, updated_at)
        VALUES (?, ?, ?, ?, 1, 0, 0, ?, ?, ?)`,
-    ).run("u1", col.id, "alice@x.com", "h$alice",
-      JSON.stringify({ display_name: "Alice", handle: "alice" }), now, now);
+    ).run(
+      "u1",
+      col.id,
+      "alice@x.com",
+      "h$alice",
+      JSON.stringify({ display_name: "Alice", handle: "alice" }),
+      now,
+      now,
+    );
 
     await runMigrations(); // copies + drops
 
     const rows = c.prepare(`SELECT * FROM vb_members`).all() as Array<{
-      id: string; email: string; password_hash: string; email_verified: number;
-      display_name: string; handle: string;
+      id: string;
+      email: string;
+      password_hash: string;
+      email_verified: number;
+      display_name: string;
+      handle: string;
     }>;
     expect(rows).toHaveLength(1);
     expect(rows[0]!.email).toBe("alice@x.com");
     expect(rows[0]!.display_name).toBe("Alice");
 
-    const legacy = c.prepare(
-      `SELECT name FROM sqlite_master WHERE type='table' AND name='vaultbase_users'`,
-    ).get();
+    const legacy = c
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='vaultbase_users'`)
+      .get();
     expect(legacy).toBeFalsy();
   });
 });
@@ -135,15 +156,18 @@ describe("v0.11 phase 3 — records.ts handles auth collections", () => {
   it("listRecords on auth collection returns rows from vb_<col>, password_hash stripped", async () => {
     const { listRecords } = await import("../core/records.ts");
     await createCollection({
-      name: "members", type: "auth",
+      name: "members",
+      type: "auth",
       fields: JSON.stringify([{ name: "name", type: "text" }]),
       view_rule: null,
     });
     const now = Math.floor(Date.now() / 1000);
-    getRawClient().prepare(
-      `INSERT INTO vb_members (id, email, password_hash, email_verified, name, created_at, updated_at)
+    getRawClient()
+      .prepare(
+        `INSERT INTO vb_members (id, email, password_hash, email_verified, name, created_at, updated_at)
        VALUES ('u1', 'alice@x.com', 'h$secret', 1, 'Alice', ?, ?)`,
-    ).run(now, now);
+      )
+      .run(now, now);
 
     const result = await listRecords("members", {});
     expect(result.data).toHaveLength(1);
@@ -159,8 +183,10 @@ describe("v0.11 phase 3 — records.ts handles auth collections", () => {
   it("createRecord refuses on auth collections — points to /auth/<col>/register", async () => {
     const { createRecord } = await import("../core/records.ts");
     await createCollection({
-      name: "members", type: "auth",
-      fields: JSON.stringify([]), view_rule: null,
+      name: "members",
+      type: "auth",
+      fields: JSON.stringify([]),
+      view_rule: null,
     });
     await expect(createRecord("members", { email: "x@x.com" })).rejects.toThrow(/auth collection/);
   });
@@ -168,15 +194,18 @@ describe("v0.11 phase 3 — records.ts handles auth collections", () => {
   it("updateRecord on auth strips auth-system columns from the patch", async () => {
     const { updateRecord } = await import("../core/records.ts");
     await createCollection({
-      name: "members", type: "auth",
+      name: "members",
+      type: "auth",
       fields: JSON.stringify([{ name: "name", type: "text" }]),
       view_rule: null,
     });
     const now = Math.floor(Date.now() / 1000);
-    getRawClient().prepare(
-      `INSERT INTO vb_members (id, email, password_hash, email_verified, name, created_at, updated_at)
+    getRawClient()
+      .prepare(
+        `INSERT INTO vb_members (id, email, password_hash, email_verified, name, created_at, updated_at)
        VALUES ('u1', 'a@x.com', 'h$ORIG', 1, 'A', ?, ?)`,
-    ).run(now, now);
+      )
+      .run(now, now);
 
     // Try to forge a password_hash via update — must be ignored.
     await updateRecord("members", "u1", {
@@ -184,12 +213,16 @@ describe("v0.11 phase 3 — records.ts handles auth collections", () => {
       password_hash: "h$FORGED",
       email_verified: 0,
     });
-    const after = getRawClient().prepare(`SELECT name, password_hash, email_verified FROM vb_members WHERE id = 'u1'`).get() as {
-      name: string; password_hash: string; email_verified: number;
+    const after = getRawClient()
+      .prepare(`SELECT name, password_hash, email_verified FROM vb_members WHERE id = 'u1'`)
+      .get() as {
+      name: string;
+      password_hash: string;
+      email_verified: number;
     };
-    expect(after.name).toBe("Alice");                // legitimate update
-    expect(after.password_hash).toBe("h$ORIG");      // forge rejected
-    expect(after.email_verified).toBe(1);            // forge rejected
+    expect(after.name).toBe("Alice"); // legitimate update
+    expect(after.password_hash).toBe("h$ORIG"); // forge rejected
+    expect(after.email_verified).toBe(1); // forge rejected
   });
 });
 
@@ -197,22 +230,33 @@ describe("v0.11 — /register writes to vb_<col>", () => {
   it("/register on auth collection populates vb_<col> with auth + custom columns", async () => {
     const { makeAuthPlugin } = await import("../api/auth.ts");
     await createCollection({
-      name: "members", type: "auth",
+      name: "members",
+      type: "auth",
       fields: JSON.stringify([{ name: "name", type: "text" }]),
       view_rule: null,
     });
     const SECRET = "test-secret-v011";
     const app = makeAuthPlugin(SECRET);
-    const res = await app.handle(new Request("http://localhost/auth/members/register", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: "alice@x.com", password: "hunter2!!hunter2!!", name: "Alice" }),
-    }));
+    const res = await app.handle(
+      new Request("http://localhost/auth/members/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: "alice@x.com",
+          password: "hunter2!!hunter2!!",
+          name: "Alice",
+        }),
+      }),
+    );
     expect(res.status).toBe(200);
 
-    const newRow = getRawClient().prepare(
-      `SELECT id, email, password_hash, email_verified, name FROM vb_members WHERE email = ?`,
-    ).get("alice@x.com") as { id: string; email: string; password_hash: string; name: string } | undefined;
+    const newRow = getRawClient()
+      .prepare(
+        `SELECT id, email, password_hash, email_verified, name FROM vb_members WHERE email = ?`,
+      )
+      .get("alice@x.com") as
+      | { id: string; email: string; password_hash: string; name: string }
+      | undefined;
     expect(newRow?.email).toBe("alice@x.com");
     expect(newRow?.password_hash).toBeTruthy();
     expect(newRow?.name).toBe("Alice");
@@ -230,8 +274,10 @@ describe("vaultbase doctor — pre-migration checks", () => {
 
   it("flags duplicate emails inside an auth collection as a blocker", async () => {
     const col = await createCollection({
-      name: "members", type: "auth",
-      fields: JSON.stringify([]), view_rule: null,
+      name: "members",
+      type: "auth",
+      fields: JSON.stringify([]),
+      view_rule: null,
     });
     const now = Math.floor(Date.now() / 1000);
     const c = getRawClient();
@@ -268,21 +314,26 @@ describe("vaultbase doctor — pre-migration checks", () => {
     // directly — simulating a pre-validation install where a custom field
     // happens to share an auth-column name (older bug or hand-edited DB).
     const now = Math.floor(Date.now() / 1000);
-    getRawClient().prepare(
-      `INSERT INTO vaultbase_collections (id, name, type, fields, created_at, updated_at)
+    getRawClient()
+      .prepare(
+        `INSERT INTO vaultbase_collections (id, name, type, fields, created_at, updated_at)
        VALUES ('c1', 'members', 'auth', ?, ?, ?)`,
-    ).run(JSON.stringify([{ name: "password_hash", type: "text" }]), now, now);
+      )
+      .run(JSON.stringify([{ name: "password_hash", type: "text" }]), now, now);
 
     closeDb();
     const r = runDoctor(dbPath);
     initDb(dbPath);
     expect(r.ok).toBe(false);
-    expect(r.blockers.some((b) => b.message.includes("password_hash") && b.message.includes("collides"))).toBe(true);
+    expect(
+      r.blockers.some((b) => b.message.includes("password_hash") && b.message.includes("collides")),
+    ).toBe(true);
   });
 
   it("warns on JSON `data` keys that don't map to any custom field", async () => {
     const col = await createCollection({
-      name: "members", type: "auth",
+      name: "members",
+      type: "auth",
       fields: JSON.stringify([{ name: "display_name", type: "text" }]),
       view_rule: null,
     });

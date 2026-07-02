@@ -16,7 +16,8 @@ export function makeHooksPlugin(jwtSecret: string) {
   return new Elysia({ name: "hooks" })
     .get("/admin/hooks", async ({ request, set }) => {
       if (!(await isAdmin(request, jwtSecret))) {
-        set.status = 401; return { error: "Unauthorized", code: 401 };
+        set.status = 401;
+        return { error: "Unauthorized", code: 401 };
       }
       const rows = await getDb().select().from(hooks);
       return { data: rows };
@@ -26,23 +27,27 @@ export function makeHooksPlugin(jwtSecret: string) {
       "/admin/hooks",
       async ({ request, body, set }) => {
         if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401; return { error: "Unauthorized", code: 401 };
+          set.status = 401;
+          return { error: "Unauthorized", code: 401 };
         }
-        if (!HOOK_EVENTS.includes(body.event as typeof HOOK_EVENTS[number])) {
-          set.status = 422; return { error: `Invalid event: ${body.event}`, code: 422 };
+        if (!HOOK_EVENTS.includes(body.event as (typeof HOOK_EVENTS)[number])) {
+          set.status = 422;
+          return { error: `Invalid event: ${body.event}`, code: 422 };
         }
         const id = crypto.randomUUID();
         const now = Math.floor(Date.now() / 1000);
-        await getDb().insert(hooks).values({
-          id,
-          name: body.name ?? "",
-          collection_name: body.collection_name ?? "",
-          event: body.event,
-          code: body.code ?? "",
-          enabled: body.enabled === false ? 0 : 1,
-          created_at: now,
-          updated_at: now,
-        });
+        await getDb()
+          .insert(hooks)
+          .values({
+            id,
+            name: body.name ?? "",
+            collection_name: body.collection_name ?? "",
+            event: body.event,
+            code: body.code ?? "",
+            enabled: body.enabled === false ? 0 : 1,
+            created_at: now,
+            updated_at: now,
+          });
         invalidateHookCache();
         const row = await getDb().select().from(hooks).where(eq(hooks.id, id)).limit(1);
         return { data: row[0] };
@@ -55,23 +60,32 @@ export function makeHooksPlugin(jwtSecret: string) {
           code: t.Optional(t.String()),
           enabled: t.Optional(t.Boolean()),
         }),
-      }
+      },
     )
 
     .patch(
       "/admin/hooks/:id",
       async ({ request, params, body, set }) => {
         if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401; return { error: "Unauthorized", code: 401 };
+          set.status = 401;
+          return { error: "Unauthorized", code: 401 };
         }
-        const update: { name?: string; collection_name?: string; event?: string; code?: string; enabled?: number; updated_at: number } = {
+        const update: {
+          name?: string;
+          collection_name?: string;
+          event?: string;
+          code?: string;
+          enabled?: number;
+          updated_at: number;
+        } = {
           updated_at: Math.floor(Date.now() / 1000),
         };
         if (body.name !== undefined) update.name = body.name;
         if (body.collection_name !== undefined) update.collection_name = body.collection_name;
         if (body.event !== undefined) {
-          if (!HOOK_EVENTS.includes(body.event as typeof HOOK_EVENTS[number])) {
-            set.status = 422; return { error: `Invalid event: ${body.event}`, code: 422 };
+          if (!HOOK_EVENTS.includes(body.event as (typeof HOOK_EVENTS)[number])) {
+            set.status = 422;
+            return { error: `Invalid event: ${body.event}`, code: 422 };
           }
           update.event = body.event;
         }
@@ -80,7 +94,10 @@ export function makeHooksPlugin(jwtSecret: string) {
         await getDb().update(hooks).set(update).where(eq(hooks.id, params.id));
         invalidateHookCache();
         const row = await getDb().select().from(hooks).where(eq(hooks.id, params.id)).limit(1);
-        if (row.length === 0) { set.status = 404; return { error: "Hook not found", code: 404 }; }
+        if (row.length === 0) {
+          set.status = 404;
+          return { error: "Hook not found", code: 404 };
+        }
         return { data: row[0] };
       },
       {
@@ -91,12 +108,13 @@ export function makeHooksPlugin(jwtSecret: string) {
           code: t.Optional(t.String()),
           enabled: t.Optional(t.Boolean()),
         }),
-      }
+      },
     )
 
     .delete("/admin/hooks/:id", async ({ request, params, set }) => {
       if (!(await isAdmin(request, jwtSecret))) {
-        set.status = 401; return { error: "Unauthorized", code: 401 };
+        set.status = 401;
+        return { error: "Unauthorized", code: 401 };
       }
       await getDb().delete(hooks).where(eq(hooks.id, params.id));
       invalidateHookCache();

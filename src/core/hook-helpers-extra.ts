@@ -18,7 +18,7 @@ export interface SecurityHelpers {
   hmac(
     alg: "sha256" | "sha384" | "sha512",
     key: string | Uint8Array,
-    data: string | Uint8Array
+    data: string | Uint8Array,
   ): Promise<string>;
   /** Random hex string of `byteLen` bytes (output is `byteLen*2` hex chars). */
   randomString(byteLen: number, alphabet?: "hex" | "base64url"): string;
@@ -41,7 +41,7 @@ export interface SecurityHelpers {
       expiresIn?: number | string;
       issuer?: string;
       audience?: string;
-    }
+    },
   ): Promise<string>;
   /**
    * Verify a JWT. Throws on invalid/expired/bad-signature.
@@ -57,7 +57,7 @@ export interface SecurityHelpers {
       algorithm?: "HS256" | "RS256" | "ES256";
       issuer?: string;
       audience?: string;
-    }
+    },
   ): Promise<Record<string, unknown>>;
   /** Encrypt with the server-configured AES-GCM key (uses VAULTBASE_ENCRYPTION_KEY). */
   aesEncrypt(plaintext: string): Promise<string>;
@@ -93,14 +93,18 @@ function parseDuration(d: string | number): number {
   if (!m) throw new Error(`invalid duration: ${d}`);
   const n = parseInt(m[1]!, 10);
   const unit = m[2] ?? "s";
-  const mult = unit === "s" ? 1 : unit === "m" ? 60 : unit === "h" ? 3600 : unit === "d" ? 86400 : 604800;
+  const mult =
+    unit === "s" ? 1 : unit === "m" ? 60 : unit === "h" ? 3600 : unit === "d" ? 86400 : 604800;
   return n * mult;
 }
 
 function makeSecurity(): SecurityHelpers {
   return {
     async hash(alg, data) {
-      const buf = await crypto.subtle.digest(algToHash(alg), toBytes(data) as unknown as ArrayBuffer);
+      const buf = await crypto.subtle.digest(
+        algToHash(alg),
+        toBytes(data) as unknown as ArrayBuffer,
+      );
       return toHex(new Uint8Array(buf));
     },
     async hmac(alg, key, data) {
@@ -109,7 +113,7 @@ function makeSecurity(): SecurityHelpers {
         toBytes(key) as unknown as ArrayBuffer,
         { name: "HMAC", hash: algToHash(alg) },
         false,
-        ["sign"]
+        ["sign"],
       );
       const sig = await crypto.subtle.sign("HMAC", k, toBytes(data) as unknown as ArrayBuffer);
       return toHex(new Uint8Array(sig));
@@ -126,9 +130,7 @@ function makeSecurity(): SecurityHelpers {
     async jwtSign(payload, secret, opts = {}) {
       const alg = opts.algorithm ?? "HS256";
       const signKey: Uint8Array | jose.KeyLike =
-        alg === "HS256"
-          ? new TextEncoder().encode(secret)
-          : await jose.importPKCS8(secret, alg);
+        alg === "HS256" ? new TextEncoder().encode(secret) : await jose.importPKCS8(secret, alg);
       let builder = new jose.SignJWT(payload).setProtectedHeader({ alg }).setIssuedAt();
       if (opts.expiresIn !== undefined) {
         const exp = Math.floor(Date.now() / 1000) + parseDuration(opts.expiresIn);
@@ -141,9 +143,7 @@ function makeSecurity(): SecurityHelpers {
     async jwtVerify(token, secret, opts = {}) {
       const alg = opts.algorithm ?? "HS256";
       const verifyKey: Uint8Array | jose.KeyLike =
-        alg === "HS256"
-          ? new TextEncoder().encode(secret)
-          : await jose.importSPKI(secret, alg);
+        alg === "HS256" ? new TextEncoder().encode(secret) : await jose.importSPKI(secret, alg);
       const verifyOpts: jose.JWTVerifyOptions = { algorithms: [alg] };
       if (opts.issuer) verifyOpts.issuer = opts.issuer;
       if (opts.audience) verifyOpts.audience = opts.audience;
@@ -190,11 +190,15 @@ function makePath(): PathHelpers {
     const out: string[] = [];
     for (const part of parts) {
       if (part === ".") continue;
-      if (part === "..") { if (out.length && out[out.length - 1] !== "..") out.pop(); else if (!isAbs) out.push(".."); continue; }
+      if (part === "..") {
+        if (out.length && out[out.length - 1] !== "..") out.pop();
+        else if (!isAbs) out.push("..");
+        continue;
+      }
       out.push(part);
     }
     const joined = out.join(sep);
-    return isAbs ? "/" + joined : joined || ".";
+    return isAbs ? `/${joined}` : joined || ".";
   }
   return {
     join(...parts) {
@@ -257,7 +261,7 @@ function makeTemplate(): TemplateHelpers {
       // First pass: handle {{#if path}}...{{/if}} (no nesting in v1).
       const ifBlock = /\{\{#if\s+([\w.]+)\}\}([\s\S]*?)\{\{\/if\}\}/g;
       let out = template.replace(ifBlock, (_m, path: string, body: string) =>
-        isTruthy(resolvePath(vars, path)) ? body : ""
+        isTruthy(resolvePath(vars, path)) ? body : "",
       );
       // Second pass: handle {{path}} substitutions.
       out = out.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_m, path: string) => {
@@ -374,11 +378,17 @@ function makeHttp(): HttpHelpers {
         }
         const text = await res.text();
         const headers: Record<string, string> = {};
-        res.headers.forEach((v, k) => { headers[k] = v; });
+        res.headers.forEach((v, k) => {
+          headers[k] = v;
+        });
         const ct = res.headers.get("content-type") ?? "";
         let parsed: unknown;
         if (ct.includes("application/json") && text.length) {
-          try { parsed = JSON.parse(text); } catch { /* leave undefined */ }
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            /* leave undefined */
+          }
         }
         const out: HttpResponse = { status: res.status, ok: res.ok, headers, text };
         if (parsed !== undefined) out.json = parsed;
@@ -433,7 +443,11 @@ function makeUtil(): UtilHelpers {
       return sleepMs(clamped);
     },
     unmarshal<T>(s: string): T | null {
-      try { return JSON.parse(s) as T; } catch { return null; }
+      try {
+        return JSON.parse(s) as T;
+      } catch {
+        return null;
+      }
     },
     async readerToString(input) {
       if (input instanceof Response) return input.text();
@@ -476,7 +490,13 @@ function makeDb(): DbHelpers {
     return require("../db/client.ts").getRawClient() as import("bun:sqlite").Database;
   }
   function flatten(params: unknown[]): unknown[] {
-    if (params.length === 1 && params[0] !== null && typeof params[0] === "object" && !Array.isArray(params[0]) && !(params[0] instanceof Uint8Array)) {
+    if (
+      params.length === 1 &&
+      params[0] !== null &&
+      typeof params[0] === "object" &&
+      !Array.isArray(params[0]) &&
+      !(params[0] instanceof Uint8Array)
+    ) {
       return [params[0]];
     }
     return params;
@@ -598,7 +618,12 @@ function makeFs(): FsHelpers {
     },
     async exists(p) {
       const { fs } = await loadFs();
-      try { await fs.access(p); return true; } catch { return false; }
+      try {
+        await fs.access(p);
+        return true;
+      } catch {
+        return false;
+      }
     },
     async stat(p) {
       const { fs } = await loadFs();
@@ -752,13 +777,16 @@ function makeCron(): CronHelpers {
       const existing = await db.select().from(jobs).where(eq(jobs.name, opts.name)).limit(1);
       if (existing[0]) {
         const id = existing[0].id;
-        await db.update(jobs).set({
-          cron: opts.schedule,
-          code: opts.code,
-          enabled: opts.enabled === false ? 0 : 1,
-          next_run_at: next,
-          updated_at: now,
-        }).where(eq(jobs.id, id));
+        await db
+          .update(jobs)
+          .set({
+            cron: opts.schedule,
+            code: opts.code,
+            enabled: opts.enabled === false ? 0 : 1,
+            next_run_at: next,
+            updated_at: now,
+          })
+          .where(eq(jobs.id, id));
         invalidateJobsCache();
         return { id };
       }
@@ -830,7 +858,11 @@ function makeFlags(): FlagsHelpers {
       const r = await evaluate(key, context ?? {}, fallback);
       return typeof r.value === "number" ? r.value : fallback;
     },
-    async getJson<T = unknown>(key: string, fallback: T, context?: Record<string, unknown>): Promise<T> {
+    async getJson<T = unknown>(
+      key: string,
+      fallback: T,
+      context?: Record<string, unknown>,
+    ): Promise<T> {
       const { evaluate } = await import("./flags.ts");
       const r = await evaluate(key, context ?? {}, fallback as unknown as never);
       return (r.value as T) ?? fallback;

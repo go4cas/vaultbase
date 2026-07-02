@@ -21,10 +21,18 @@
  *   - running on Windows → can't replace a running .exe; instructs operator
  */
 
-import { existsSync, mkdtempSync, renameSync, chmodSync, statSync, copyFileSync, unlinkSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
-import { spawnSync } from "child_process";
+import {
+  existsSync,
+  mkdtempSync,
+  renameSync,
+  chmodSync,
+  statSync,
+  copyFileSync,
+  unlinkSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { VAULTBASE_VERSION } from "../core/version.ts";
 
 interface UpdateFlags {
@@ -54,8 +62,13 @@ function parseFlags(argv: string[]): UpdateFlags {
     else if (a === "--quiet" || a === "-q") flags.quiet = true;
     else if (a === "--version" || a === "-v") flags.pinnedVersion = argv[++i] ?? null;
     else if (a.startsWith("--version=")) flags.pinnedVersion = a.slice("--version=".length);
-    else if (a === "--help" || a === "-h") { printHelp(); process.exit(0); }
-    else { process.stderr.write(`vaultbase update: unknown flag '${a}'\n`); process.exit(2); }
+    else if (a === "--help" || a === "-h") {
+      printHelp();
+      process.exit(0);
+    } else {
+      process.stderr.write(`vaultbase update: unknown flag '${a}'\n`);
+      process.exit(2);
+    }
   }
   return flags;
 }
@@ -102,7 +115,9 @@ function isMusl(): boolean {
     const r = spawnSync("ldd", ["--version"], { encoding: "utf8" });
     if (r.stdout && /musl/i.test(r.stdout)) return true;
     if (r.stderr && /musl/i.test(r.stderr)) return true;
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return false;
 }
 
@@ -117,18 +132,28 @@ async function fetchRelease(version: string | null): Promise<Release> {
   const url = version
     ? `https://api.github.com/repos/vaultbase-sh/vaultbase/releases/tags/v${version.replace(/^v/, "")}`
     : `https://api.github.com/repos/vaultbase-sh/vaultbase/releases/latest`;
-  const res = await fetch(url, { headers: { accept: "application/vnd.github+json", "user-agent": `vaultbase-update/${VAULTBASE_VERSION}` } });
+  const res = await fetch(url, {
+    headers: {
+      accept: "application/vnd.github+json",
+      "user-agent": `vaultbase-update/${VAULTBASE_VERSION}`,
+    },
+  });
   if (res.status === 404) throw new Error(`no release found at ${url}`);
   if (!res.ok) throw new Error(`github API ${res.status} on ${url}`);
-  return await res.json() as Release;
+  return (await res.json()) as Release;
 }
 
 function compareVersion(current: string, target: string): -1 | 0 | 1 {
-  const norm = (s: string): number[] => s.replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
+  const norm = (s: string): number[] =>
+    s
+      .replace(/^v/, "")
+      .split(".")
+      .map((n) => parseInt(n, 10) || 0);
   const a = norm(current);
   const b = norm(target);
   for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    const x = a[i] ?? 0, y = b[i] ?? 0;
+    const x = a[i] ?? 0,
+      y = b[i] ?? 0;
     if (x < y) return -1;
     if (x > y) return 1;
   }
@@ -136,7 +161,10 @@ function compareVersion(current: string, target: string): -1 | 0 | 1 {
 }
 
 async function downloadTo(url: string, dest: string, log: (s: string) => void): Promise<void> {
-  const res = await fetch(url, { headers: { "user-agent": `vaultbase-update/${VAULTBASE_VERSION}` }, redirect: "follow" });
+  const res = await fetch(url, {
+    headers: { "user-agent": `vaultbase-update/${VAULTBASE_VERSION}` },
+    redirect: "follow",
+  });
   if (!res.ok) throw new Error(`download failed: ${res.status} ${url}`);
   const total = parseInt(res.headers.get("content-length") ?? "0", 10);
   const file = Bun.file(dest);
@@ -150,7 +178,9 @@ async function downloadTo(url: string, dest: string, log: (s: string) => void): 
     if (total > 0) {
       const pct = Math.floor((received / total) * 100);
       if (pct !== lastPct && pct % 5 === 0) {
-        log(`  download: ${pct}% (${(received / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(1)} MiB)`);
+        log(
+          `  download: ${pct}% (${(received / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(1)} MiB)`,
+        );
         lastPct = pct;
       }
     }
@@ -168,18 +198,34 @@ function hasCosign(): boolean {
   try {
     const r = spawnSync("cosign", ["version"], { encoding: "utf8" });
     return r.status === 0;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
-function runCosignVerify(binPath: string, sigPath: string, certPath: string, repo: string, ref: string): boolean {
-  const r = spawnSync("cosign", [
-    "verify-blob",
-    "--certificate", certPath,
-    "--signature",   sigPath,
-    "--certificate-identity-regexp", `^https://github\\.com/${repo}/`,
-    "--certificate-oidc-issuer",     "https://token.actions.githubusercontent.com",
-    binPath,
-  ], { encoding: "utf8" });
+function runCosignVerify(
+  binPath: string,
+  sigPath: string,
+  certPath: string,
+  repo: string,
+  ref: string,
+): boolean {
+  const r = spawnSync(
+    "cosign",
+    [
+      "verify-blob",
+      "--certificate",
+      certPath,
+      "--signature",
+      sigPath,
+      "--certificate-identity-regexp",
+      `^https://github\\.com/${repo}/`,
+      "--certificate-oidc-issuer",
+      "https://token.actions.githubusercontent.com",
+      binPath,
+    ],
+    { encoding: "utf8" },
+  );
   if (r.status === 0) return true;
   process.stderr.write(`cosign verify failed:\n${r.stderr || r.stdout}\n`);
   void ref;
@@ -199,10 +245,14 @@ async function promptYesNo(question: string): Promise<boolean> {
 
 export async function runUpdate(argv: string[]): Promise<void> {
   const flags = parseFlags(argv);
-  const log = (s: string) => { if (!flags.quiet) process.stdout.write(`${s}\n`); };
+  const log = (s: string) => {
+    if (!flags.quiet) process.stdout.write(`${s}\n`);
+  };
 
   const platform = detectPlatform();
-  log(`vaultbase ${VAULTBASE_VERSION} on ${process.platform}/${process.arch}${platform.artifact.includes("musl") ? " (musl)" : ""}`);
+  log(
+    `vaultbase ${VAULTBASE_VERSION} on ${process.platform}/${process.arch}${platform.artifact.includes("musl") ? " (musl)" : ""}`,
+  );
 
   log("checking for updates…");
   const release = await fetchRelease(flags.pinnedVersion);
@@ -215,7 +265,9 @@ export async function runUpdate(argv: string[]): Promise<void> {
     return;
   }
   if (cmp > 0 && !flags.allowDowngrade) {
-    process.stderr.write(`vaultbase update: target ${target} is older than current ${VAULTBASE_VERSION}; pass --allow-downgrade to override\n`);
+    process.stderr.write(
+      `vaultbase update: target ${target} is older than current ${VAULTBASE_VERSION}; pass --allow-downgrade to override\n`,
+    );
     process.exit(2);
   }
 
@@ -232,16 +284,19 @@ export async function runUpdate(argv: string[]): Promise<void> {
   if (!flags.yes) {
     log("");
     log(`This will replace the running binary at ${process.execPath}`);
-    if (platform.windows) log("⚠ on Windows the running .exe is locked — you must stop vaultbase first.");
+    if (platform.windows)
+      log("⚠ on Windows the running .exe is locked — you must stop vaultbase first.");
     log("");
-    if (!await promptYesNo(`Update to ${target}?`)) {
+    if (!(await promptYesNo(`Update to ${target}?`))) {
       log("aborted.");
       process.exit(1);
     }
   }
 
   if (platform.windows) {
-    process.stderr.write(`vaultbase update: cannot replace a running .exe on Windows. Stop the daemon first, then run \`vaultbase update --yes\` again.\n`);
+    process.stderr.write(
+      `vaultbase update: cannot replace a running .exe on Windows. Stop the daemon first, then run \`vaultbase update --yes\` again.\n`,
+    );
     process.exit(2);
   }
 
@@ -275,8 +330,12 @@ export async function runUpdate(argv: string[]): Promise<void> {
       }
       log("  ✓ cosign ok");
     } else if (!hasCosign()) {
-      process.stderr.write("⚠ cosign not in PATH — skipping signature verification (SHA-256 still enforced).\n");
-      process.stderr.write("  Install cosign for cryptographic provenance: https://docs.sigstore.dev/cosign/installation\n");
+      process.stderr.write(
+        "⚠ cosign not in PATH — skipping signature verification (SHA-256 still enforced).\n",
+      );
+      process.stderr.write(
+        "  Install cosign for cryptographic provenance: https://docs.sigstore.dev/cosign/installation\n",
+      );
     }
   } else {
     process.stderr.write("⚠ --no-verify: cosign signature NOT checked (SHA-256 still enforced).\n");
@@ -294,7 +353,11 @@ export async function runUpdate(argv: string[]): Promise<void> {
     // Cross-device move (binary in /usr/local/bin, tmp in /tmp on a different mount).
     if ((e as NodeJS.ErrnoException).code === "EXDEV") {
       copyFileSync(binPath, target_path);
-      try { unlinkSync(binPath); } catch { /* ignore */ }
+      try {
+        unlinkSync(binPath);
+      } catch {
+        /* ignore */
+      }
     } else {
       throw e;
     }
@@ -302,7 +365,8 @@ export async function runUpdate(argv: string[]): Promise<void> {
   // Sanity-check the new binary is executable + correct size.
   try {
     const s = statSync(target_path);
-    if (s.size < 1_000_000) throw new Error(`installed binary is suspiciously small (${s.size} bytes)`);
+    if (s.size < 1_000_000)
+      throw new Error(`installed binary is suspiciously small (${s.size} bytes)`);
   } catch (e) {
     throw new Error(`post-install stat failed: ${e instanceof Error ? e.message : String(e)}`);
   }

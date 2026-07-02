@@ -25,7 +25,9 @@ export interface ProviderDef {
    * response straight to this hook to extract the profile, skipping the usual
    * Bearer-token userinfo fetch.
    */
-  fetchProfileFromTokenResponse?: (tokenResponse: Record<string, unknown>) => Promise<NormalizedProfile>;
+  fetchProfileFromTokenResponse?: (
+    tokenResponse: Record<string, unknown>,
+  ) => Promise<NormalizedProfile>;
   /**
    * OIDC's authorize / token / userinfo URLs come from settings, not constants —
    * resolve them on-demand at call sites that need the live values.
@@ -47,11 +49,11 @@ async function googleProfile(token: string): Promise<NormalizedProfile> {
   if (!res.ok) throw new Error(`Google userinfo failed: ${res.status}`);
   const j = (await res.json()) as Record<string, unknown>;
   const profile: NormalizedProfile = {
-    id: String(j["sub"] ?? ""),
-    email: String(j["email"] ?? ""),
-    emailVerified: j["email_verified"] === true,
+    id: String(j.sub ?? ""),
+    email: String(j.email ?? ""),
+    emailVerified: j.email_verified === true,
   };
-  if (typeof j["name"] === "string") profile.name = j["name"];
+  if (typeof j.name === "string") profile.name = j.name;
   return profile;
 }
 
@@ -63,14 +65,18 @@ async function githubProfile(token: string): Promise<NormalizedProfile> {
   const u = (await userRes.json()) as Record<string, unknown>;
 
   // /user.email may be null when private — fetch /user/emails for the verified primary.
-  let email = typeof u["email"] === "string" ? (u["email"] as string) : "";
+  let email = typeof u.email === "string" ? (u.email as string) : "";
   let emailVerified = false;
   if (!email) {
     const emailsRes = await fetch("https://api.github.com/user/emails", {
       headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
     });
     if (emailsRes.ok) {
-      const emails = (await emailsRes.json()) as Array<{ email: string; primary: boolean; verified: boolean }>;
+      const emails = (await emailsRes.json()) as Array<{
+        email: string;
+        primary: boolean;
+        verified: boolean;
+      }>;
       const primary = emails.find((e) => e.primary && e.verified) ?? emails.find((e) => e.verified);
       if (primary) {
         email = primary.email;
@@ -83,13 +89,16 @@ async function githubProfile(token: string): Promise<NormalizedProfile> {
   }
 
   const profile: NormalizedProfile = {
-    id: String(u["id"] ?? ""),
+    id: String(u.id ?? ""),
     email,
     emailVerified,
   };
-  const nameVal = typeof u["name"] === "string" ? (u["name"] as string)
-    : typeof u["login"] === "string" ? (u["login"] as string)
-    : undefined;
+  const nameVal =
+    typeof u.name === "string"
+      ? (u.name as string)
+      : typeof u.login === "string"
+        ? (u.login as string)
+        : undefined;
   if (nameVal) profile.name = nameVal;
   return profile;
 }
@@ -101,7 +110,7 @@ async function jsonProfile(
   url: string,
   token: string,
   fields: { id: string; email: string; emailVerified?: string; name?: string },
-  extraHeaders: Record<string, string> = {}
+  extraHeaders: Record<string, string> = {},
 ): Promise<NormalizedProfile> {
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json", ...extraHeaders },
@@ -109,11 +118,12 @@ async function jsonProfile(
   if (!res.ok) throw new Error(`${url} failed: ${res.status}`);
   const j = (await res.json()) as Record<string, unknown>;
   // Allow simple dot paths like "data.0.email" for endpoints that wrap results
-  const get = (path: string): unknown => path.split(".").reduce<unknown>((acc, key) => {
-    if (acc == null) return undefined;
-    if (Array.isArray(acc)) return acc[Number(key)];
-    return (acc as Record<string, unknown>)[key];
-  }, j);
+  const get = (path: string): unknown =>
+    path.split(".").reduce<unknown>((acc, key) => {
+      if (acc == null) return undefined;
+      if (Array.isArray(acc)) return acc[Number(key)];
+      return (acc as Record<string, unknown>)[key];
+    }, j);
   const profile: NormalizedProfile = {
     id: String(get(fields.id) ?? ""),
     email: String(get(fields.email) ?? ""),
@@ -128,22 +138,26 @@ async function jsonProfile(
 
 async function gitlabProfile(token: string): Promise<NormalizedProfile> {
   return jsonProfile("https://gitlab.com/api/v4/user", token, {
-    id: "id", email: "email", name: "name",
+    id: "id",
+    email: "email",
+    name: "name",
   });
 }
 
 async function facebookProfile(token: string): Promise<NormalizedProfile> {
   // Facebook returns email only when the user grants the "email" scope; verified flag isn't exposed.
-  const res = await fetch(`https://graph.facebook.com/me?fields=id,email,name&access_token=${encodeURIComponent(token)}`);
+  const res = await fetch(
+    `https://graph.facebook.com/me?fields=id,email,name&access_token=${encodeURIComponent(token)}`,
+  );
   if (!res.ok) throw new Error(`Facebook /me failed: ${res.status}`);
   const j = (await res.json()) as Record<string, unknown>;
   const profile: NormalizedProfile = {
-    id: String(j["id"] ?? ""),
-    email: typeof j["email"] === "string" ? (j["email"] as string) : "",
+    id: String(j.id ?? ""),
+    email: typeof j.email === "string" ? (j.email as string) : "",
     // Facebook doesn't expose email_verified; treat as verified since they require email confirmation themselves.
-    emailVerified: typeof j["email"] === "string" && j["email"] !== "",
+    emailVerified: typeof j.email === "string" && j.email !== "",
   };
-  if (typeof j["name"] === "string") profile.name = j["name"];
+  if (typeof j.name === "string") profile.name = j.name;
   return profile;
 }
 
@@ -153,16 +167,19 @@ async function microsoftProfile(token: string): Promise<NormalizedProfile> {
   });
   if (!res.ok) throw new Error(`Microsoft /me failed: ${res.status}`);
   const j = (await res.json()) as Record<string, unknown>;
-  const email = typeof j["mail"] === "string" ? (j["mail"] as string)
-    : typeof j["userPrincipalName"] === "string" ? (j["userPrincipalName"] as string)
-    : "";
+  const email =
+    typeof j.mail === "string"
+      ? (j.mail as string)
+      : typeof j.userPrincipalName === "string"
+        ? (j.userPrincipalName as string)
+        : "";
   const profile: NormalizedProfile = {
-    id: String(j["id"] ?? ""),
+    id: String(j.id ?? ""),
     email,
     // Azure AD email is operationally verified by tenant admin; treat as verified.
     emailVerified: email !== "",
   };
-  if (typeof j["displayName"] === "string") profile.name = j["displayName"];
+  if (typeof j.displayName === "string") profile.name = j.displayName;
   return profile;
 }
 
@@ -173,12 +190,12 @@ async function discordProfile(token: string): Promise<NormalizedProfile> {
   if (!res.ok) throw new Error(`Discord /users/@me failed: ${res.status}`);
   const j = (await res.json()) as Record<string, unknown>;
   const profile: NormalizedProfile = {
-    id: String(j["id"] ?? ""),
-    email: typeof j["email"] === "string" ? (j["email"] as string) : "",
-    emailVerified: j["verified"] === true,
+    id: String(j.id ?? ""),
+    email: typeof j.email === "string" ? (j.email as string) : "",
+    emailVerified: j.verified === true,
   };
-  if (typeof j["global_name"] === "string") profile.name = j["global_name"];
-  else if (typeof j["username"] === "string") profile.name = j["username"];
+  if (typeof j.global_name === "string") profile.name = j.global_name;
+  else if (typeof j.username === "string") profile.name = j.username;
   return profile;
 }
 
@@ -197,30 +214,38 @@ async function twitchProfile(token: string): Promise<NormalizedProfile> {
   const u = j.data?.[0];
   if (!u) throw new Error("Twitch returned an empty user list");
   const profile: NormalizedProfile = {
-    id: String(u["id"] ?? ""),
-    email: typeof u["email"] === "string" ? (u["email"] as string) : "",
-    emailVerified: typeof u["email"] === "string" && u["email"] !== "",
+    id: String(u.id ?? ""),
+    email: typeof u.email === "string" ? (u.email as string) : "",
+    emailVerified: typeof u.email === "string" && u.email !== "",
   };
-  if (typeof u["display_name"] === "string") profile.name = u["display_name"];
+  if (typeof u.display_name === "string") profile.name = u.display_name;
   return profile;
 }
 
 async function spotifyProfile(token: string): Promise<NormalizedProfile> {
   return jsonProfile("https://api.spotify.com/v1/me", token, {
-    id: "id", email: "email", name: "display_name",
+    id: "id",
+    email: "email",
+    name: "display_name",
   }).then((p) => ({ ...p, emailVerified: p.email !== "" }));
 }
 
 async function linkedinProfile(token: string): Promise<NormalizedProfile> {
   // LinkedIn moved to OIDC userinfo at /v2/userinfo (matches OpenID Connect shape).
   return jsonProfile("https://api.linkedin.com/v2/userinfo", token, {
-    id: "sub", email: "email", emailVerified: "email_verified", name: "name",
+    id: "sub",
+    email: "email",
+    emailVerified: "email_verified",
+    name: "name",
   });
 }
 
 async function slackProfile(token: string): Promise<NormalizedProfile> {
   return jsonProfile("https://slack.com/api/openid.connect.userInfo", token, {
-    id: "sub", email: "email", emailVerified: "email_verified", name: "name",
+    id: "sub",
+    email: "email",
+    emailVerified: "email_verified",
+    name: "name",
   });
 }
 
@@ -238,19 +263,23 @@ async function bitbucketProfile(token: string): Promise<NormalizedProfile> {
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
   });
   if (emailRes.ok) {
-    const ej = (await emailRes.json()) as { values?: Array<{ email: string; is_primary: boolean; is_confirmed: boolean }> };
-    const primary = ej.values?.find((e) => e.is_primary && e.is_confirmed) ?? ej.values?.find((e) => e.is_confirmed);
+    const ej = (await emailRes.json()) as {
+      values?: Array<{ email: string; is_primary: boolean; is_confirmed: boolean }>;
+    };
+    const primary =
+      ej.values?.find((e) => e.is_primary && e.is_confirmed) ??
+      ej.values?.find((e) => e.is_confirmed);
     if (primary) {
       email = primary.email;
       emailVerified = true;
     }
   }
   const profile: NormalizedProfile = {
-    id: String(u["uuid"] ?? u["account_id"] ?? ""),
+    id: String(u.uuid ?? u.account_id ?? ""),
     email,
     emailVerified,
   };
-  if (typeof u["display_name"] === "string") profile.name = u["display_name"];
+  if (typeof u.display_name === "string") profile.name = u.display_name;
   return profile;
 }
 
@@ -264,24 +293,24 @@ async function notionProfile(token: string): Promise<NormalizedProfile> {
   });
   if (!res.ok) throw new Error(`Notion /users/me failed: ${res.status}`);
   const j = (await res.json()) as Record<string, unknown>;
-  const bot = j["bot"] as Record<string, unknown> | undefined;
-  const owner = bot?.["owner"] as Record<string, unknown> | undefined;
-  const ownerUser = owner?.["user"] as Record<string, unknown> | undefined;
-  const person = ownerUser?.["person"] as Record<string, unknown> | undefined;
-  const email = typeof person?.["email"] === "string" ? (person["email"] as string) : "";
+  const bot = j.bot as Record<string, unknown> | undefined;
+  const owner = bot?.owner as Record<string, unknown> | undefined;
+  const ownerUser = owner?.user as Record<string, unknown> | undefined;
+  const person = ownerUser?.person as Record<string, unknown> | undefined;
+  const email = typeof person?.email === "string" ? (person.email as string) : "";
   const profile: NormalizedProfile = {
-    id: String(j["id"] ?? ""),
+    id: String(j.id ?? ""),
     email,
     emailVerified: email !== "",
   };
-  if (typeof j["name"] === "string") profile.name = j["name"];
+  if (typeof j.name === "string") profile.name = j.name;
   return profile;
 }
 
 async function twitterProfile(token: string): Promise<NormalizedProfile> {
   const res = await fetch(
     "https://api.twitter.com/2/users/me?user.fields=id,username,name,profile_image_url",
-    { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } }
+    { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } },
   );
   if (!res.ok) throw new Error(`Twitter /users/me failed: ${res.status}`);
   const j = (await res.json()) as { data?: Record<string, unknown> };
@@ -289,15 +318,15 @@ async function twitterProfile(token: string): Promise<NormalizedProfile> {
   // Twitter's email is gated behind Elevated access; for the common case we
   // synthesize a stable, unique placeholder so user creation can still proceed.
   // The placeholder lives at @twitter.invalid (RFC 2606 reserved TLD).
-  const username = typeof d["username"] === "string" ? (d["username"] as string) : "";
-  const id = String(d["id"] ?? "");
+  const username = typeof d.username === "string" ? (d.username as string) : "";
+  const id = String(d.id ?? "");
   const profile: NormalizedProfile = {
     id,
     email: username ? `${username}@twitter.invalid` : `${id}@twitter.invalid`,
     // We can't claim verified — Twitter doesn't give us the email at all.
     emailVerified: false,
   };
-  if (typeof d["name"] === "string") profile.name = d["name"];
+  if (typeof d.name === "string") profile.name = d.name;
   else if (username) profile.name = username;
   return profile;
 }
@@ -311,11 +340,11 @@ async function oidcProfile(token: string): Promise<NormalizedProfile> {
   if (!res.ok) throw new Error(`OIDC userinfo failed: ${res.status}`);
   const j = (await res.json()) as Record<string, unknown>;
   const profile: NormalizedProfile = {
-    id: String(j["sub"] ?? ""),
-    email: typeof j["email"] === "string" ? (j["email"] as string) : "",
-    emailVerified: j["email_verified"] === true,
+    id: String(j.sub ?? ""),
+    email: typeof j.email === "string" ? (j.email as string) : "",
+    emailVerified: j.email_verified === true,
   };
-  if (typeof j["name"] === "string") profile.name = j["name"];
+  if (typeof j.name === "string") profile.name = j.name;
   return profile;
 }
 
@@ -332,23 +361,26 @@ function decodeIdTokenUnverified(idToken: string): Record<string, unknown> {
   if (parts.length < 2) throw new Error("Invalid id_token");
   const payload = parts[1]!;
   // base64url → base64 → JSON
-  const padded = payload.replace(/-/g, "+").replace(/_/g, "/").padEnd(payload.length + ((4 - payload.length % 4) % 4), "=");
+  const padded = payload
+    .replace(/-/g, "+")
+    .replace(/_/g, "/")
+    .padEnd(payload.length + ((4 - (payload.length % 4)) % 4), "=");
   const json = atob(padded);
   return JSON.parse(json) as Record<string, unknown>;
 }
 
 async function appleProfileFromTokenResponse(
-  tokenResponse: Record<string, unknown>
+  tokenResponse: Record<string, unknown>,
 ): Promise<NormalizedProfile> {
-  const idToken = tokenResponse["id_token"];
+  const idToken = tokenResponse.id_token;
   if (typeof idToken !== "string" || !idToken) {
     throw new Error("Apple did not return an id_token");
   }
   const claims = decodeIdTokenUnverified(idToken);
   const profile: NormalizedProfile = {
-    id: String(claims["sub"] ?? ""),
-    email: typeof claims["email"] === "string" ? (claims["email"] as string) : "",
-    emailVerified: claims["email_verified"] === true || claims["email_verified"] === "true",
+    id: String(claims.sub ?? ""),
+    email: typeof claims.email === "string" ? (claims.email as string) : "",
+    emailVerified: claims.email_verified === true || claims.email_verified === "true",
   };
   return profile;
 }
@@ -392,11 +424,17 @@ const APPLE_SECRET_TTL_MS = 14 * 60 * 1000; // 14 minutes (Apple max is 6 months
 export async function buildAppleClientSecret(): Promise<string> {
   const cfg = getAppleConfig();
   if (!cfg.client_id || !cfg.team_id || !cfg.key_id || !cfg.private_key) {
-    throw new Error("Apple OAuth2 is not fully configured (need client_id, team_id, key_id, private_key)");
+    throw new Error(
+      "Apple OAuth2 is not fully configured (need client_id, team_id, key_id, private_key)",
+    );
   }
   const cacheKey = `${cfg.team_id}|${cfg.key_id}|${cfg.client_id}`;
   const now = Date.now();
-  if (appleSecretCache && appleSecretCache.cacheKey === cacheKey && appleSecretCache.expiresAt > now) {
+  if (
+    appleSecretCache &&
+    appleSecretCache.cacheKey === cacheKey &&
+    appleSecretCache.expiresAt > now
+  ) {
     return appleSecretCache.jwt;
   }
   const privateKey = await jose.importPKCS8(cfg.private_key, "ES256");
@@ -441,125 +479,145 @@ export function getOidcConfig(): OidcConfig {
 }
 
 async function patreonProfile(token: string): Promise<NormalizedProfile> {
-  const res = await fetch("https://www.patreon.com/api/oauth2/v2/identity?fields%5Buser%5D=email,full_name,is_email_verified", {
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-  });
+  const res = await fetch(
+    "https://www.patreon.com/api/oauth2/v2/identity?fields%5Buser%5D=email,full_name,is_email_verified",
+    {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    },
+  );
   if (!res.ok) throw new Error(`Patreon /identity failed: ${res.status}`);
   const j = (await res.json()) as { data?: { id?: string; attributes?: Record<string, unknown> } };
   const a = j.data?.attributes ?? {};
   const profile: NormalizedProfile = {
     id: String(j.data?.id ?? ""),
-    email: typeof a["email"] === "string" ? (a["email"] as string) : "",
-    emailVerified: a["is_email_verified"] === true,
+    email: typeof a.email === "string" ? (a.email as string) : "",
+    emailVerified: a.is_email_verified === true,
   };
-  if (typeof a["full_name"] === "string") profile.name = a["full_name"];
+  if (typeof a.full_name === "string") profile.name = a.full_name;
   return profile;
 }
 
 export const PROVIDERS: Record<string, ProviderDef> = {
   google: {
-    name: "google", displayName: "Google",
+    name: "google",
+    displayName: "Google",
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     tokenUrl: "https://oauth2.googleapis.com/token",
     defaultScopes: ["openid", "email", "profile"],
     fetchProfile: googleProfile,
   },
   github: {
-    name: "github", displayName: "GitHub",
+    name: "github",
+    displayName: "GitHub",
     authorizeUrl: "https://github.com/login/oauth/authorize",
     tokenUrl: "https://github.com/login/oauth/access_token",
     defaultScopes: ["read:user", "user:email"],
     fetchProfile: githubProfile,
   },
   gitlab: {
-    name: "gitlab", displayName: "GitLab",
+    name: "gitlab",
+    displayName: "GitLab",
     authorizeUrl: "https://gitlab.com/oauth/authorize",
     tokenUrl: "https://gitlab.com/oauth/token",
     defaultScopes: ["read_user"],
     fetchProfile: gitlabProfile,
   },
   facebook: {
-    name: "facebook", displayName: "Facebook",
+    name: "facebook",
+    displayName: "Facebook",
     authorizeUrl: "https://www.facebook.com/v18.0/dialog/oauth",
     tokenUrl: "https://graph.facebook.com/v18.0/oauth/access_token",
     defaultScopes: ["email", "public_profile"],
     fetchProfile: facebookProfile,
   },
   microsoft: {
-    name: "microsoft", displayName: "Microsoft",
+    name: "microsoft",
+    displayName: "Microsoft",
     authorizeUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
     tokenUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
     defaultScopes: ["openid", "email", "profile", "User.Read"],
     fetchProfile: microsoftProfile,
   },
   discord: {
-    name: "discord", displayName: "Discord",
+    name: "discord",
+    displayName: "Discord",
     authorizeUrl: "https://discord.com/api/oauth2/authorize",
     tokenUrl: "https://discord.com/api/oauth2/token",
     defaultScopes: ["identify", "email"],
     fetchProfile: discordProfile,
   },
   twitch: {
-    name: "twitch", displayName: "Twitch",
+    name: "twitch",
+    displayName: "Twitch",
     authorizeUrl: "https://id.twitch.tv/oauth2/authorize",
     tokenUrl: "https://id.twitch.tv/oauth2/token",
     defaultScopes: ["user:read:email"],
     fetchProfile: twitchProfile,
   },
   spotify: {
-    name: "spotify", displayName: "Spotify",
+    name: "spotify",
+    displayName: "Spotify",
     authorizeUrl: "https://accounts.spotify.com/authorize",
     tokenUrl: "https://accounts.spotify.com/api/token",
     defaultScopes: ["user-read-email", "user-read-private"],
     fetchProfile: spotifyProfile,
   },
   linkedin: {
-    name: "linkedin", displayName: "LinkedIn",
+    name: "linkedin",
+    displayName: "LinkedIn",
     authorizeUrl: "https://www.linkedin.com/oauth/v2/authorization",
     tokenUrl: "https://www.linkedin.com/oauth/v2/accessToken",
     defaultScopes: ["openid", "email", "profile"],
     fetchProfile: linkedinProfile,
   },
   slack: {
-    name: "slack", displayName: "Slack",
+    name: "slack",
+    displayName: "Slack",
     authorizeUrl: "https://slack.com/openid/connect/authorize",
     tokenUrl: "https://slack.com/api/openid.connect.token",
     defaultScopes: ["openid", "email", "profile"],
     fetchProfile: slackProfile,
   },
   bitbucket: {
-    name: "bitbucket", displayName: "Bitbucket",
+    name: "bitbucket",
+    displayName: "Bitbucket",
     authorizeUrl: "https://bitbucket.org/site/oauth2/authorize",
     tokenUrl: "https://bitbucket.org/site/oauth2/access_token",
     defaultScopes: ["account", "email"],
     fetchProfile: bitbucketProfile,
   },
   notion: {
-    name: "notion", displayName: "Notion",
+    name: "notion",
+    displayName: "Notion",
     authorizeUrl: "https://api.notion.com/v1/oauth/authorize",
     tokenUrl: "https://api.notion.com/v1/oauth/token",
     defaultScopes: [],
     fetchProfile: notionProfile,
   },
   patreon: {
-    name: "patreon", displayName: "Patreon",
+    name: "patreon",
+    displayName: "Patreon",
     authorizeUrl: "https://www.patreon.com/oauth2/authorize",
     tokenUrl: "https://www.patreon.com/api/oauth2/token",
     defaultScopes: ["identity", "identity[email]"],
     fetchProfile: patreonProfile,
   },
   apple: {
-    name: "apple", displayName: "Apple",
+    name: "apple",
+    displayName: "Apple",
     authorizeUrl: "https://appleid.apple.com/auth/authorize",
     tokenUrl: "https://appleid.apple.com/auth/token",
     defaultScopes: ["name", "email"],
     // Apple delivers identity via id_token, so the userinfo path is unused.
-    fetchProfile: async () => { throw new Error("Apple profile is read from id_token, not userinfo"); },
+    fetchProfile: async () => {
+      throw new Error("Apple profile is read from id_token, not userinfo");
+    },
     fetchProfileFromTokenResponse: appleProfileFromTokenResponse,
     buildClientSecret: buildAppleClientSecret,
   },
   twitter: {
-    name: "twitter", displayName: "Twitter / X",
+    name: "twitter",
+    displayName: "Twitter / X",
     authorizeUrl: "https://twitter.com/i/oauth2/authorize",
     tokenUrl: "https://api.twitter.com/2/oauth2/token",
     defaultScopes: ["users.read", "tweet.read", "offline.access"],
@@ -567,7 +625,8 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     requiresPkce: true,
   },
   oidc: {
-    name: "oidc", displayName: "OIDC",
+    name: "oidc",
+    displayName: "OIDC",
     // Placeholder strings — OIDC reads its real URLs from settings via
     // `resolveDynamic()` at runtime. Anything that bypasses that hook (we don't)
     // would clearly fail loud against these `oidc:not-configured` markers.
@@ -618,7 +677,12 @@ export function isProviderEnabled(name: string): boolean {
   if (name === "oidc") {
     const o = getOidcConfig();
     const c = getProviderConfig("oidc");
-    return c.client_id !== "" && c.client_secret !== "" && o.authorization_url !== "" && o.token_url !== "";
+    return (
+      c.client_id !== "" &&
+      c.client_secret !== "" &&
+      o.authorization_url !== "" &&
+      o.token_url !== ""
+    );
   }
   // Everyone else: client_id + client_secret pair from the standard settings keys.
   const c = getProviderConfig(name);
@@ -674,7 +738,7 @@ export function generateCodeVerifier(byteLength: number = 32): string {
  */
 export async function codeChallengeFromVerifier(
   verifier: string,
-  method: "S256" = "S256"
+  method: "S256" = "S256",
 ): Promise<string> {
   if (method !== "S256") throw new Error(`Unsupported code_challenge_method: ${method}`);
   const data = new TextEncoder().encode(verifier);
@@ -817,7 +881,7 @@ export async function exchangeCodeForToken(opts: {
   // Apple returns no usable `access_token` for our purposes — the identity
   // lives in `id_token` instead. Synthesize the field so the caller's contract
   // (always have access_token) holds; it isn't used for any subsequent call.
-  let accessToken = json["access_token"];
+  let accessToken = json.access_token;
   if ((typeof accessToken !== "string" || !accessToken) && def.fetchProfileFromTokenResponse) {
     accessToken = "";
   }
@@ -830,7 +894,10 @@ export async function exchangeCodeForToken(opts: {
   return { access_token: accessToken, raw: json };
 }
 
-export async function fetchProviderProfile(provider: string, accessToken: string): Promise<NormalizedProfile> {
+export async function fetchProviderProfile(
+  provider: string,
+  accessToken: string,
+): Promise<NormalizedProfile> {
   const def = PROVIDERS[provider];
   if (!def) throw new Error(`Unknown OAuth2 provider: ${provider}`);
   return def.fetchProfile(accessToken);
@@ -843,7 +910,7 @@ export async function fetchProviderProfile(provider: string, accessToken: string
  */
 export async function fetchProviderProfileFromExchange(
   provider: string,
-  exchangeResult: { access_token: string; raw: Record<string, unknown> }
+  exchangeResult: { access_token: string; raw: Record<string, unknown> },
 ): Promise<NormalizedProfile> {
   const def = PROVIDERS[provider];
   if (!def) throw new Error(`Unknown OAuth2 provider: ${provider}`);

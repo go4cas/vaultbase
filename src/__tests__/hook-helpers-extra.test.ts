@@ -10,15 +10,17 @@ const h = makeExtraHelpers();
 describe("security", () => {
   it("hash/sha256 matches a known vector", async () => {
     // sha256("abc") = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
-    expect(await h.security.hash("sha256", "abc"))
-      .toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    expect(await h.security.hash("sha256", "abc")).toBe(
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    );
   });
 
   it("hmac/sha256 matches a known vector (RFC 4231 case 1)", async () => {
     const key = new Uint8Array(20).fill(0x0b);
     const data = new TextEncoder().encode("Hi There");
-    expect(await h.security.hmac("sha256", key, data))
-      .toBe("b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7");
+    expect(await h.security.hmac("sha256", key, data)).toBe(
+      "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7",
+    );
   });
 
   it("randomString / randomBytes produce expected lengths", () => {
@@ -39,8 +41,8 @@ describe("security", () => {
       issuer: "vb",
     });
     const payload = await h.security.jwtVerify(token, "secret-key", { issuer: "vb" });
-    expect(payload["sub"]).toBe("user1");
-    expect(payload["role"]).toBe("admin");
+    expect(payload.sub).toBe("user1");
+    expect(payload.role).toBe("admin");
   });
 
   it("jwtVerify rejects wrong secret", async () => {
@@ -80,8 +82,7 @@ describe("path", () => {
 
 describe("template", () => {
   it("renders {{var}} substitutions with dotted paths", () => {
-    expect(h.template.render("Hi {{user.name}}!", { user: { name: "Ada" } }))
-      .toBe("Hi Ada!");
+    expect(h.template.render("Hi {{user.name}}!", { user: { name: "Ada" } })).toBe("Hi Ada!");
   });
 
   it("renders {{#if}} blocks", () => {
@@ -95,8 +96,9 @@ describe("template", () => {
   });
 
   it("escapeHtml escapes the canonical 5", () => {
-    expect(h.template.escapeHtml(`<a href="x" onclick='y'>&</a>`))
-      .toBe("&lt;a href=&quot;x&quot; onclick=&#39;y&#39;&gt;&amp;&lt;/a&gt;");
+    expect(h.template.escapeHtml(`<a href="x" onclick='y'>&</a>`)).toBe(
+      "&lt;a href=&quot;x&quot; onclick=&#39;y&#39;&gt;&amp;&lt;/a&gt;",
+    );
   });
 });
 
@@ -125,7 +127,10 @@ describe("http", () => {
     (globalThis as { fetch: unknown }).fetch = async (_url: unknown, _init: unknown) => {
       calls++;
       if (calls < 3) return new Response("fail", { status: 503 });
-      return new Response('{"ok":true}', { status: 200, headers: { "content-type": "application/json" } });
+      return new Response('{"ok":true}', {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     };
     try {
       const r = await h.http.request({
@@ -146,9 +151,15 @@ describe("http", () => {
   it("encodes JSON body + content-type by default", async () => {
     let captured: { url: string; init: RequestInit | undefined } | null = null;
     const origFetch = globalThis.fetch;
-    (globalThis as { fetch: unknown }).fetch = async (url: unknown, init: RequestInit | undefined) => {
+    (globalThis as { fetch: unknown }).fetch = async (
+      url: unknown,
+      init: RequestInit | undefined,
+    ) => {
       captured = { url: String(url), init };
-      return new Response('{"echoed":true}', { status: 200, headers: { "content-type": "application/json" } });
+      return new Response('{"echoed":true}', {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     };
     try {
       await h.http.postJson("http://example.invalid/", { a: 1 });
@@ -167,7 +178,9 @@ describe("os", () => {
   it("env / cwd / platform / arch / hostname return strings", () => {
     expect(typeof h.os.env("PATH")).toBe("string");
     expect(typeof h.os.cwd()).toBe("string");
-    expect(["linux", "darwin", "win32", "freebsd", "openbsd", "netbsd", "sunos", "aix"]).toContain(h.os.platform());
+    expect(["linux", "darwin", "win32", "freebsd", "openbsd", "netbsd", "sunos", "aix"]).toContain(
+      h.os.platform(),
+    );
     expect(typeof h.os.arch()).toBe("string");
     expect(typeof h.os.hostname()).toBe("string");
   });
@@ -179,8 +192,12 @@ describe("os", () => {
 
 describe("fs", () => {
   let scratch: string;
-  beforeAll(() => { scratch = mkdtempSync(pathJoin(tmpdir(), "vb-fs-")); });
-  afterAll(() => { rmSync(scratch, { recursive: true, force: true }); });
+  beforeAll(() => {
+    scratch = mkdtempSync(pathJoin(tmpdir(), "vb-fs-"));
+  });
+  afterAll(() => {
+    rmSync(scratch, { recursive: true, force: true });
+  });
 
   it("write/read round-trips text", async () => {
     const f = pathJoin(scratch, "a.txt");
@@ -252,8 +269,12 @@ describe("fs", () => {
 });
 
 describe("db", () => {
-  beforeAll(() => { initDb(":memory:"); });
-  afterAll(() => { closeDb(); });
+  beforeAll(() => {
+    initDb(":memory:");
+  });
+  afterAll(() => {
+    closeDb();
+  });
 
   it("execMulti + query + exec round-trip", () => {
     h.db.execMulti(`
@@ -261,8 +282,14 @@ describe("db", () => {
       INSERT INTO t (id, name) VALUES (1, 'a'), (2, 'b');
     `);
     const rows = h.db.query<{ id: number; name: string }>("SELECT id, name FROM t ORDER BY id");
-    expect(rows).toEqual([{ id: 1, name: "a" }, { id: 2, name: "b" }]);
-    const one = h.db.queryOne<{ id: number; name: string }>("SELECT id, name FROM t WHERE id = ?", 2);
+    expect(rows).toEqual([
+      { id: 1, name: "a" },
+      { id: 2, name: "b" },
+    ]);
+    const one = h.db.queryOne<{ id: number; name: string }>(
+      "SELECT id, name FROM t WHERE id = ?",
+      2,
+    );
     expect(one).toEqual({ id: 2, name: "b" });
     const r = h.db.exec("UPDATE t SET name = ? WHERE id = ?", "B", 2);
     expect(r.changes).toBe(1);

@@ -33,11 +33,11 @@ export interface PasswordPolicy {
 export function getPasswordPolicy(): PasswordPolicy {
   return {
     min_length: Math.max(8, Number.parseInt(getSetting("password.min_length", "12"), 10) || 12),
-    require_upper:  getSetting("password.require_upper", "0")  === "1",
-    require_lower:  getSetting("password.require_lower", "0")  === "1",
-    require_digit:  getSetting("password.require_digit", "0")  === "1",
+    require_upper: getSetting("password.require_upper", "0") === "1",
+    require_lower: getSetting("password.require_lower", "0") === "1",
+    require_digit: getSetting("password.require_digit", "0") === "1",
     require_symbol: getSetting("password.require_symbol", "0") === "1",
-    hibp_check:     getSetting("password.hibp_check", "0")     === "1",
+    hibp_check: getSetting("password.hibp_check", "0") === "1",
   };
 }
 
@@ -74,7 +74,9 @@ export async function validatePassword(plaintext: string): Promise<string | null
 async function sha1Hex(s: string): Promise<string> {
   const buf = new TextEncoder().encode(s);
   const digest = await crypto.subtle.digest("SHA-1", buf);
-  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase();
 }
 
 /**

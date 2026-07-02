@@ -61,7 +61,8 @@ const wsAuth = new Map<string, WSAuth>();
 /** Pull the persistent connection id off `ws.data` (set by the WS open handler). */
 function connId(ws: WSLike): string {
   const id = (ws as unknown as { data?: { connId?: string } }).data?.connId;
-  if (typeof id !== "string") throw new Error("realtime: ws.data.connId missing — open handler must mint one");
+  if (typeof id !== "string")
+    throw new Error("realtime: ws.data.connId missing — open handler must mint one");
   return id;
 }
 
@@ -118,7 +119,10 @@ export function subscribe(ws: WSLike, topics: string[]): string[] {
     const t = normalizeTopic(raw);
     if (!t) continue;
     let inner = subs.get(t);
-    if (!inner) { inner = new Map(); subs.set(t, inner); }
+    if (!inner) {
+      inner = new Map();
+      subs.set(t, inner);
+    }
     inner.set(id, ws);
     accepted.push(t);
   }
@@ -166,8 +170,8 @@ function shouldSendTo(id: string, opts?: BroadcastOpts): boolean {
   const auth = wsAuth.get(id);
   if (auth?.type === "admin") return true;
   const rule = opts.viewRule;
-  if (rule === null) return true;       // public
-  if (rule === "") return false;        // admin only
+  if (rule === null) return true; // public
+  if (rule === "") return false; // admin only
   const ctx: AuthContext | null = auth
     ? { id: auth.id, type: auth.type, ...(auth.email ? { email: auth.email } : {}) }
     : null;
@@ -183,10 +187,10 @@ function shouldSendTo(id: string, opts?: BroadcastOpts): boolean {
  */
 export function broadcast(collection: string, event: RealtimeEvent, opts?: BroadcastOpts): void {
   const targets: (string | undefined)[] = [
-    collection,                          // collection-level
-    WILDCARD,                            // global
-    `${collection}.${event.type}`,       // event-typed per collection
-    `${WILDCARD}.${event.type}`,         // event-typed global
+    collection, // collection-level
+    WILDCARD, // global
+    `${collection}.${event.type}`, // event-typed per collection
+    `${WILDCARD}.${event.type}`, // event-typed global
   ];
   if (event.type === "create" || event.type === "update") {
     targets.push(`${collection}/${event.record.id}`);
@@ -226,8 +230,11 @@ export function broadcastSystem(topic: string, message: object): void {
   if (!inner) return;
   const payload = JSON.stringify(message);
   for (const [id, ws] of inner) {
-    try { ws.send(payload); }
-    catch { inner.delete(id); }
+    try {
+      ws.send(payload);
+    } catch {
+      inner.delete(id);
+    }
   }
 }
 

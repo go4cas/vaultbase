@@ -5,11 +5,11 @@ import { runMigrations } from "../db/migrate.ts";
 import { createCollection, type FieldDef } from "../core/collections.ts";
 import { createRecord } from "../core/records.ts";
 import { setLogsDir } from "../core/file-logger.ts";
-import { mkdtempSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { makeBatchPlugin } from "../api/batch.ts";
-import { admin as adminTable, users as usersTable } from "../db/schema.ts";
+import { admin as adminTable } from "../db/schema.ts";
 
 const SECRET = "test-secret-batch-rules";
 // verifyAuthToken now requires `iss = "vaultbase"` and a matching DB
@@ -32,7 +32,11 @@ afterEach(() => {
 
 async function signUser(id: string, email: string): Promise<string> {
   const { seedAuthUser } = await import("./_helpers.ts");
-  try { await seedAuthUser({ collection: "users", id, email }); } catch { /* dup */ }
+  try {
+    await seedAuthUser({ collection: "users", id, email });
+  } catch {
+    /* dup */
+  }
   return await new jose.SignJWT({ id, email, collection: "users", jti: crypto.randomUUID() })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuer(ISSUER)
@@ -52,7 +56,9 @@ async function signAdmin(id: string): Promise<string> {
       password_reset_at: 0,
       created_at: now,
     });
-  } catch { /* already inserted */ }
+  } catch {
+    /* already inserted */
+  }
   return await new jose.SignJWT({ id, email: "admin@test.local", jti: crypto.randomUUID() })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuer(ISSUER)
@@ -71,7 +77,10 @@ async function makeFields(extra: FieldDef[] = []): Promise<string> {
   return JSON.stringify(fields);
 }
 
-function batchReq(token: string | null, requests: Array<{ method: string; url: string; body?: unknown }>): Request {
+function batchReq(
+  token: string | null,
+  requests: Array<{ method: string; url: string; body?: unknown }>,
+): Request {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (token) headers.authorization = `Bearer ${token}`;
   return new Request("http://localhost/batch", {
@@ -91,11 +100,13 @@ describe("batch endpoint enforces collection rules", () => {
     });
     const token = await signUser("u1", "user@test.local");
     const app = makeBatchPlugin(SECRET);
-    const res = await app.handle(batchReq(token, [
-      { method: "POST", url: "/api/v1/notes", body: { title: "hi", owner: "u1" } },
-    ]));
+    const res = await app.handle(
+      batchReq(token, [
+        { method: "POST", url: "/api/v1/notes", body: { title: "hi", owner: "u1" } },
+      ]),
+    );
     expect(res.status).toBe(403);
-    const body = await res.json() as { error: string; code: number };
+    const body = (await res.json()) as { error: string; code: number };
     expect(body.code).toBe(403);
     expect(body.error).toContain("create_rule");
   });
@@ -109,11 +120,13 @@ describe("batch endpoint enforces collection rules", () => {
     });
     const token = await signAdmin("a1");
     const app = makeBatchPlugin(SECRET);
-    const res = await app.handle(batchReq(token, [
-      { method: "POST", url: "/api/v1/notes", body: { title: "hi", owner: "a1" } },
-    ]));
+    const res = await app.handle(
+      batchReq(token, [
+        { method: "POST", url: "/api/v1/notes", body: { title: "hi", owner: "a1" } },
+      ]),
+    );
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: Array<{ status: number }> };
+    const body = (await res.json()) as { data: Array<{ status: number }> };
     expect(body.data[0]!.status).toBe(201);
   });
 
@@ -123,23 +136,25 @@ describe("batch endpoint enforces collection rules", () => {
       name: "notes",
       type: "base",
       fields: await makeFields(),
-      create_rule: null,                          // public
-      update_rule: "owner = @request.auth.id",   // owner-only
+      create_rule: null, // public
+      update_rule: "owner = @request.auth.id", // owner-only
     });
     // Pre-seed a record owned by u2 — u1 must not be able to update it
     const r = await createRecord("notes", { title: "old", owner: "u2" }, null);
 
     const token = await signUser("u1", "u1@test.local");
     const app = makeBatchPlugin(SECRET);
-    const res = await app.handle(batchReq(token, [
-      { method: "POST", url: "/api/v1/notes", body: { title: "fresh", owner: "u1" } },
-      { method: "PATCH", url: `/api/notes/${r.id}`, body: { title: "hijacked" } },
-    ]));
+    const res = await app.handle(
+      batchReq(token, [
+        { method: "POST", url: "/api/v1/notes", body: { title: "fresh", owner: "u1" } },
+        { method: "PATCH", url: `/api/notes/${r.id}`, body: { title: "hijacked" } },
+      ]),
+    );
     expect(res.status).toBe(403);
     // Verify rollback: only the original record exists; "fresh" was rolled back
     const list = await (await import("../core/records.ts")).listRecords("notes", {});
     expect(list.totalItems).toBe(1);
-    expect(list.data[0]!["title"]).toBe("old");
+    expect(list.data[0]!.title).toBe("old");
   });
 
   it("applies list_rule as filter so users only see allowed records", async () => {
@@ -149,16 +164,16 @@ describe("batch endpoint enforces collection rules", () => {
       fields: await makeFields(),
       list_rule: "owner = @request.auth.id",
     });
-    await createRecord("notes", { title: "mine",   owner: "u1" }, null);
+    await createRecord("notes", { title: "mine", owner: "u1" }, null);
     await createRecord("notes", { title: "theirs", owner: "u2" }, null);
 
     const token = await signUser("u1", "u1@test.local");
     const app = makeBatchPlugin(SECRET);
-    const res = await app.handle(batchReq(token, [
-      { method: "GET", url: "/api/v1/notes" },
-    ]));
+    const res = await app.handle(batchReq(token, [{ method: "GET", url: "/api/v1/notes" }]));
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: Array<{ status: number; body: { data: Array<{ title: string }> } }> };
+    const body = (await res.json()) as {
+      data: Array<{ status: number; body: { data: Array<{ title: string }> } }>;
+    };
     const records = body.data[0]!.body.data;
     expect(records).toHaveLength(1);
     expect(records[0]!.title).toBe("mine");
@@ -175,9 +190,7 @@ describe("batch endpoint enforces collection rules", () => {
 
     const token = await signUser("u1", "u1@test.local");
     const app = makeBatchPlugin(SECRET);
-    const res = await app.handle(batchReq(token, [
-      { method: "GET", url: `/api/notes/${r.id}` },
-    ]));
+    const res = await app.handle(batchReq(token, [{ method: "GET", url: `/api/notes/${r.id}` }]));
     expect(res.status).toBe(403);
   });
 
@@ -190,9 +203,7 @@ describe("batch endpoint enforces collection rules", () => {
     });
     const token = await signUser("u1", "u1@test.local");
     const app = makeBatchPlugin(SECRET);
-    const res = await app.handle(batchReq(token, [
-      { method: "GET", url: "/api/v1/notes" },
-    ]));
+    const res = await app.handle(batchReq(token, [{ method: "GET", url: "/api/v1/notes" }]));
     expect(res.status).toBe(403);
   });
 });

@@ -5,8 +5,12 @@ import type { RequestContextLike } from "../core/filter.ts";
 
 /** Sensitive headers that NEVER reach the rule engine. */
 const REDACTED_HEADERS: ReadonlySet<string> = new Set([
-  "authorization", "cookie", "set-cookie",
-  "x-setup-key", "x-api-key", "x-auth-token",
+  "authorization",
+  "cookie",
+  "set-cookie",
+  "x-setup-key",
+  "x-api-key",
+  "x-auth-token",
   "proxy-authorization",
 ]);
 
@@ -35,7 +39,9 @@ export function buildRequestContext(
   }
   const url = new URL(request.url);
   const query: Record<string, string> = {};
-  url.searchParams.forEach((v, k) => { query[k] = v; });
+  url.searchParams.forEach((v, k) => {
+    query[k] = v;
+  });
 
   return {
     method: request.method.toUpperCase(),
@@ -73,7 +79,7 @@ export function checkRule(
   rule: string | null,
   auth: AuthContext | null,
   record: Record<string, unknown> | null,
-  reqCtx?: RequestContextLike
+  reqCtx?: RequestContextLike,
 ): boolean {
   let outcome: RuleOutcome;
   let reason: string;
@@ -114,7 +120,7 @@ export function checkRuleOrThrow(
   rule: string | null,
   auth: AuthContext | null,
   record: Record<string, unknown> | null,
-  reqCtx?: RequestContextLike
+  reqCtx?: RequestContextLike,
 ): void {
   if (!checkRule(request, ruleName, collectionName, rule, auth, record, reqCtx)) {
     throw new RuleDeniedError(ruleName);
@@ -130,19 +136,27 @@ export function recordListRule(
   request: Request,
   collectionName: string,
   rule: string | null,
-  auth: AuthContext | null
+  auth: AuthContext | null,
 ): boolean {
   let outcome: RuleOutcome;
   let reason: string;
   let allowed: boolean;
   if (rule === null) {
-    outcome = "allow"; reason = "public"; allowed = true;
+    outcome = "allow";
+    reason = "public";
+    allowed = true;
   } else if (auth?.type === "admin") {
-    outcome = "allow"; reason = "admin bypass"; allowed = true;
+    outcome = "allow";
+    reason = "admin bypass";
+    allowed = true;
   } else if (rule === "") {
-    outcome = "deny"; reason = "admin only"; allowed = false;
+    outcome = "deny";
+    reason = "admin only";
+    allowed = false;
   } else {
-    outcome = "filter"; reason = "applied as SQL filter"; allowed = true;
+    outcome = "filter";
+    reason = "applied as SQL filter";
+    allowed = true;
   }
   recordRuleEval(request, {
     rule: "list_rule",

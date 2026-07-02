@@ -84,7 +84,9 @@ export class VectorParseError extends Error {
 
 export function parseVectorParam(raw: string): number[] {
   let parsed: unknown;
-  try { parsed = JSON.parse(raw); } catch {
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
     throw new VectorParseError("nearVector must be a JSON-encoded number[]");
   }
   if (!Array.isArray(parsed)) {

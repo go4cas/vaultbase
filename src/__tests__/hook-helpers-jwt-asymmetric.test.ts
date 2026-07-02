@@ -7,7 +7,9 @@ const sec = helpers.security;
 
 describe("helpers.security.jwtSign / jwtVerify — algorithm support", () => {
   it("HS256 round-trips with no algorithm specified (back-compat)", async () => {
-    const token = await sec.jwtSign({ sub: "u1", role: "admin" }, "shared-secret", { expiresIn: "1h" });
+    const token = await sec.jwtSign({ sub: "u1", role: "admin" }, "shared-secret", {
+      expiresIn: "1h",
+    });
     const claims = await sec.jwtVerify(token, "shared-secret");
     expect(claims.sub).toBe("u1");
     expect(claims.role).toBe("admin");
@@ -24,11 +26,12 @@ describe("helpers.security.jwtSign / jwtVerify — algorithm support", () => {
     const privPem = await jose.exportPKCS8(privateKey);
     const pubPem = await jose.exportSPKI(publicKey);
 
-    const token = await sec.jwtSign(
-      { sub: "rs-user", iat_for: "fcm" },
-      privPem,
-      { algorithm: "RS256", expiresIn: 3600, issuer: "vaultbase", audience: "https://oauth2.googleapis.com/token" },
-    );
+    const token = await sec.jwtSign({ sub: "rs-user", iat_for: "fcm" }, privPem, {
+      algorithm: "RS256",
+      expiresIn: 3600,
+      issuer: "vaultbase",
+      audience: "https://oauth2.googleapis.com/token",
+    });
     const claims = await sec.jwtVerify(token, pubPem, {
       algorithm: "RS256",
       issuer: "vaultbase",
@@ -44,7 +47,10 @@ describe("helpers.security.jwtSign / jwtVerify — algorithm support", () => {
     const privPem = await jose.exportPKCS8(privateKey);
     const pubPem = await jose.exportSPKI(publicKey);
 
-    const token = await sec.jwtSign({ sub: "es-user" }, privPem, { algorithm: "ES256", expiresIn: 600 });
+    const token = await sec.jwtSign({ sub: "es-user" }, privPem, {
+      algorithm: "ES256",
+      expiresIn: 600,
+    });
     const claims = await sec.jwtVerify(token, pubPem, { algorithm: "ES256" });
     expect(claims.sub).toBe("es-user");
   });

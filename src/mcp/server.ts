@@ -55,7 +55,11 @@ export async function buildRegistry(readOnly: boolean): Promise<ToolRegistry> {
   if (readOnly) {
     // Filter to read-only tools by re-creating a fresh registry.
     const filtered = new ToolRegistry();
-    for (const t of (reg as unknown as { tools: Map<string, { definition: unknown; requiredScope: string; handler: unknown }> }).tools.values()) {
+    for (const t of (
+      reg as unknown as {
+        tools: Map<string, { definition: unknown; requiredScope: string; handler: unknown }>;
+      }
+    ).tools.values()) {
       if (t.requiredScope === "mcp:read") {
         // Re-register on the filtered registry.
         filtered.register(t as unknown as Parameters<ToolRegistry["register"]>[0]);
@@ -129,7 +133,9 @@ export function createDispatcher(reg: ToolRegistry, ctx: ToolContext): Dispatche
           case "tools/call": {
             const params = (req.params ?? {}) as CallToolParams;
             if (typeof params.name !== "string") {
-              return isNotification ? null : fail(RPC_ERR.InvalidParams, "tools/call: missing 'name'");
+              return isNotification
+                ? null
+                : fail(RPC_ERR.InvalidParams, "tools/call: missing 'name'");
             }
             const r: CallToolResult = await reg.call(params.name, params.arguments ?? {}, ctx);
             return isNotification ? null : respond(r);
@@ -144,7 +150,9 @@ export function createDispatcher(reg: ToolRegistry, ctx: ToolContext): Dispatche
           case "resources/read": {
             const params = (req.params ?? {}) as { uri?: unknown };
             if (typeof params.uri !== "string") {
-              return isNotification ? null : fail(RPC_ERR.InvalidParams, "resources/read: missing 'uri'");
+              return isNotification
+                ? null
+                : fail(RPC_ERR.InvalidParams, "resources/read: missing 'uri'");
             }
             try {
               const contents = await readResource(params.uri, ctx);
@@ -159,9 +167,14 @@ export function createDispatcher(reg: ToolRegistry, ctx: ToolContext): Dispatche
             return isNotification ? null : respond({ prompts: listPrompts() });
 
           case "prompts/get": {
-            const params = (req.params ?? {}) as { name?: unknown; arguments?: Record<string, unknown> };
+            const params = (req.params ?? {}) as {
+              name?: unknown;
+              arguments?: Record<string, unknown>;
+            };
             if (typeof params.name !== "string") {
-              return isNotification ? null : fail(RPC_ERR.InvalidParams, "prompts/get: missing 'name'");
+              return isNotification
+                ? null
+                : fail(RPC_ERR.InvalidParams, "prompts/get: missing 'name'");
             }
             try {
               const result = getPrompt(params.name, params.arguments ?? {});
@@ -173,7 +186,9 @@ export function createDispatcher(reg: ToolRegistry, ctx: ToolContext): Dispatche
           }
 
           default:
-            return isNotification ? null : fail(RPC_ERR.MethodNotFound, `method '${req.method}' not implemented`);
+            return isNotification
+              ? null
+              : fail(RPC_ERR.MethodNotFound, `method '${req.method}' not implemented`);
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -194,7 +209,9 @@ function tryParse(line: string): JsonRpcRequest | null {
     if (m.jsonrpc !== "2.0") return null;
     if (typeof m.method !== "string") return null;
     return obj as JsonRpcRequest;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -204,9 +221,15 @@ function tryParse(line: string): JsonRpcRequest | null {
 export async function runStdioServer(opts: ServerOptions): Promise<void> {
   const reg = await buildRegistry(opts.readOnly);
   const dispatcher = createDispatcher(reg, opts.ctx);
-  const stderr = opts.stderr ?? ((s: string) => { process.stderr.write(s); });
+  const stderr =
+    opts.stderr ??
+    ((s: string) => {
+      process.stderr.write(s);
+    });
 
-  stderr(`[vaultbase mcp] booted — ${reg.list().length} tools, scopes: ${opts.ctx.scopes.join(",")}\n`);
+  stderr(
+    `[vaultbase mcp] booted — ${reg.list().length} tools, scopes: ${opts.ctx.scopes.join(",")}\n`,
+  );
 
   // Read newline-delimited JSON from stdin.
   // Bun's stdin is a ReadableStream<Uint8Array>; line-buffer with a tiny
@@ -215,8 +238,9 @@ export async function runStdioServer(opts: ServerOptions): Promise<void> {
   const decoder = new TextDecoder();
   let pending = "";
 
-  const stdin = (process.stdin as unknown as { stream?: () => AsyncIterable<Uint8Array>; }).stream?.()
-    ?? (process.stdin as unknown as AsyncIterable<Uint8Array>);
+  const stdin =
+    (process.stdin as unknown as { stream?: () => AsyncIterable<Uint8Array> }).stream?.() ??
+    (process.stdin as unknown as AsyncIterable<Uint8Array>);
 
   for await (const chunk of stdin) {
     pending += decoder.decode(chunk, { stream: true });
@@ -248,7 +272,7 @@ export async function runStdioServer(opts: ServerOptions): Promise<void> {
 }
 
 function writeMessage(msg: JsonRpcResponse): void {
-  process.stdout.write(JSON.stringify(msg) + "\n");
+  process.stdout.write(`${JSON.stringify(msg)}\n`);
 }
 
 // Re-export the dispatcher pieces so tests can drive the server without

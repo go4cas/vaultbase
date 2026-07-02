@@ -13,7 +13,7 @@ export type JsonRpcId = string | number | null;
 
 export interface JsonRpcRequest {
   jsonrpc: "2.0";
-  id?: JsonRpcId;       // omitted for notifications
+  id?: JsonRpcId; // omitted for notifications
   method: string;
   params?: unknown;
 }
@@ -38,11 +38,11 @@ export type JsonRpcResponse = JsonRpcSuccess | JsonRpcError;
 
 /** Standard JSON-RPC error codes. */
 export const RPC_ERR = {
-  ParseError:     -32700,
+  ParseError: -32700,
   InvalidRequest: -32600,
   MethodNotFound: -32601,
-  InvalidParams:  -32602,
-  InternalError:  -32603,
+  InvalidParams: -32602,
+  InternalError: -32603,
 } as const;
 
 // ── MCP-specific shapes ──────────────────────────────────────────────────
@@ -93,7 +93,10 @@ export interface ListToolsResult {
 export type ContentBlock =
   | { type: "text"; text: string }
   | { type: "image"; data: string; mimeType: string }
-  | { type: "resource"; resource: { uri: string; mimeType?: string; text?: string; blob?: string } };
+  | {
+      type: "resource";
+      resource: { uri: string; mimeType?: string; text?: string; blob?: string };
+    };
 
 export interface CallToolResult {
   content: ContentBlock[];

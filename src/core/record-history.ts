@@ -71,7 +71,12 @@ async function decryptSnapshotFields(
       // Best-effort: if the decoded plaintext looks like JSON, parse it
       // back. Otherwise leave it as a string.
       if (plain.startsWith("{") || plain.startsWith("[")) {
-        try { out[k] = JSON.parse(plain); continue; } catch { /* fall through */ }
+        try {
+          out[k] = JSON.parse(plain);
+          continue;
+        } catch {
+          /* fall through */
+        }
       }
       out[k] = plain;
     } catch {
@@ -108,7 +113,11 @@ interface InsertOpts {
  * Persist a history row if the collection has history enabled. Silently
  * no-ops when disabled — call sites can always invoke it.
  */
-export async function maybeRecordHistory(col: Collection, recordId: string, opts: InsertOpts): Promise<void> {
+export async function maybeRecordHistory(
+  col: Collection,
+  recordId: string,
+  opts: InsertOpts,
+): Promise<void> {
   if (col.history_enabled !== 1) return;
   // N-6a fix: re-encrypt at-rest-encrypted fields before persisting the
   // snapshot. The snapshot is the API record shape (decrypted by
@@ -159,10 +168,7 @@ export async function listRecordHistory(
     eq(recordHistory.record_id, recordId),
   );
 
-  const totalRow = await db
-    .select({ n: sql<number>`COUNT(*)` })
-    .from(recordHistory)
-    .where(where);
+  const totalRow = await db.select({ n: sql<number>`COUNT(*)` }).from(recordHistory).where(where);
   const totalItems = (totalRow[0]?.n ?? 0) as number;
 
   const rows = await db
@@ -175,16 +181,18 @@ export async function listRecordHistory(
 
   // Decrypt at-rest-encrypted fields per row. Each row is independent, so
   // run decryption in parallel.
-  const data: HistoryEntry[] = await Promise.all(rows.map(async (r) => ({
-    id: r.id,
-    collection: r.collection,
-    record_id: r.record_id,
-    op: r.op as HistoryOp,
-    snapshot: await decryptSnapshotFields(parseSnapshot(r.snapshot)),
-    actor_id: r.actor_id,
-    actor_type: (r.actor_type as "user" | "admin" | null) ?? null,
-    at: r.at,
-  })));
+  const data: HistoryEntry[] = await Promise.all(
+    rows.map(async (r) => ({
+      id: r.id,
+      collection: r.collection,
+      record_id: r.record_id,
+      op: r.op as HistoryOp,
+      snapshot: await decryptSnapshotFields(parseSnapshot(r.snapshot)),
+      actor_id: r.actor_id,
+      actor_type: (r.actor_type as "user" | "admin" | null) ?? null,
+      at: r.at,
+    })),
+  );
 
   return {
     data,
@@ -208,11 +216,13 @@ export async function getHistoryAt(
   const rows = await db
     .select()
     .from(recordHistory)
-    .where(and(
-      eq(recordHistory.collection, collectionName),
-      eq(recordHistory.record_id, recordId),
-      sql`${recordHistory.at} <= ${atUnixSec}`,
-    ))
+    .where(
+      and(
+        eq(recordHistory.collection, collectionName),
+        eq(recordHistory.record_id, recordId),
+        sql`${recordHistory.at} <= ${atUnixSec}`,
+      ),
+    )
     .orderBy(desc(recordHistory.at))
     .limit(1);
   const r = rows[0];
@@ -236,10 +246,17 @@ export async function getHistoryAt(
  */
 export async function pruneHistoryOlderThan(cutoffUnixSec: number): Promise<number> {
   const db = getDb();
-  const r = await db.delete(recordHistory).where(lt(recordHistory.at, cutoffUnixSec)).returning({ id: recordHistory.id });
+  const r = await db
+    .delete(recordHistory)
+    .where(lt(recordHistory.at, cutoffUnixSec))
+    .returning({ id: recordHistory.id });
   return r.length;
 }
 
 function parseSnapshot(s: string): Record<string, unknown> {
-  try { return JSON.parse(s) as Record<string, unknown>; } catch { return {}; }
+  try {
+    return JSON.parse(s) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
 }

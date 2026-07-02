@@ -7,9 +7,9 @@
  */
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
 import Elysia from "elysia";
-import { mkdtempSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { initDb, closeDb, getDb } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
@@ -26,7 +26,11 @@ async function seedAdmin(): Promise<{ id: string; email: string }> {
   const email = "ops@test.local";
   const now = Math.floor(Date.now() / 1000);
   await getDb().insert(admin).values({
-    id, email, password_hash: "x", password_reset_at: 0, created_at: now,
+    id,
+    email,
+    password_hash: "x",
+    password_reset_at: 0,
+    created_at: now,
   });
   return { id, email };
 }
@@ -34,7 +38,9 @@ async function seedAdmin(): Promise<{ id: string; email: string }> {
 function mkApp(): Elysia {
   // The plugin attaches to /api/v1 but Elysia's generic type chain bloats
   // through .group() — the cast keeps test signatures readable.
-  return new Elysia().group("/api/v1", (app) => app.use(makeMcpPlugin(SECRET))) as unknown as Elysia;
+  return new Elysia().group("/api/v1", (app) =>
+    app.use(makeMcpPlugin(SECRET)),
+  ) as unknown as Elysia;
 }
 
 beforeEach(async () => {
@@ -76,10 +82,16 @@ describe("MCP HTTP transport", () => {
 
   it("returns 403 when token lacks any mcp:* scope", async () => {
     const a = await seedAdmin();
-    const { token } = await mintApiToken({
-      name: "no-mcp", scopes: ["read"], ttlSeconds: 600,
-      createdBy: a.id, createdByEmail: a.email,
-    }, SECRET);
+    const { token } = await mintApiToken(
+      {
+        name: "no-mcp",
+        scopes: ["read"],
+        ttlSeconds: 600,
+        createdBy: a.id,
+        createdByEmail: a.email,
+      },
+      SECRET,
+    );
     const app = mkApp();
     const res = await rpc(app, { jsonrpc: "2.0", id: 1, method: "ping" }, token);
     expect(res.status).toBe(403);
@@ -87,10 +99,16 @@ describe("MCP HTTP transport", () => {
 
   it("ping with valid mcp:read token returns {}", async () => {
     const a = await seedAdmin();
-    const { token } = await mintApiToken({
-      name: "claude", scopes: ["mcp:read"], ttlSeconds: 600,
-      createdBy: a.id, createdByEmail: a.email,
-    }, SECRET);
+    const { token } = await mintApiToken(
+      {
+        name: "claude",
+        scopes: ["mcp:read"],
+        ttlSeconds: 600,
+        createdBy: a.id,
+        createdByEmail: a.email,
+      },
+      SECRET,
+    );
     const app = mkApp();
     const res = await rpc(app, { jsonrpc: "2.0", id: 1, method: "ping" }, token);
     expect(res.status).toBe(200);
@@ -102,10 +120,16 @@ describe("MCP HTTP transport", () => {
 
   it("initialize advertises tools + resources + prompts", async () => {
     const a = await seedAdmin();
-    const { token } = await mintApiToken({
-      name: "claude", scopes: ["mcp:read"], ttlSeconds: 600,
-      createdBy: a.id, createdByEmail: a.email,
-    }, SECRET);
+    const { token } = await mintApiToken(
+      {
+        name: "claude",
+        scopes: ["mcp:read"],
+        ttlSeconds: 600,
+        createdBy: a.id,
+        createdByEmail: a.email,
+      },
+      SECRET,
+    );
     const app = mkApp();
     const res = await rpc(app, { jsonrpc: "2.0", id: 2, method: "initialize", params: {} }, token);
     expect(res.status).toBe(200);
@@ -117,23 +141,33 @@ describe("MCP HTTP transport", () => {
 
   it("notifications/initialized returns 204 (no body)", async () => {
     const a = await seedAdmin();
-    const { token } = await mintApiToken({
-      name: "claude", scopes: ["mcp:read"], ttlSeconds: 600,
-      createdBy: a.id, createdByEmail: a.email,
-    }, SECRET);
-    const app = mkApp();
-    const res = await rpc(
-      app, { jsonrpc: "2.0", method: "notifications/initialized" }, token,
+    const { token } = await mintApiToken(
+      {
+        name: "claude",
+        scopes: ["mcp:read"],
+        ttlSeconds: 600,
+        createdBy: a.id,
+        createdByEmail: a.email,
+      },
+      SECRET,
     );
+    const app = mkApp();
+    const res = await rpc(app, { jsonrpc: "2.0", method: "notifications/initialized" }, token);
     expect(res.status).toBe(204);
   });
 
   it("rejects non-JSON-RPC body with 400", async () => {
     const a = await seedAdmin();
-    const { token } = await mintApiToken({
-      name: "claude", scopes: ["mcp:read"], ttlSeconds: 600,
-      createdBy: a.id, createdByEmail: a.email,
-    }, SECRET);
+    const { token } = await mintApiToken(
+      {
+        name: "claude",
+        scopes: ["mcp:read"],
+        ttlSeconds: 600,
+        createdBy: a.id,
+        createdByEmail: a.email,
+      },
+      SECRET,
+    );
     const app = mkApp();
     const res = await rpc(app, { foo: "bar" }, token);
     expect(res.status).toBe(400);
@@ -141,10 +175,16 @@ describe("MCP HTTP transport", () => {
 
   it("tools/list returns the registered tool set", async () => {
     const a = await seedAdmin();
-    const { token } = await mintApiToken({
-      name: "claude", scopes: ["mcp:read"], ttlSeconds: 600,
-      createdBy: a.id, createdByEmail: a.email,
-    }, SECRET);
+    const { token } = await mintApiToken(
+      {
+        name: "claude",
+        scopes: ["mcp:read"],
+        ttlSeconds: 600,
+        createdBy: a.id,
+        createdByEmail: a.email,
+      },
+      SECRET,
+    );
     const app = mkApp();
     const res = await rpc(app, { jsonrpc: "2.0", id: 3, method: "tools/list" }, token);
     const body = (await res.json()) as { result: { tools: Array<{ name: string }> } };

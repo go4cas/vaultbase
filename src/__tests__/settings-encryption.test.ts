@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { initDb, closeDb } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
 import { setLogsDir } from "../core/file-logger.ts";
@@ -22,7 +22,7 @@ import {
 
 // 32 random bytes hex-encoded → 64 chars
 const TEST_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-const ALT_KEY  = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+const ALT_KEY = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
 
 let tmpDir: string;
 let originalKey: string | undefined;
@@ -32,15 +32,15 @@ beforeEach(async () => {
   setLogsDir(tmpDir);
   initDb(":memory:");
   await runMigrations();
-  originalKey = process.env["VAULTBASE_ENCRYPTION_KEY"];
+  originalKey = process.env.VAULTBASE_ENCRYPTION_KEY;
   _resetSettingsCryptoWarnings();
 });
 
 afterEach(() => {
   closeDb();
   rmSync(tmpDir, { recursive: true, force: true });
-  if (originalKey === undefined) delete process.env["VAULTBASE_ENCRYPTION_KEY"];
-  else process.env["VAULTBASE_ENCRYPTION_KEY"] = originalKey;
+  if (originalKey === undefined) delete process.env.VAULTBASE_ENCRYPTION_KEY;
+  else process.env.VAULTBASE_ENCRYPTION_KEY = originalKey;
 });
 
 describe("shouldEncryptSettingKey", () => {
@@ -69,7 +69,9 @@ describe("shouldEncryptSettingKey", () => {
 });
 
 describe("setSetting / getSetting with encryption key set", () => {
-  beforeEach(() => { process.env["VAULTBASE_ENCRYPTION_KEY"] = TEST_KEY; });
+  beforeEach(() => {
+    process.env.VAULTBASE_ENCRYPTION_KEY = TEST_KEY;
+  });
 
   it("encrypts a secret-shaped value at rest, returns plaintext on read", () => {
     setSetting("smtp.password", "hunter2");
@@ -126,7 +128,9 @@ describe("setSetting / getSetting with encryption key set", () => {
 });
 
 describe("setSetting without encryption key", () => {
-  beforeEach(() => { delete process.env["VAULTBASE_ENCRYPTION_KEY"]; });
+  beforeEach(() => {
+    delete process.env.VAULTBASE_ENCRYPTION_KEY;
+  });
 
   it("stores secrets as plaintext (back-compat) and emits one warning per key", () => {
     const errors: string[] = [];
@@ -153,11 +157,11 @@ describe("setSetting without encryption key", () => {
 
 describe("decrypt failure path", () => {
   it("returns empty string and warns when key is wrong", () => {
-    process.env["VAULTBASE_ENCRYPTION_KEY"] = TEST_KEY;
+    process.env.VAULTBASE_ENCRYPTION_KEY = TEST_KEY;
     setSetting("smtp.password", "hunter2");
 
     // Rotate to a different key — old ciphertext is now unreadable.
-    process.env["VAULTBASE_ENCRYPTION_KEY"] = ALT_KEY;
+    process.env.VAULTBASE_ENCRYPTION_KEY = ALT_KEY;
     _resetSettingsCryptoWarnings();
 
     const errors: string[] = [];
@@ -181,7 +185,9 @@ describe("decrypt failure path", () => {
 });
 
 describe("wire compatibility: sync ⇄ async", () => {
-  beforeEach(() => { process.env["VAULTBASE_ENCRYPTION_KEY"] = TEST_KEY; });
+  beforeEach(() => {
+    process.env.VAULTBASE_ENCRYPTION_KEY = TEST_KEY;
+  });
 
   it("sync-encrypted decrypts via async", async () => {
     const ct = encryptValueSync("round-trip-1");

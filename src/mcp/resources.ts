@@ -188,8 +188,8 @@ async function readCollectionSchema(name: string): Promise<unknown> {
     type: col.type,
     history_enabled: col.history_enabled === 1,
     view_query: col.view_query,
-    list_rule:   col.list_rule,
-    view_rule:   col.view_rule,
+    list_rule: col.list_rule,
+    view_rule: col.view_rule,
     create_rule: col.create_rule,
     update_rule: col.update_rule,
     delete_rule: col.delete_rule,
@@ -197,7 +197,11 @@ async function readCollectionSchema(name: string): Promise<unknown> {
   };
 }
 
-async function readSingleRecord(collection: string, id: string, _ctx: ToolContext): Promise<unknown> {
+async function readSingleRecord(
+  collection: string,
+  id: string,
+  _ctx: ToolContext,
+): Promise<unknown> {
   const col = await getCollection(collection);
   if (!col) throw new Error(`Collection '${collection}' not found`);
   // Auth principal is implicit — same as the auto-tool path; the minting
@@ -228,4 +232,3 @@ function readServerInfo(): unknown {
     capabilities: ["tools", "resources", "prompts"],
   };
 }
-

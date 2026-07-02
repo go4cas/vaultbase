@@ -1,5 +1,5 @@
-import { existsSync, unlinkSync, statSync, rmSync } from "fs";
-import { join, resolve, sep } from "path";
+import { existsSync, unlinkSync, statSync, rmSync } from "node:fs";
+import { join, resolve, sep } from "node:path";
 import { getAllSettings } from "../api/settings.ts";
 
 /**
@@ -32,9 +32,9 @@ function safeLocalPath(uploadDir: string, key: string): string {
 export type StorageDriver = "local" | "s3";
 
 export interface S3Config {
-  endpoint: string;        // e.g. https://<acct>.r2.cloudflarestorage.com
+  endpoint: string; // e.g. https://<acct>.r2.cloudflarestorage.com
   bucket: string;
-  region: string;          // "auto" for R2; "us-east-1" etc. for AWS
+  region: string; // "auto" for R2; "us-east-1" etc. for AWS
   accessKeyId: string;
   secretAccessKey: string;
   /** Public URL prefix for serving objects directly (e.g. CDN-fronted bucket). Optional — when empty we proxy bytes via /api/files. */
@@ -87,7 +87,11 @@ function getConfig(): StorageConfig {
 }
 
 interface S3LikeClient {
-  write(key: string, data: ArrayBuffer | Uint8Array | Blob | string, opts?: { type?: string }): Promise<unknown>;
+  write(
+    key: string,
+    data: ArrayBuffer | Uint8Array | Blob | string,
+    opts?: { type?: string },
+  ): Promise<unknown>;
   file(key: string): { arrayBuffer(): Promise<ArrayBuffer>; exists(): Promise<boolean> };
   delete(key: string): Promise<unknown>;
   exists(key: string): Promise<boolean>;
@@ -130,7 +134,11 @@ function s3Client(s3: S3Config): S3LikeClient {
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
-export async function writeFile(key: string, data: ArrayBuffer | Uint8Array | Blob, contentType?: string): Promise<void> {
+export async function writeFile(
+  key: string,
+  data: ArrayBuffer | Uint8Array | Blob,
+  contentType?: string,
+): Promise<void> {
   const cfg = getConfig();
   if (cfg.driver === "s3") {
     if (!cfg.s3) throw new Error("S3 driver selected but configuration is missing");
@@ -151,7 +159,11 @@ export async function readFile(key: string): Promise<ArrayBuffer | null> {
     return await f.arrayBuffer();
   }
   let path: string;
-  try { path = safeLocalPath(cfg.uploadDir, key); } catch { return null; }
+  try {
+    path = safeLocalPath(cfg.uploadDir, key);
+  } catch {
+    return null;
+  }
   if (!existsSync(path)) return null;
   return await Bun.file(path).arrayBuffer();
 }
@@ -162,17 +174,29 @@ export async function fileExists(key: string): Promise<boolean> {
     if (!cfg.s3) throw new Error("S3 driver selected but configuration is missing");
     return await s3Client(cfg.s3).exists(key);
   }
-  try { return existsSync(safeLocalPath(cfg.uploadDir, key)); } catch { return false; }
+  try {
+    return existsSync(safeLocalPath(cfg.uploadDir, key));
+  } catch {
+    return false;
+  }
 }
 
 export async function deleteFile(key: string): Promise<void> {
   const cfg = getConfig();
   if (cfg.driver === "s3") {
     if (!cfg.s3) throw new Error("S3 driver selected but configuration is missing");
-    try { await s3Client(cfg.s3).delete(key); } catch { /* swallow — already gone is fine */ }
+    try {
+      await s3Client(cfg.s3).delete(key);
+    } catch {
+      /* swallow — already gone is fine */
+    }
     return;
   }
-  try { unlinkSync(safeLocalPath(cfg.uploadDir, key)); } catch { /* already gone or invalid */ }
+  try {
+    unlinkSync(safeLocalPath(cfg.uploadDir, key));
+  } catch {
+    /* already gone or invalid */
+  }
 }
 
 /** Returns a Response that streams/serves the file. Falls back to fetching bytes for S3. */
@@ -184,7 +208,11 @@ export async function fileResponse(key: string): Promise<Response | null> {
     return new Response(buf);
   }
   let path: string;
-  try { path = safeLocalPath(cfg.uploadDir, key); } catch { return null; }
+  try {
+    path = safeLocalPath(cfg.uploadDir, key);
+  } catch {
+    return null;
+  }
   if (!existsSync(path)) return null;
   return new Response(Bun.file(path));
 }
@@ -203,7 +231,11 @@ export function thumbCacheDir(): string {
 }
 
 /** Test the configured backend with a put + get + delete round trip. */
-export async function testStorage(): Promise<{ ok: boolean; driver: StorageDriver; error?: string }> {
+export async function testStorage(): Promise<{
+  ok: boolean;
+  driver: StorageDriver;
+  error?: string;
+}> {
   const cfg = getConfig();
   const probeKey = `.vaultbase-probe-${Date.now()}`;
   const probeData = new TextEncoder().encode("ok").buffer;
@@ -217,7 +249,11 @@ export async function testStorage(): Promise<{ ok: boolean; driver: StorageDrive
     return { ok: true, driver: cfg.driver };
   } catch (e) {
     // Best-effort cleanup
-    try { await deleteFile(probeKey); } catch { /* noop */ }
+    try {
+      await deleteFile(probeKey);
+    } catch {
+      /* noop */
+    }
     return { ok: false, driver: cfg.driver, error: e instanceof Error ? e.message : String(e) };
   }
 }
@@ -228,10 +264,17 @@ export function clearThumbCache(): void {
   if (!existsSync(dir)) return;
   try {
     rmSync(dir, { recursive: true, force: true });
-  } catch { /* noop */ }
+  } catch {
+    /* noop */
+  }
 }
 
-export function getStorageStatus(): { driver: StorageDriver; uploadDir: string; bucket?: string; endpoint?: string } {
+export function getStorageStatus(): {
+  driver: StorageDriver;
+  uploadDir: string;
+  bucket?: string;
+  endpoint?: string;
+} {
   const cfg = getConfig();
   const out: ReturnType<typeof getStorageStatus> = { driver: cfg.driver, uploadDir: cfg.uploadDir };
   if (cfg.s3) {

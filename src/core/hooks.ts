@@ -32,14 +32,20 @@ export function getActiveHookRequest(): Request | undefined {
 }
 
 export type HookEvent =
-  | "beforeCreate" | "afterCreate"
-  | "beforeUpdate" | "afterUpdate"
-  | "beforeDelete" | "afterDelete";
+  | "beforeCreate"
+  | "afterCreate"
+  | "beforeUpdate"
+  | "afterUpdate"
+  | "beforeDelete"
+  | "afterDelete";
 
 export const HOOK_EVENTS: HookEvent[] = [
-  "beforeCreate", "afterCreate",
-  "beforeUpdate", "afterUpdate",
-  "beforeDelete", "afterDelete",
+  "beforeCreate",
+  "afterCreate",
+  "beforeUpdate",
+  "afterUpdate",
+  "beforeDelete",
+  "afterDelete",
 ];
 
 export interface HookContext {
@@ -72,7 +78,7 @@ export interface HookHelpers extends ExtraHookHelpers {
   find(collection: string, id: string): Promise<Record<string, unknown> | null>;
   query(
     collection: string,
-    opts?: { filter?: string; sort?: string; perPage?: number }
+    opts?: { filter?: string; sort?: string; perPage?: number },
   ): Promise<{ data: Record<string, unknown>[]; totalItems: number }>;
   fetch: typeof globalThis.fetch;
   log(...args: unknown[]): void;
@@ -98,7 +104,7 @@ export interface HookHelpers extends ExtraHookHelpers {
       retries?: number;
       backoff?: "exponential" | "fixed";
       retryDelayMs?: number;
-    }
+    },
   ): Promise<{ jobId: string; deduped: boolean }>;
   /**
    * Push notification + in-app inbox shorthand. Inserts one row in
@@ -118,7 +124,7 @@ export interface HookHelpers extends ExtraHookHelpers {
       providers?: ("onesignal" | "fcm")[];
       inbox?: boolean;
       push?: boolean;
-    }
+    },
   ): Promise<{
     inboxRowId: string | null;
     enqueued: { provider: "onesignal" | "fcm"; jobId: string; deduped: boolean }[];
@@ -142,7 +148,7 @@ interface CompiledHook {
 
 const compiledCache = new Map<string, CompiledHook>(); // hook id → compiled
 
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
+const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as new (
   ...args: string[]
 ) => (ctx: HookContext) => Promise<unknown>;
 
@@ -162,7 +168,7 @@ export function invalidateHookCache(): void {
 
 async function lookupEnabledHooks(
   collectionName: string,
-  event: HookEvent
+  event: HookEvent,
 ): Promise<CompiledHook[]> {
   const db = getDb();
   // Match either the specific collection or global ('') hooks
@@ -172,7 +178,7 @@ async function lookupEnabledHooks(
     .where(and(eq(hooks.event, event), eq(hooks.enabled, 1)));
 
   const matching = rows.filter(
-    (r) => r.collection_name === "" || r.collection_name === collectionName
+    (r) => r.collection_name === "" || r.collection_name === collectionName,
   );
 
   const compiled: CompiledHook[] = [];
@@ -180,7 +186,10 @@ async function lookupEnabledHooks(
     let entry = compiledCache.get(r.id);
     if (!entry) {
       const c = compileHook(r);
-      if (c) { compiledCache.set(r.id, c); entry = c; }
+      if (c) {
+        compiledCache.set(r.id, c);
+        entry = c;
+      }
     }
     if (entry) compiled.push(entry);
   }
@@ -191,14 +200,17 @@ export async function runBeforeHook(
   collection: Collection,
   event: "beforeCreate" | "beforeUpdate" | "beforeDelete",
   ctx: HookContext,
-  request?: Request
+  request?: Request,
 ): Promise<void> {
   const list = await lookupEnabledHooks(collection.name, event);
   // Resolve effective request: explicit arg wins; otherwise inherit ALS scope.
   const effectiveReq = request ?? hookRequestStorage.getStore();
   for (const h of list) {
     const helperCtx: HookHelperContext = {
-      collection: collection.name, event, auth: ctx.auth, name: h.name,
+      collection: collection.name,
+      event,
+      auth: ctx.auth,
+      name: h.name,
     };
     if (effectiveReq) helperCtx.request = effectiveReq;
     const helpers = makeHookHelpers(helperCtx);
@@ -216,7 +228,7 @@ export function runAfterHook(
   collection: Collection,
   event: "afterCreate" | "afterUpdate" | "afterDelete",
   ctx: HookContext,
-  request?: Request
+  request?: Request,
 ): void {
   // Fire-and-forget; errors are logged but don't fail the request
   const effectiveReq = request ?? hookRequestStorage.getStore();
@@ -224,7 +236,10 @@ export function runAfterHook(
     const list = await lookupEnabledHooks(collection.name, event);
     for (const h of list) {
       const helperCtx: HookHelperContext = {
-        collection: collection.name, event, auth: ctx.auth, name: h.name,
+        collection: collection.name,
+        event,
+        auth: ctx.auth,
+        name: h.name,
       };
       if (effectiveReq) helperCtx.request = effectiveReq;
       const helpers = makeHookHelpers(helperCtx);
@@ -255,7 +270,11 @@ export interface HookHelperContext {
 function formatLogArg(v: unknown): string {
   if (typeof v === "string") return v;
   if (v instanceof Error) return v.stack ?? v.message;
-  try { return JSON.stringify(v); } catch { return String(v); }
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
 }
 
 export function makeHookHelpers(ctx: HookHelperContext = {}): HookHelpers {
@@ -301,11 +320,13 @@ export function makeHookHelpers(ctx: HookHelperContext = {}): HookHelpers {
       if (ctx.event !== undefined) input.event = ctx.event;
       if (ctx.name) input.name = ctx.name;
       if (ctx.auth !== undefined) {
-        input.auth = ctx.auth ? {
-          id: ctx.auth.id,
-          type: ctx.auth.type,
-          ...(ctx.auth.email ? { email: ctx.auth.email } : {}),
-        } : null;
+        input.auth = ctx.auth
+          ? {
+              id: ctx.auth.id,
+              type: ctx.auth.type,
+              ...(ctx.auth.email ? { email: ctx.auth.email } : {}),
+            }
+          : null;
       }
       appendHookLog(input);
     },

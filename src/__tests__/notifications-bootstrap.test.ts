@@ -1,13 +1,18 @@
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import * as jose from "jose";
 import { initDb, closeDb, getDb } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
 import { setLogsDir } from "../core/file-logger.ts";
 import { admin as adminTable } from "../db/schema.ts";
-import { createCollection, getCollection, parseFields, _resetCollectionCache } from "../core/collections.ts";
+import {
+  createCollection,
+  getCollection,
+  parseFields,
+  _resetCollectionCache,
+} from "../core/collections.ts";
 import { bootstrapNotificationCollections } from "../core/notifications.ts";
 import { makeNotificationsPlugin } from "../api/notifications.ts";
 
@@ -33,10 +38,15 @@ afterEach(() => {
 async function adminToken(): Promise<string> {
   const id = crypto.randomUUID();
   const hash = await Bun.password.hash("pw");
-  await getDb().insert(adminTable).values({
-    id, email: "a@x.test", password_hash: hash, password_reset_at: 0,
-    created_at: Math.floor(Date.now() / 1000),
-  });
+  await getDb()
+    .insert(adminTable)
+    .values({
+      id,
+      email: "a@x.test",
+      password_hash: hash,
+      password_reset_at: 0,
+      created_at: Math.floor(Date.now() / 1000),
+    });
   return new jose.SignJWT({ id, email: "a@x.test" })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuer("vaultbase")
@@ -65,7 +75,9 @@ describe("bootstrapNotificationCollections", () => {
     expect(notif.list_rule).toBe("user = @request.auth.id");
     expect(notif.view_rule).toBe("user = @request.auth.id");
     expect(notif.update_rule).toBe("user = @request.auth.id");
-    const fields = parseFields(notif.fields).map((f) => f.name).sort();
+    const fields = parseFields(notif.fields)
+      .map((f) => f.name)
+      .sort();
     // Field set; created_at/updated_at are added implicitly by createUserTable.
     expect(fields).toEqual(["body", "data", "read_at", "title", "type", "user"]);
   });
@@ -73,7 +85,7 @@ describe("bootstrapNotificationCollections", () => {
   it("device_tokens collection has token UNIQUE + admin-only rules", async () => {
     await bootstrapNotificationCollections();
     const dt = (await getCollection("device_tokens"))!;
-    expect(dt.list_rule).toBe("");   // admin-only
+    expect(dt.list_rule).toBe(""); // admin-only
     const fields = parseFields(dt.fields);
     const token = fields.find((f) => f.name === "token");
     expect(token?.options?.unique).toBe(true);
@@ -85,7 +97,9 @@ describe("bootstrapNotificationCollections", () => {
     await bootstrapNotificationCollections();
     const client = (getDb() as unknown as { $client: import("bun:sqlite").Database }).$client;
     const rows = client
-      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name IN ('vb_notifications','vb_device_tokens')`)
+      .prepare(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name IN ('vb_notifications','vb_device_tokens')`,
+      )
       .all() as Array<{ name: string }>;
     expect(rows.map((r) => r.name).sort()).toEqual(["vb_device_tokens", "vb_notifications"]);
   });
@@ -120,16 +134,18 @@ describe("PATCH provider triggers bootstrap on enable", () => {
   it("creates collections on first enable", async () => {
     const token = await adminToken();
     const app = makeNotificationsPlugin(JWT_SECRET);
-    const res = await app.handle(new Request(
-      "http://localhost/admin/notifications/providers/onesignal",
-      {
+    const res = await app.handle(
+      new Request("http://localhost/admin/notifications/providers/onesignal", {
         method: "PATCH",
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
         body: JSON.stringify({ enabled: true, app_id: "a", api_key: "k" }),
-      },
-    ));
+      }),
+    );
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: unknown; bootstrap?: { created: string[]; skipped: string[] } };
+    const body = (await res.json()) as {
+      data: unknown;
+      bootstrap?: { created: string[]; skipped: string[] };
+    };
     expect(body.bootstrap?.created.sort()).toEqual(["device_tokens", "notifications"]);
 
     const notif = await getCollection("notifications");
@@ -140,24 +156,22 @@ describe("PATCH provider triggers bootstrap on enable", () => {
     // First, enable + bootstrap.
     const token = await adminToken();
     const app = makeNotificationsPlugin(JWT_SECRET);
-    await app.handle(new Request(
-      "http://localhost/admin/notifications/providers/onesignal",
-      {
+    await app.handle(
+      new Request("http://localhost/admin/notifications/providers/onesignal", {
         method: "PATCH",
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
         body: JSON.stringify({ enabled: true, app_id: "a", api_key: "k" }),
-      },
-    ));
+      }),
+    );
     // Then disable.
-    const res = await app.handle(new Request(
-      "http://localhost/admin/notifications/providers/onesignal",
-      {
+    const res = await app.handle(
+      new Request("http://localhost/admin/notifications/providers/onesignal", {
         method: "PATCH",
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
         body: JSON.stringify({ enabled: false }),
-      },
-    ));
-    const body = await res.json() as { data: unknown; bootstrap?: unknown };
+      }),
+    );
+    const body = (await res.json()) as { data: unknown; bootstrap?: unknown };
     expect(body.bootstrap).toBeUndefined();
   });
 });

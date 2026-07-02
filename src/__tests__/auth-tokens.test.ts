@@ -4,8 +4,6 @@ import { closeDb, initDb } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
 import { setSetting } from "../api/settings.ts";
 import { createCollection } from "../core/collections.ts";
-import { authTokens, users } from "../db/schema.ts";
-import { getDb } from "../db/client.ts";
 import { makeAuthPlugin } from "../api/auth.ts";
 import {
   AUTH_WINDOW_BOUNDS,
@@ -109,7 +107,9 @@ describe("isAuthWindowKey()", () => {
 
 describe("listAuthWindowKinds() covers every default", () => {
   it("listed kinds match DEFAULT_WINDOWS keys", () => {
-    expect(new Set<string>(listAuthWindowKinds())).toEqual(new Set<string>(Object.keys(DEFAULT_WINDOWS)));
+    expect(new Set<string>(listAuthWindowKinds())).toEqual(
+      new Set<string>(Object.keys(DEFAULT_WINDOWS)),
+    );
   });
 });
 
@@ -136,13 +136,12 @@ describe("anonymous endpoint honors auth.anonymous.window_seconds", () => {
     });
     const res = await app.handle(req);
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: { token: string } };
-    const { payload } = await jose.jwtVerify(
-      body.data.token,
-      new TextEncoder().encode(SECRET),
-      { audience: "user" }
-    );
-    const issuedFor = (payload.exp as number) - (payload.iat as number || Math.floor(Date.now() / 1000));
+    const body = (await res.json()) as { data: { token: string } };
+    const { payload } = await jose.jwtVerify(body.data.token, new TextEncoder().encode(SECRET), {
+      audience: "user",
+    });
+    const issuedFor =
+      (payload.exp as number) - ((payload.iat as number) || Math.floor(Date.now() / 1000));
     // 30d ± 5s tolerance for clock skew during the request
     expect(Math.abs(issuedFor - DEFAULT_WINDOWS.anonymous)).toBeLessThan(5);
   });
@@ -158,7 +157,7 @@ describe("anonymous endpoint honors auth.anonymous.window_seconds", () => {
       body: "{}",
     });
     const res = await app.handle(req);
-    const body = await res.json() as { data: { token: string } };
+    const body = (await res.json()) as { data: { token: string } };
     const { payload } = await jose.jwtVerify(body.data.token, new TextEncoder().encode(SECRET));
     const issuedFor = (payload.exp as number) - Math.floor(Date.now() / 1000);
     expect(Math.abs(issuedFor - 3600)).toBeLessThan(5);
@@ -175,7 +174,7 @@ describe("anonymous endpoint honors auth.anonymous.window_seconds", () => {
       body: "{}",
     });
     const res = await app.handle(req);
-    const body = await res.json() as { data: { token: string } };
+    const body = (await res.json()) as { data: { token: string } };
     const { payload } = await jose.jwtVerify(body.data.token, new TextEncoder().encode(SECRET));
     const issuedFor = (payload.exp as number) - Math.floor(Date.now() / 1000);
     expect(Math.abs(issuedFor - DEFAULT_WINDOWS.anonymous)).toBeLessThan(5);

@@ -41,8 +41,12 @@ export interface UpdateStatus {
  */
 function compareVersions(a: string, b: string): number {
   const norm = (s: string) => s.replace(/^v/, "").split("-")[0] ?? "";
-  const pa = norm(a).split(".").map((p) => Number.parseInt(p, 10) || 0);
-  const pb = norm(b).split(".").map((p) => Number.parseInt(p, 10) || 0);
+  const pa = norm(a)
+    .split(".")
+    .map((p) => Number.parseInt(p, 10) || 0);
+  const pb = norm(b)
+    .split(".")
+    .map((p) => Number.parseInt(p, 10) || 0);
   const len = Math.max(pa.length, pb.length);
   for (let i = 0; i < len; i++) {
     const x = pa[i] ?? 0;
@@ -57,14 +61,14 @@ export async function runUpdateCheck(): Promise<void> {
   if (getSetting("update_check.enabled", "1") !== "1") return;
   try {
     const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
-      headers: { "Accept": "application/vnd.github+json", "User-Agent": "vaultbase-update-check" },
+      headers: { Accept: "application/vnd.github+json", "User-Agent": "vaultbase-update-check" },
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) {
       setSetting("update_check.error", `GitHub ${res.status}`);
       return;
     }
-    const body = await res.json() as { tag_name?: string };
+    const body = (await res.json()) as { tag_name?: string };
     const tag = (body.tag_name ?? "").trim();
     if (!tag) {
       setSetting("update_check.error", "no tag_name in response");
@@ -81,13 +85,23 @@ export async function runUpdateCheck(): Promise<void> {
 export function startUpdateCheckScheduler(): void {
   stopUpdateCheckScheduler();
   if (getSetting("update_check.enabled", "1") !== "1") return;
-  firstTimer = setTimeout(() => { void runUpdateCheck(); }, FIRST_DELAY_MS);
-  timer = setInterval(() => { void runUpdateCheck(); }, POLL_INTERVAL_MS);
+  firstTimer = setTimeout(() => {
+    void runUpdateCheck();
+  }, FIRST_DELAY_MS);
+  timer = setInterval(() => {
+    void runUpdateCheck();
+  }, POLL_INTERVAL_MS);
 }
 
 export function stopUpdateCheckScheduler(): void {
-  if (firstTimer) { clearTimeout(firstTimer); firstTimer = null; }
-  if (timer) { clearInterval(timer); timer = null; }
+  if (firstTimer) {
+    clearTimeout(firstTimer);
+    firstTimer = null;
+  }
+  if (timer) {
+    clearInterval(timer);
+    timer = null;
+  }
 }
 
 export function getUpdateStatus(): UpdateStatus {

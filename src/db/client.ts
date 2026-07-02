@@ -64,8 +64,16 @@ export function initDb(url: string): DB {
   // Default analysis sample size is 100 rows per index; 400 gives noticeably
   // better stats on tables with skewed distributions (audit log, log files,
   // record_history) without crossing into seconds-of-boot cost.
-  try { _client.exec("PRAGMA analysis_limit = 400;"); } catch { /* noop */ }
-  try { _client.exec("PRAGMA optimize;"); } catch { /* noop */ }
+  try {
+    _client.exec("PRAGMA analysis_limit = 400;");
+  } catch {
+    /* noop */
+  }
+  try {
+    _client.exec("PRAGMA optimize;");
+  } catch {
+    /* noop */
+  }
 
   _db = drizzle(_client, { schema });
   return _db;
@@ -85,13 +93,19 @@ async function clearAllStmtCachesOnClose(): Promise<void> {
   try {
     const mod = await import("../core/records.ts");
     mod.invalidatePreparedStatements?.();
-  } catch { /* records module not loaded — nothing to clear */ }
+  } catch {
+    /* records module not loaded — nothing to clear */
+  }
   try {
     const mod = await import("../core/users-table.ts");
     mod.invalidateUserTableColumnCache?.();
-  } catch { /* not loaded */ }
+  } catch {
+    /* not loaded */
+  }
   try {
     const mod = await import("../core/collections.ts");
     mod._resetCollectionCache?.();
-  } catch { /* not loaded */ }
+  } catch {
+    /* not loaded */
+  }
 }

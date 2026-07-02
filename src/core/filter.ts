@@ -39,9 +39,9 @@ export interface RequestContextLike {
  * Implementations return `null` when the collection isn't found, or
  * `{ viewRule: null }` for collections with public view access.
  */
-export interface CollectionLookup {
-  (collectionName: string): { viewRule: string | null; hasField: (name: string) => boolean } | null;
-}
+export type CollectionLookup = (
+  collectionName: string,
+) => { viewRule: string | null; hasField: (name: string) => boolean } | null;
 
 /**
  * Compile a filter expression to a parameterized SQL fragment for `tableName`.
@@ -138,23 +138,35 @@ function compileNode(ast: Expr, ctx: CompileCtx): string {
     (ast.left.kind === "requestMap" && ast.left.modifier === "isset") ||
     (ast.right.kind === "requestMap" && ast.right.modifier === "isset")
   ) {
-    const lhs = ast.left.kind === "requestMap" && ast.left.modifier === "isset"
-      ? requestIsSet(ast.left, ctx) : compileOperand(ast.left, ctx);
-    const rhs = ast.right.kind === "requestMap" && ast.right.modifier === "isset"
-      ? requestIsSet(ast.right, ctx) : compileOperand(ast.right, ctx);
+    const lhs =
+      ast.left.kind === "requestMap" && ast.left.modifier === "isset"
+        ? requestIsSet(ast.left, ctx)
+        : compileOperand(ast.left, ctx);
+    const rhs =
+      ast.right.kind === "requestMap" && ast.right.modifier === "isset"
+        ? requestIsSet(ast.right, ctx)
+        : compileOperand(ast.right, ctx);
     return `(${lhs}) ${sqlOpFor(op)} (${rhs})`;
   }
 
   // `:changed` modifier — only valid on @request.body.* fields, evaluated at
   // compile time against `request.body` vs `request.existing`.
   if (
-    (ast.left.kind === "requestMap" && ast.left.mapKind === "body" && ast.left.modifier === "changed") ||
-    (ast.right.kind === "requestMap" && ast.right.mapKind === "body" && ast.right.modifier === "changed")
+    (ast.left.kind === "requestMap" &&
+      ast.left.mapKind === "body" &&
+      ast.left.modifier === "changed") ||
+    (ast.right.kind === "requestMap" &&
+      ast.right.mapKind === "body" &&
+      ast.right.modifier === "changed")
   ) {
-    const lhs = ast.left.kind === "requestMap" && ast.left.modifier === "changed"
-      ? bodyChanged(ast.left, ctx) : compileOperand(ast.left, ctx);
-    const rhs = ast.right.kind === "requestMap" && ast.right.modifier === "changed"
-      ? bodyChanged(ast.right, ctx) : compileOperand(ast.right, ctx);
+    const lhs =
+      ast.left.kind === "requestMap" && ast.left.modifier === "changed"
+        ? bodyChanged(ast.left, ctx)
+        : compileOperand(ast.left, ctx);
+    const rhs =
+      ast.right.kind === "requestMap" && ast.right.modifier === "changed"
+        ? bodyChanged(ast.right, ctx)
+        : compileOperand(ast.right, ctx);
     return `(${lhs}) ${sqlOpFor(op)} (${rhs})`;
   }
 
@@ -168,8 +180,10 @@ function compileNode(ast: Expr, ctx: CompileCtx): string {
   // `:each` modifier on a field operand — match-EVERY-element semantics.
   // Compiles to NOT EXISTS (... WHERE NOT (value <op> ?)).
   if (
-    (ast.left.kind === "field" || ast.left.kind === "collection") && ast.left.modifier === "each" ||
-    (ast.right.kind === "field" || ast.right.kind === "collection") && ast.right.modifier === "each"
+    ((ast.left.kind === "field" || ast.left.kind === "collection") &&
+      ast.left.modifier === "each") ||
+    ((ast.right.kind === "field" || ast.right.kind === "collection") &&
+      ast.right.modifier === "each")
   ) {
     return compileEach(ast.left, ast.right, op, ctx);
   }
@@ -196,19 +210,27 @@ function sqlOpFor(op: AnyCmpOp): string {
 
 /** `field:each <op> value` — match every array element. */
 function compileEach(left: Operand, right: Operand, op: AnyCmpOp, ctx: CompileCtx): string {
-  const arrayOperand = ((left.kind === "field" || left.kind === "collection") && left.modifier === "each")
-    ? left : right;
+  const arrayOperand =
+    (left.kind === "field" || left.kind === "collection") && left.modifier === "each"
+      ? left
+      : right;
   const scalarOperand = arrayOperand === left ? right : left;
   if (arrayOperand.kind !== "field" && arrayOperand.kind !== "collection") {
     throw new Error(":each requires a field operand");
   }
 
   // Strip the modifier when emitting the field reference inside the subquery.
-  const stripped: Operand = arrayOperand.kind === "field"
-    ? { kind: "field", name: arrayOperand.name, path: arrayOperand.path }
-    : (arrayOperand.alias
-        ? { kind: "collection", collection: arrayOperand.collection, alias: arrayOperand.alias, path: arrayOperand.path }
-        : { kind: "collection", collection: arrayOperand.collection, path: arrayOperand.path });
+  const stripped: Operand =
+    arrayOperand.kind === "field"
+      ? { kind: "field", name: arrayOperand.name, path: arrayOperand.path }
+      : arrayOperand.alias
+        ? {
+            kind: "collection",
+            collection: arrayOperand.collection,
+            alias: arrayOperand.alias,
+            path: arrayOperand.path,
+          }
+        : { kind: "collection", collection: arrayOperand.collection, path: arrayOperand.path };
 
   const arraySql = compileOperand(stripped, ctx);
   let cmp: string;
@@ -313,7 +335,10 @@ function compileFieldRef(op: Extract<Operand, { kind: "field" }>, ctx: CompileCt
   return applyModifierToSql(expr, op.modifier);
 }
 
-function compileCollectionRef(op: Extract<Operand, { kind: "collection" }>, ctx: CompileCtx): string {
+function compileCollectionRef(
+  op: Extract<Operand, { kind: "collection" }>,
+  ctx: CompileCtx,
+): string {
   if (!IDENT_RE.test(op.collection)) throw new Error(`invalid collection: ${op.collection}`);
   for (const p of op.path) if (!IDENT_RE.test(p)) throw new Error(`invalid path: ${p}`);
   if (++ctx.joinDepth > MAX_JOIN_DEPTH) {
@@ -370,10 +395,16 @@ function compileCollectionRef(op: Extract<Operand, { kind: "collection" }>, ctx:
   }
 }
 
-function compileViaRelationRef(op: Extract<Operand, { kind: "viaRelation" }>, ctx: CompileCtx): string {
-  if (!IDENT_RE.test(op.targetCollection)) throw new Error(`invalid back-relation target: ${op.targetCollection}`);
-  if (!IDENT_RE.test(op.refField)) throw new Error(`invalid back-relation ref field: ${op.refField}`);
-  for (const p of op.path) if (!IDENT_RE.test(p)) throw new Error(`invalid back-relation path: ${p}`);
+function compileViaRelationRef(
+  op: Extract<Operand, { kind: "viaRelation" }>,
+  ctx: CompileCtx,
+): string {
+  if (!IDENT_RE.test(op.targetCollection))
+    throw new Error(`invalid back-relation target: ${op.targetCollection}`);
+  if (!IDENT_RE.test(op.refField))
+    throw new Error(`invalid back-relation ref field: ${op.refField}`);
+  for (const p of op.path)
+    if (!IDENT_RE.test(p)) throw new Error(`invalid back-relation path: ${p}`);
   if (++ctx.joinDepth > MAX_JOIN_DEPTH) {
     throw new Error("_via_ join depth exceeded");
   }
@@ -383,15 +414,16 @@ function compileViaRelationRef(op: Extract<Operand, { kind: "viaRelation" }>, ct
 
     // Default selection — id of the matching back-related rows. With a path,
     // pull `<path>` instead.
-    const sel = op.path.length === 0
-      ? `${escapeIdent(targetTable)}.${escapeIdent("id")}`
-      : (() => {
-          let inner = `${escapeIdent(targetTable)}.${escapeIdent(op.path[0]!)}`;
-          for (let i = 1; i < op.path.length; i++) {
-            inner = `json_extract(${inner}, '$.${op.path[i]}')`;
-          }
-          return inner;
-        })();
+    const sel =
+      op.path.length === 0
+        ? `${escapeIdent(targetTable)}.${escapeIdent("id")}`
+        : (() => {
+            let inner = `${escapeIdent(targetTable)}.${escapeIdent(op.path[0]!)}`;
+            for (let i = 1; i < op.path.length; i++) {
+              inner = `json_extract(${inner}, '$.${op.path[i]}')`;
+            }
+            return inner;
+          })();
 
     // Validate ref field if a lookup is provided.
     let where = `${escapeIdent(targetTable)}.${escapeIdent(op.refField)} = ${escapeIdent(ctx.tableName)}.${escapeIdent(ctx.hostIdField)}`;
@@ -434,11 +466,13 @@ function compileFunc(op: Extract<Operand, { kind: "func" }>, ctx: CompileCtx): s
     if (op.args.length !== 4) throw new Error("geoDistance expects 4 args");
     const [lonA, latA, lonB, latB] = op.args.map((a) => compileOperand(a, ctx));
     // Haversine in km. Earth radius 6371.
-    return `(2 * 6371 * asin(sqrt(` +
+    return (
+      `(2 * 6371 * asin(sqrt(` +
       `pow(sin(radians(${latB} - ${latA}) / 2), 2) + ` +
       `cos(radians(${latA})) * cos(radians(${latB})) * ` +
       `pow(sin(radians(${lonB} - ${lonA}) / 2), 2)` +
-    `)))`;
+      `)))`
+    );
   }
   if (op.name === "strftime") {
     if (op.args.length < 2) throw new Error("strftime expects at least 2 args");
@@ -451,8 +485,10 @@ function compileFunc(op: Extract<Operand, { kind: "func" }>, ctx: CompileCtx): s
 function applyModifierToSql(expr: string, m?: FieldModifier): string {
   if (!m) return expr;
   switch (m) {
-    case "lower":  return `LOWER(${expr})`;
-    case "length": return `COALESCE(json_array_length(${expr}), length(${expr}))`;
+    case "lower":
+      return `LOWER(${expr})`;
+    case "length":
+      return `COALESCE(json_array_length(${expr}), length(${expr}))`;
     case "isset":
     case "changed":
     case "each":
@@ -478,25 +514,30 @@ function applyModifierToValue(v: unknown, m?: FieldModifier): unknown {
 
 function operandValue(op: Operand, ctx: CompileCtx): unknown {
   switch (op.kind) {
-    case "literal": return coerceLiteral(op.value);
-    case "auth":    return authValue(ctx.auth, op.prop);
-    case "request": return ctx.request?.[op.prop] ?? null;
+    case "literal":
+      return coerceLiteral(op.value);
+    case "auth":
+      return authValue(ctx.auth, op.prop);
+    case "request":
+      return ctx.request?.[op.prop] ?? null;
     case "requestMap": {
       const map = ctx.request?.[op.mapKind];
       return map?.[op.key.toLowerCase().replace(/-/g, "_")] ?? map?.[op.key] ?? null;
     }
-    case "macro":   return macroValue(op.name);
-    default:        return null;
+    case "macro":
+      return macroValue(op.name);
+    default:
+      return null;
   }
 }
 
 /** SQL-side `:isset` resolution: 1 if request has the key, 0 otherwise. */
 function requestIsSet(op: Extract<Operand, { kind: "requestMap" }>, ctx: CompileCtx): string {
   const map = ctx.request?.[op.mapKind];
-  const present = map !== undefined && (
-    op.key in (map as Record<string, unknown>) ||
-    op.key.toLowerCase().replace(/-/g, "_") in (map as Record<string, unknown>)
-  );
+  const present =
+    map !== undefined &&
+    (op.key in (map as Record<string, unknown>) ||
+      op.key.toLowerCase().replace(/-/g, "_") in (map as Record<string, unknown>));
   ctx.params.push(present ? 1 : 0);
   return "?";
 }
@@ -517,7 +558,7 @@ function bodyChanged(op: Extract<Operand, { kind: "requestMap" }>, ctx: CompileC
 
 function authValue(auth: AuthContext | null, prop: "id" | "email" | "type"): string | null {
   if (!auth) return null;
-  if (prop === "id")   return auth.id || null;
+  if (prop === "id") return auth.id || null;
   if (prop === "type") return auth.type;
   return auth.email ?? null;
 }
@@ -526,23 +567,46 @@ function macroValue(name: string): string | number {
   const now = new Date();
   const utc = (d: Date) => d.toISOString();
   switch (name) {
-    case "now":          return utc(now);
-    case "yesterday":    return utc(new Date(now.getTime() - 86_400_000));
-    case "tomorrow":     return utc(new Date(now.getTime() + 86_400_000));
-    case "todayStart":   return utc(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())));
-    case "todayEnd":     return utc(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999)));
-    case "monthStart":   return utc(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)));
-    case "monthEnd":     return utc(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59, 999)));
-    case "yearStart":    return utc(new Date(Date.UTC(now.getUTCFullYear(), 0, 1)));
-    case "yearEnd":      return utc(new Date(Date.UTC(now.getUTCFullYear(), 11, 31, 23, 59, 59, 999)));
-    case "second":       return now.getUTCSeconds();
-    case "minute":       return now.getUTCMinutes();
-    case "hour":         return now.getUTCHours();
-    case "day":          return now.getUTCDate();
-    case "weekday":      return now.getUTCDay();
-    case "month":        return now.getUTCMonth() + 1;
-    case "year":         return now.getUTCFullYear();
-    default:             throw new Error(`unknown macro: ${name}`);
+    case "now":
+      return utc(now);
+    case "yesterday":
+      return utc(new Date(now.getTime() - 86_400_000));
+    case "tomorrow":
+      return utc(new Date(now.getTime() + 86_400_000));
+    case "todayStart":
+      return utc(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())));
+    case "todayEnd":
+      return utc(
+        new Date(
+          Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999),
+        ),
+      );
+    case "monthStart":
+      return utc(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)));
+    case "monthEnd":
+      return utc(
+        new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59, 999)),
+      );
+    case "yearStart":
+      return utc(new Date(Date.UTC(now.getUTCFullYear(), 0, 1)));
+    case "yearEnd":
+      return utc(new Date(Date.UTC(now.getUTCFullYear(), 11, 31, 23, 59, 59, 999)));
+    case "second":
+      return now.getUTCSeconds();
+    case "minute":
+      return now.getUTCMinutes();
+    case "hour":
+      return now.getUTCHours();
+    case "day":
+      return now.getUTCDate();
+    case "weekday":
+      return now.getUTCDay();
+    case "month":
+      return now.getUTCMonth() + 1;
+    case "year":
+      return now.getUTCFullYear();
+    default:
+      throw new Error(`unknown macro: ${name}`);
   }
 }
 
@@ -562,7 +626,11 @@ function stableEq(a: unknown, b: unknown): boolean {
   if (a == null || b == null) return false;
   if (typeof a !== typeof b) return false;
   if (typeof a === "object") {
-    try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; }
+    try {
+      return JSON.stringify(a) === JSON.stringify(b);
+    } catch {
+      return false;
+    }
   }
   return false;
 }

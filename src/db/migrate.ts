@@ -21,9 +21,23 @@ export async function runMigrations() {
       updated_at INTEGER NOT NULL DEFAULT (unixepoch())
     )
   `);
-  try { client.exec(`ALTER TABLE vaultbase_collections ADD COLUMN type TEXT NOT NULL DEFAULT 'base'`); } catch { /* exists */ }
-  try { client.exec(`ALTER TABLE vaultbase_collections ADD COLUMN view_query TEXT`); } catch { /* exists */ }
-  try { client.exec(`ALTER TABLE vaultbase_collections ADD COLUMN history_enabled INTEGER NOT NULL DEFAULT 0`); } catch { /* exists */ }
+  try {
+    client.exec(`ALTER TABLE vaultbase_collections ADD COLUMN type TEXT NOT NULL DEFAULT 'base'`);
+  } catch {
+    /* exists */
+  }
+  try {
+    client.exec(`ALTER TABLE vaultbase_collections ADD COLUMN view_query TEXT`);
+  } catch {
+    /* exists */
+  }
+  try {
+    client.exec(
+      `ALTER TABLE vaultbase_collections ADD COLUMN history_enabled INTEGER NOT NULL DEFAULT 0`,
+    );
+  } catch {
+    /* exists */
+  }
 
   // Drop legacy single-table records (replaced by per-collection tables)
   client.exec(`DROP TABLE IF EXISTS vaultbase_records`);
@@ -61,10 +75,22 @@ export async function runMigrations() {
       created_at INTEGER NOT NULL DEFAULT (unixepoch())
     )
   `);
-  try { client.exec(`ALTER TABLE vaultbase_auth_tokens ADD COLUMN code TEXT`); } catch { /* exists */ }
-  try { client.exec(`ALTER TABLE vaultbase_auth_tokens ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`); } catch { /* exists */ }
-  client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_auth_tokens_user ON vaultbase_auth_tokens(user_id, purpose)`);
-  client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_auth_tokens_code ON vaultbase_auth_tokens(code, purpose)`);
+  try {
+    client.exec(`ALTER TABLE vaultbase_auth_tokens ADD COLUMN code TEXT`);
+  } catch {
+    /* exists */
+  }
+  try {
+    client.exec(`ALTER TABLE vaultbase_auth_tokens ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`);
+  } catch {
+    /* exists */
+  }
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vaultbase_auth_tokens_user ON vaultbase_auth_tokens(user_id, purpose)`,
+  );
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vaultbase_auth_tokens_code ON vaultbase_auth_tokens(code, purpose)`,
+  );
 
   client.exec(`
     CREATE TABLE IF NOT EXISTS vaultbase_token_revocations (
@@ -73,7 +99,9 @@ export async function runMigrations() {
       revoked_at INTEGER NOT NULL DEFAULT (unixepoch())
     )
   `);
-  client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_token_revocations_exp ON vaultbase_token_revocations(expires_at)`);
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vaultbase_token_revocations_exp ON vaultbase_token_revocations(expires_at)`,
+  );
 
   client.exec(`
     CREATE TABLE IF NOT EXISTS vaultbase_mfa_recovery_lookup (
@@ -92,7 +120,9 @@ export async function runMigrations() {
       created_at INTEGER NOT NULL DEFAULT (unixepoch())
     )
   `);
-  client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_mfa_recovery_codes_user ON vaultbase_mfa_recovery_codes(user_id, collection_id)`);
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vaultbase_mfa_recovery_codes_user ON vaultbase_mfa_recovery_codes(user_id, collection_id)`,
+  );
 
   client.exec(`
     CREATE TABLE IF NOT EXISTS vaultbase_oauth_links (
@@ -105,8 +135,12 @@ export async function runMigrations() {
       created_at INTEGER NOT NULL DEFAULT (unixepoch())
     )
   `);
-  client.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_vaultbase_oauth_links_provider ON vaultbase_oauth_links(provider, provider_user_id)`);
-  client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_oauth_links_user ON vaultbase_oauth_links(user_id)`);
+  client.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_vaultbase_oauth_links_provider ON vaultbase_oauth_links(provider, provider_user_id)`,
+  );
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vaultbase_oauth_links_user ON vaultbase_oauth_links(user_id)`,
+  );
 
   client.exec(`
     CREATE TABLE IF NOT EXISTS vaultbase_admin (
@@ -117,8 +151,20 @@ export async function runMigrations() {
       created_at INTEGER NOT NULL DEFAULT (unixepoch())
     )
   `);
-  try { client.exec(`ALTER TABLE vaultbase_admin ADD COLUMN password_reset_at INTEGER NOT NULL DEFAULT 0`); } catch { /* exists */ }
-  try { client.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_vaultbase_admin_email ON vaultbase_admin(email)`); } catch { /* exists */ }
+  try {
+    client.exec(
+      `ALTER TABLE vaultbase_admin ADD COLUMN password_reset_at INTEGER NOT NULL DEFAULT 0`,
+    );
+  } catch {
+    /* exists */
+  }
+  try {
+    client.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_vaultbase_admin_email ON vaultbase_admin(email)`,
+    );
+  } catch {
+    /* exists */
+  }
 
   client.exec(`
     CREATE TABLE IF NOT EXISTS vaultbase_files (
@@ -159,7 +205,11 @@ export async function runMigrations() {
     )
   `);
   // Idempotent ADD COLUMN for existing DBs
-  try { client.exec(`ALTER TABLE vaultbase_hooks ADD COLUMN name TEXT NOT NULL DEFAULT ''`); } catch { /* exists */ }
+  try {
+    client.exec(`ALTER TABLE vaultbase_hooks ADD COLUMN name TEXT NOT NULL DEFAULT ''`);
+  } catch {
+    /* exists */
+  }
 
   client.exec(`
     CREATE TABLE IF NOT EXISTS vaultbase_routes (
@@ -191,7 +241,11 @@ export async function runMigrations() {
     )
   `);
   // Idempotent ALTER: pre-existing installs missing the mode column
-  try { client.exec(`ALTER TABLE vaultbase_jobs ADD COLUMN mode TEXT NOT NULL DEFAULT 'inline'`); } catch { /* exists */ }
+  try {
+    client.exec(`ALTER TABLE vaultbase_jobs ADD COLUMN mode TEXT NOT NULL DEFAULT 'inline'`);
+  } catch {
+    /* exists */
+  }
 
   client.exec(`
     CREATE TABLE IF NOT EXISTS vaultbase_workers (
@@ -226,8 +280,12 @@ export async function runMigrations() {
       finished_at INTEGER
     )
   `);
-  client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_jobs_log_status ON vaultbase_jobs_log(queue, status, scheduled_at)`);
-  client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_jobs_log_unique ON vaultbase_jobs_log(unique_key, status)`);
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vaultbase_jobs_log_status ON vaultbase_jobs_log(queue, status, scheduled_at)`,
+  );
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vaultbase_jobs_log_unique ON vaultbase_jobs_log(unique_key, status)`,
+  );
 
   client.exec(`
     CREATE TABLE IF NOT EXISTS vaultbase_record_history (
@@ -241,8 +299,12 @@ export async function runMigrations() {
       at INTEGER NOT NULL DEFAULT (unixepoch())
     )
   `);
-  client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_record_history_lookup ON vaultbase_record_history(collection, record_id, at)`);
-  client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_record_history_at ON vaultbase_record_history(at)`);
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vaultbase_record_history_lookup ON vaultbase_record_history(collection, record_id, at)`,
+  );
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vaultbase_record_history_at ON vaultbase_record_history(at)`,
+  );
 
   client.exec(`
     CREATE TABLE IF NOT EXISTS vaultbase_audit_log (
@@ -259,9 +321,13 @@ export async function runMigrations() {
       at INTEGER NOT NULL DEFAULT (unixepoch())
     )
   `);
-  client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_audit_log_actor ON vaultbase_audit_log(actor_id, at)`);
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vaultbase_audit_log_actor ON vaultbase_audit_log(actor_id, at)`,
+  );
   client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_audit_log_at ON vaultbase_audit_log(at)`);
-  client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_audit_log_action ON vaultbase_audit_log(action, at)`);
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vaultbase_audit_log_action ON vaultbase_audit_log(action, at)`,
+  );
 
   client.exec(`
     CREATE TABLE IF NOT EXISTS vaultbase_admin_sessions (
@@ -274,8 +340,12 @@ export async function runMigrations() {
       user_agent TEXT
     )
   `);
-  client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_admin_sessions_admin ON vaultbase_admin_sessions(admin_id)`);
-  client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_admin_sessions_exp ON vaultbase_admin_sessions(expires_at)`);
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vaultbase_admin_sessions_admin ON vaultbase_admin_sessions(admin_id)`,
+  );
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vaultbase_admin_sessions_exp ON vaultbase_admin_sessions(expires_at)`,
+  );
 
   client.exec(`
     CREATE TABLE IF NOT EXISTS vaultbase_login_failures (
@@ -284,8 +354,12 @@ export async function runMigrations() {
       at INTEGER NOT NULL
     )
   `);
-  client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_login_failures_key ON vaultbase_login_failures(key, at)`);
-  client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_login_failures_at ON vaultbase_login_failures(at)`);
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vaultbase_login_failures_key ON vaultbase_login_failures(key, at)`,
+  );
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vaultbase_login_failures_at ON vaultbase_login_failures(at)`,
+  );
 
   client.exec(`
     CREATE TABLE IF NOT EXISTS vaultbase_webhooks (
@@ -321,8 +395,12 @@ export async function runMigrations() {
       created_at INTEGER NOT NULL DEFAULT (unixepoch())
     )
   `);
-  client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_webhook_deliveries_status ON vaultbase_webhook_deliveries(status, scheduled_at)`);
-  client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_webhook_deliveries_webhook ON vaultbase_webhook_deliveries(webhook_id, created_at)`);
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vaultbase_webhook_deliveries_status ON vaultbase_webhook_deliveries(status, scheduled_at)`,
+  );
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vaultbase_webhook_deliveries_webhook ON vaultbase_webhook_deliveries(webhook_id, created_at)`,
+  );
 
   client.exec(`
     CREATE TABLE IF NOT EXISTS vaultbase_flag_segments (
@@ -355,7 +433,9 @@ export async function runMigrations() {
       ip TEXT
     )
   `);
-  client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_file_token_uses_used_at ON vaultbase_file_token_uses(used_at)`);
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vaultbase_file_token_uses_used_at ON vaultbase_file_token_uses(used_at)`,
+  );
 
   client.exec(`
     CREATE TABLE IF NOT EXISTS vaultbase_api_tokens (
@@ -373,8 +453,12 @@ export async function runMigrations() {
       use_count        INTEGER NOT NULL DEFAULT 0
     )
   `);
-  client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_api_tokens_created_by ON vaultbase_api_tokens(created_by)`);
-  client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_api_tokens_expires ON vaultbase_api_tokens(expires_at)`);
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vaultbase_api_tokens_created_by ON vaultbase_api_tokens(created_by)`,
+  );
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vaultbase_api_tokens_expires ON vaultbase_api_tokens(expires_at)`,
+  );
 
   client.exec(`
     CREATE TABLE IF NOT EXISTS vaultbase_sql_queries (
@@ -392,7 +476,9 @@ export async function runMigrations() {
       last_error         TEXT
     )
   `);
-  client.exec(`CREATE INDEX IF NOT EXISTS idx_vaultbase_sql_queries_owner ON vaultbase_sql_queries(owner_admin_id, updated_at DESC)`);
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_vaultbase_sql_queries_owner ON vaultbase_sql_queries(owner_admin_id, updated_at DESC)`,
+  );
 
   // ── v0.11: auth users moved to per-collection `vb_<auth-col>` tables ──
   //
@@ -415,12 +501,13 @@ export async function runMigrations() {
  * `vaultbase doctor` and reconcile before the next boot.
  */
 function v0_11FinalizeAuthMigration(client: Database): void {
-  const exists = client.prepare(
-    `SELECT name FROM sqlite_master WHERE type='table' AND name='vaultbase_users'`,
-  ).get() as { name: string } | undefined;
+  const exists = client
+    .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='vaultbase_users'`)
+    .get() as { name: string } | undefined;
   if (!exists) return;
 
-  const total = (client.prepare(`SELECT count(*) AS n FROM vaultbase_users`).get() as { n: number }).n;
+  const total = (client.prepare(`SELECT count(*) AS n FROM vaultbase_users`).get() as { n: number })
+    .n;
   if (total === 0) {
     client.exec(`DROP TABLE vaultbase_users`);
     return;
@@ -428,29 +515,35 @@ function v0_11FinalizeAuthMigration(client: Database): void {
 
   // Verify every row was copied. If any are missing, leave the legacy
   // table in place so the operator can re-run migration / fix data.
-  const authCols = client.prepare(
-    `SELECT id, name FROM vaultbase_collections WHERE type='auth'`,
-  ).all() as Array<{ id: string; name: string }>;
+  const authCols = client
+    .prepare(`SELECT id, name FROM vaultbase_collections WHERE type='auth'`)
+    .all() as Array<{ id: string; name: string }>;
   let copied = 0;
   for (const c of authCols) {
     const tbl = `vb_${c.name}`;
     const quoted = `"${tbl.replace(/"/g, '""')}"`;
     try {
-      const matched = (client.prepare(
-        `SELECT count(u.id) AS n FROM vaultbase_users u
+      const matched = (
+        client
+          .prepare(
+            `SELECT count(u.id) AS n FROM vaultbase_users u
          JOIN ${quoted} v ON v.id = u.id
          WHERE u.collection_id = ?`,
-      ).get(c.id) as { n: number }).n;
+          )
+          .get(c.id) as { n: number }
+      ).n;
       copied += matched;
-    } catch { /* per-table query failed — be conservative, don't drop */ return; }
+    } catch {
+      /* per-table query failed — be conservative, don't drop */ return;
+    }
   }
   if (copied >= total) {
     client.exec(`DROP TABLE vaultbase_users`);
   } else {
     process.stderr.write(
       `[vaultbase] WARN: vaultbase_users still has ${total - copied} row(s) not yet ` +
-      `mirrored to per-collection vb_<auth-col> tables. Run \`vaultbase doctor\` and ` +
-      `reconcile before the next boot — the legacy table will not be dropped until clean.\n`,
+        `mirrored to per-collection vb_<auth-col> tables. Run \`vaultbase doctor\` and ` +
+        `reconcile before the next boot — the legacy table will not be dropped until clean.\n`,
     );
   }
 }
@@ -458,14 +551,14 @@ function v0_11FinalizeAuthMigration(client: Database): void {
 /** Per-auth-collection table prep. Exported for the doctor CLI to dry-run. */
 function v0_11PrepAuthTables(client: Database): void {
   // Skip entirely if vaultbase_users doesn't exist yet (fresh install).
-  const usersTableExists = client.prepare(
-    `SELECT name FROM sqlite_master WHERE type='table' AND name='vaultbase_users'`,
-  ).get() as { name: string } | undefined;
+  const usersTableExists = client
+    .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='vaultbase_users'`)
+    .get() as { name: string } | undefined;
   if (!usersTableExists) return;
 
-  const authCols = client.prepare(
-    `SELECT id, name, fields FROM vaultbase_collections WHERE type='auth'`,
-  ).all() as Array<{ id: string; name: string; fields: string }>;
+  const authCols = client
+    .prepare(`SELECT id, name, fields FROM vaultbase_collections WHERE type='auth'`)
+    .all() as Array<{ id: string; name: string; fields: string }>;
 
   for (const col of authCols) {
     const tbl = `vb_${col.name}`;
@@ -473,23 +566,31 @@ function v0_11PrepAuthTables(client: Database): void {
 
     // 1. ALTER ADD auth columns (idempotent).
     const authColumns = [
-      ["email",             "TEXT"],
-      ["password_hash",     "TEXT"],
-      ["email_verified",    "INTEGER NOT NULL DEFAULT 0"],
-      ["totp_secret",       "TEXT"],
-      ["totp_enabled",      "INTEGER NOT NULL DEFAULT 0"],
-      ["is_anonymous",      "INTEGER NOT NULL DEFAULT 0"],
+      ["email", "TEXT"],
+      ["password_hash", "TEXT"],
+      ["email_verified", "INTEGER NOT NULL DEFAULT 0"],
+      ["totp_secret", "TEXT"],
+      ["totp_enabled", "INTEGER NOT NULL DEFAULT 0"],
+      ["is_anonymous", "INTEGER NOT NULL DEFAULT 0"],
       ["password_reset_at", "INTEGER NOT NULL DEFAULT 0"],
     ];
     for (const [name, sql] of authColumns) {
-      try { client.exec(`ALTER TABLE ${quoted} ADD COLUMN "${name}" ${sql}`); }
-      catch { /* column exists */ }
+      try {
+        client.exec(`ALTER TABLE ${quoted} ADD COLUMN "${name}" ${sql}`);
+      } catch {
+        /* column exists */
+      }
     }
 
     // 2. ALTER ADD custom-field columns from the collection's `fields` JSON
     // (skip implicit + autodate). Idempotent.
-    let fields: Array<{ name?: unknown; type?: unknown; implicit?: unknown; system?: unknown }> = [];
-    try { fields = JSON.parse(col.fields || "[]") as typeof fields; } catch { /* skip */ }
+    let fields: Array<{ name?: unknown; type?: unknown; implicit?: unknown; system?: unknown }> =
+      [];
+    try {
+      fields = JSON.parse(col.fields || "[]") as typeof fields;
+    } catch {
+      /* skip */
+    }
     for (const f of fields) {
       if (typeof f.name !== "string") continue;
       if (f.implicit || f.system || f.type === "autodate") continue;
@@ -497,52 +598,84 @@ function v0_11PrepAuthTables(client: Database): void {
       const colName = `"${f.name.replace(/"/g, '""')}"`;
       let sqlType: string;
       switch (f.type) {
-        case "number":   sqlType = "REAL"; break;
-        case "bool":     sqlType = "INTEGER"; break;
-        case "date":     sqlType = "INTEGER"; break;
-        default:         sqlType = "TEXT"; break;
+        case "number":
+          sqlType = "REAL";
+          break;
+        case "bool":
+          sqlType = "INTEGER";
+          break;
+        case "date":
+          sqlType = "INTEGER";
+          break;
+        default:
+          sqlType = "TEXT";
+          break;
       }
-      try { client.exec(`ALTER TABLE ${quoted} ADD COLUMN ${colName} ${sqlType}`); }
-      catch { /* column exists */ }
+      try {
+        client.exec(`ALTER TABLE ${quoted} ADD COLUMN ${colName} ${sqlType}`);
+      } catch {
+        /* column exists */
+      }
     }
 
     // 3. Copy rows from vaultbase_users into vb_<name>. INSERT OR IGNORE so
     // re-running on already-migrated installs is a no-op. The custom-column
     // values are pulled from the row's `data` JSON via json_extract.
-    const customColNames = (fields
-      .filter((f) => typeof f.name === "string" && !f.implicit && !f.system && f.type !== "autodate")
-      .map((f) => f.name as string));
+    const customColNames = fields
+      .filter(
+        (f) => typeof f.name === "string" && !f.implicit && !f.system && f.type !== "autodate",
+      )
+      .map((f) => f.name as string);
 
     const insertCols = [
-      "id", "email", "password_hash", "email_verified", "totp_secret",
-      "totp_enabled", "is_anonymous", "created_at", "updated_at",
+      "id",
+      "email",
+      "password_hash",
+      "email_verified",
+      "totp_secret",
+      "totp_enabled",
+      "is_anonymous",
+      "created_at",
+      "updated_at",
       ...customColNames,
     ];
     const insertColsList = insertCols.map((c) => `"${c.replace(/"/g, '""')}"`).join(", ");
 
     // Build SELECT list. Custom cols come from json_extract on `data`.
     const selectExprs = [
-      `id`, `email`, `password_hash`, `email_verified`, `totp_secret`,
-      `totp_enabled`, `is_anonymous`, `created_at`, `updated_at`,
+      `id`,
+      `email`,
+      `password_hash`,
+      `email_verified`,
+      `totp_secret`,
+      `totp_enabled`,
+      `is_anonymous`,
+      `created_at`,
+      `updated_at`,
       ...customColNames.map((c) => `json_extract(data, '$."${c.replace(/"/g, '""')}"')`),
     ];
     const selectList = selectExprs.join(", ");
 
-    const sql = `INSERT OR IGNORE INTO ${quoted} (${insertColsList}) ` +
-                `SELECT ${selectList} FROM vaultbase_users WHERE collection_id = ?`;
+    const sql =
+      `INSERT OR IGNORE INTO ${quoted} (${insertColsList}) ` +
+      `SELECT ${selectList} FROM vaultbase_users WHERE collection_id = ?`;
     try {
       client.prepare(sql).run(col.id);
     } catch (e) {
       process.stderr.write(
         `[vaultbase] WARN: v0.11 auth-table prep failed for collection '${col.name}': ` +
-        `${e instanceof Error ? e.message : String(e)}\n`,
+          `${e instanceof Error ? e.message : String(e)}\n`,
       );
     }
 
     // 4. UNIQUE index on email — collection-local. Skip silently if
     // duplicates exist (doctor will flag them).
     try {
-      client.exec(`CREATE UNIQUE INDEX IF NOT EXISTS "idx_${tbl}_email" ON ${quoted}(email) WHERE email IS NOT NULL`);
-    } catch { /* duplicate emails — operator must reconcile via doctor */ }
+      client.exec(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "idx_${tbl}_email" ON ${quoted}(email) WHERE email IS NOT NULL`,
+      );
+    } catch {
+      /* duplicate emails — operator must reconcile via doctor */
+    }
   }
 }

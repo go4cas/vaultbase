@@ -19,11 +19,11 @@
  */
 
 export type SqlTokenType =
-  | "ident"        // raw identifier (caller normalises to keyword if applicable)
-  | "string"       // 'text' / x'cafe'
+  | "ident" // raw identifier (caller normalises to keyword if applicable)
+  | "string" // 'text' / x'cafe'
   | "number"
-  | "punct"        // single-char punctuation . , ; ( ) * etc.
-  | "op"           // multi-char operator (>=, <=, !=, ||, ->, ->>)
+  | "punct" // single-char punctuation . , ; ( ) * etc.
+  | "op" // multi-char operator (>=, <=, !=, ||, ->, ->>)
   | "comment"
   | "whitespace";
 
@@ -70,7 +70,8 @@ export function tokenize(src: string): SqlToken[] {
       const start = i;
       i += 2;
       while (i < n - 1 && !(src[i] === "*" && src[i + 1] === "/")) i++;
-      if (i < n - 1) i += 2; else i = n;
+      if (i < n - 1) i += 2;
+      else i = n;
       out.push({ type: "comment", text: src.slice(start, i), start, end: i });
       continue;
     }
@@ -79,8 +80,14 @@ export function tokenize(src: string): SqlToken[] {
     if (ch === "'") {
       const start = i++;
       while (i < n) {
-        if (src[i] === "'" && src[i + 1] === "'") { i += 2; continue; }
-        if (src[i] === "'") { i++; break; }
+        if (src[i] === "'" && src[i + 1] === "'") {
+          i += 2;
+          continue;
+        }
+        if (src[i] === "'") {
+          i++;
+          break;
+        }
         i++;
       }
       out.push({ type: "string", text: src.slice(start, i), start, end: i });
@@ -101,8 +108,14 @@ export function tokenize(src: string): SqlToken[] {
     if (ch === '"') {
       const start = i++;
       while (i < n) {
-        if (src[i] === '"' && src[i + 1] === '"') { i += 2; continue; }
-        if (src[i] === '"') { i++; break; }
+        if (src[i] === '"' && src[i + 1] === '"') {
+          i += 2;
+          continue;
+        }
+        if (src[i] === '"') {
+          i++;
+          break;
+        }
         i++;
       }
       out.push({ type: "ident", text: src.slice(start, i), start, end: i });

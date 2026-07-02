@@ -80,7 +80,9 @@ describe("parseFilter", () => {
 
   it("substitutes @request.auth.email", () => {
     const r = parseFilter("owner_email = @request.auth.email", "vb_t", {
-      id: "u_1", type: "user", email: "alice@x.com",
+      id: "u_1",
+      type: "user",
+      email: "alice@x.com",
     });
     expect(r!.params).toContain("alice@x.com");
   });

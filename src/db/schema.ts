@@ -261,7 +261,7 @@ export const jobs = sqliteTable("vaultbase_jobs", {
   mode: text("mode").notNull().default("inline"),
   last_run_at: integer("last_run_at"),
   next_run_at: integer("next_run_at"),
-  last_status: text("last_status"),       // "ok" | "error"
+  last_status: text("last_status"), // "ok" | "error"
   last_error: text("last_error"),
   created_at: integer("created_at").notNull().default(sql`(unixepoch())`),
   updated_at: integer("updated_at").notNull().default(sql`(unixepoch())`),
@@ -305,7 +305,7 @@ export const jobsLog = sqliteTable("vaultbase_jobs_log", {
   /** Unique-key dedup (skip enqueue if a non-finished job has the same key). */
   unique_key: text("unique_key"),
   attempt: integer("attempt").notNull().default(1),
-  status: text("status").notNull().default("queued"),  // queued | running | succeeded | failed | dead
+  status: text("status").notNull().default("queued"), // queued | running | succeeded | failed | dead
   error: text("error"),
   /** Earliest time the job is allowed to run. Used for delayed jobs + retry backoff. */
   scheduled_at: integer("scheduled_at").notNull().default(sql`(unixepoch())`),

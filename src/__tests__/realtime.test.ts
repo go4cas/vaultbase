@@ -1,5 +1,12 @@
 import { describe, expect, it, beforeEach } from "bun:test";
-import { subscribe, unsubscribe, disconnectAll, broadcast, normalizeTopic, _reset } from "../realtime/manager.ts";
+import {
+  subscribe,
+  unsubscribe,
+  disconnectAll,
+  broadcast,
+  normalizeTopic,
+  _reset,
+} from "../realtime/manager.ts";
 
 interface MockWS {
   sent: string[];
@@ -11,7 +18,9 @@ let _mockId = 0;
 function mockWs(): MockWS {
   const ws: MockWS = {
     sent: [],
-    send(data) { this.sent.push(data); },
+    send(data) {
+      this.sent.push(data);
+    },
     data: { connId: `mock-${++_mockId}` },
   };
   return ws;
@@ -23,7 +32,11 @@ describe("RealtimeManager", () => {
   it("subscribe then broadcast delivers event", () => {
     const ws = mockWs();
     subscribe(ws, ["posts"]);
-    broadcast("posts", { type: "create", collection: "posts", record: { id: "1", collectionId: "c", collectionName: "posts", created: 0, updated: 0 } });
+    broadcast("posts", {
+      type: "create",
+      collection: "posts",
+      record: { id: "1", collectionId: "c", collectionName: "posts", created: 0, updated: 0 },
+    });
     expect(ws.sent).toHaveLength(1);
     const event = JSON.parse(ws.sent[0]!);
     expect(event.type).toBe("create");
@@ -49,22 +62,24 @@ describe("RealtimeManager", () => {
 
   it("broadcast to collection with no subscribers is a no-op", () => {
     expect(() =>
-      broadcast("empty", { type: "delete", collection: "empty", id: "x" })
+      broadcast("empty", { type: "delete", collection: "empty", id: "x" }),
     ).not.toThrow();
   });
 
   it("dead socket removed from set on send error", () => {
     const dead: MockWS = {
       sent: [],
-      send() { throw new Error("WebSocket is closed"); },
+      send() {
+        throw new Error("WebSocket is closed");
+      },
       data: { connId: `dead-${++_mockId}` },
     };
     subscribe(dead, ["posts"]);
     expect(() =>
-      broadcast("posts", { type: "delete", collection: "posts", id: "1" })
+      broadcast("posts", { type: "delete", collection: "posts", id: "1" }),
     ).not.toThrow();
     expect(() =>
-      broadcast("posts", { type: "delete", collection: "posts", id: "2" })
+      broadcast("posts", { type: "delete", collection: "posts", id: "2" }),
     ).not.toThrow();
   });
 
@@ -81,8 +96,16 @@ describe("RealtimeManager", () => {
   it("subscribe to specific record only receives events for that record", () => {
     const ws = mockWs();
     subscribe(ws, ["posts/abc"]);
-    broadcast("posts", { type: "create", collection: "posts", record: { id: "abc", collectionId: "c", collectionName: "posts", created: 0, updated: 0 } });
-    broadcast("posts", { type: "create", collection: "posts", record: { id: "xyz", collectionId: "c", collectionName: "posts", created: 0, updated: 0 } });
+    broadcast("posts", {
+      type: "create",
+      collection: "posts",
+      record: { id: "abc", collectionId: "c", collectionName: "posts", created: 0, updated: 0 },
+    });
+    broadcast("posts", {
+      type: "create",
+      collection: "posts",
+      record: { id: "xyz", collectionId: "c", collectionName: "posts", created: 0, updated: 0 },
+    });
     expect(ws.sent).toHaveLength(1);
     expect(JSON.parse(ws.sent[0]!).record.id).toBe("abc");
   });
@@ -107,7 +130,11 @@ describe("RealtimeManager", () => {
   it("a ws subscribed to BOTH collection and record gets a single event (deduped)", () => {
     const ws = mockWs();
     subscribe(ws, ["posts", "posts/abc", "*"]);
-    broadcast("posts", { type: "create", collection: "posts", record: { id: "abc", collectionId: "c", collectionName: "posts", created: 0, updated: 0 } });
+    broadcast("posts", {
+      type: "create",
+      collection: "posts",
+      record: { id: "abc", collectionId: "c", collectionName: "posts", created: 0, updated: 0 },
+    });
     expect(ws.sent).toHaveLength(1);
   });
 
@@ -121,8 +148,16 @@ describe("RealtimeManager", () => {
   it("collection sub still receives events for any record in that collection", () => {
     const ws = mockWs();
     subscribe(ws, ["posts"]);
-    broadcast("posts", { type: "create", collection: "posts", record: { id: "a", collectionId: "c", collectionName: "posts", created: 0, updated: 0 } });
-    broadcast("posts", { type: "create", collection: "posts", record: { id: "b", collectionId: "c", collectionName: "posts", created: 0, updated: 0 } });
+    broadcast("posts", {
+      type: "create",
+      collection: "posts",
+      record: { id: "a", collectionId: "c", collectionName: "posts", created: 0, updated: 0 },
+    });
+    broadcast("posts", {
+      type: "create",
+      collection: "posts",
+      record: { id: "b", collectionId: "c", collectionName: "posts", created: 0, updated: 0 },
+    });
     expect(ws.sent).toHaveLength(2);
   });
 
@@ -183,8 +218,16 @@ describe("RealtimeManager", () => {
   it("posts.create only fires on create events, not update/delete", () => {
     const ws = mockWs();
     subscribe(ws, ["posts.create"]);
-    broadcast("posts", { type: "create", collection: "posts", record: { id: "1", collectionId: "c", collectionName: "posts", created: 0, updated: 0 } });
-    broadcast("posts", { type: "update", collection: "posts", record: { id: "1", collectionId: "c", collectionName: "posts", created: 0, updated: 0 } });
+    broadcast("posts", {
+      type: "create",
+      collection: "posts",
+      record: { id: "1", collectionId: "c", collectionName: "posts", created: 0, updated: 0 },
+    });
+    broadcast("posts", {
+      type: "update",
+      collection: "posts",
+      record: { id: "1", collectionId: "c", collectionName: "posts", created: 0, updated: 0 },
+    });
     broadcast("posts", { type: "delete", collection: "posts", id: "1" });
     expect(ws.sent).toHaveLength(1);
     expect(JSON.parse(ws.sent[0]!).type).toBe("create");
@@ -195,8 +238,16 @@ describe("RealtimeManager", () => {
     const del = mockWs();
     subscribe(upd, ["posts.update"]);
     subscribe(del, ["posts.delete"]);
-    broadcast("posts", { type: "create", collection: "posts", record: { id: "1", collectionId: "c", collectionName: "posts", created: 0, updated: 0 } });
-    broadcast("posts", { type: "update", collection: "posts", record: { id: "1", collectionId: "c", collectionName: "posts", created: 0, updated: 0 } });
+    broadcast("posts", {
+      type: "create",
+      collection: "posts",
+      record: { id: "1", collectionId: "c", collectionName: "posts", created: 0, updated: 0 },
+    });
+    broadcast("posts", {
+      type: "update",
+      collection: "posts",
+      record: { id: "1", collectionId: "c", collectionName: "posts", created: 0, updated: 0 },
+    });
     broadcast("posts", { type: "delete", collection: "posts", id: "1" });
     expect(upd.sent).toHaveLength(1);
     expect(del.sent).toHaveLength(1);
@@ -207,16 +258,28 @@ describe("RealtimeManager", () => {
   it("*.create catches creates from every collection", () => {
     const ws = mockWs();
     subscribe(ws, ["*.create"]);
-    broadcast("posts",  { type: "create", collection: "posts",  record: { id: "1", collectionId: "c", collectionName: "posts",  created: 0, updated: 0 } });
-    broadcast("orders", { type: "create", collection: "orders", record: { id: "2", collectionId: "c", collectionName: "orders", created: 0, updated: 0 } });
-    broadcast("posts",  { type: "delete", collection: "posts",  id: "3" });
+    broadcast("posts", {
+      type: "create",
+      collection: "posts",
+      record: { id: "1", collectionId: "c", collectionName: "posts", created: 0, updated: 0 },
+    });
+    broadcast("orders", {
+      type: "create",
+      collection: "orders",
+      record: { id: "2", collectionId: "c", collectionName: "orders", created: 0, updated: 0 },
+    });
+    broadcast("posts", { type: "delete", collection: "posts", id: "3" });
     expect(ws.sent).toHaveLength(2);
   });
 
   it("collection-level + event-typed sub on same connection still receives once per event", () => {
     const ws = mockWs();
     subscribe(ws, ["posts", "posts.create"]);
-    broadcast("posts", { type: "create", collection: "posts", record: { id: "1", collectionId: "c", collectionName: "posts", created: 0, updated: 0 } });
+    broadcast("posts", {
+      type: "create",
+      collection: "posts",
+      record: { id: "1", collectionId: "c", collectionName: "posts", created: 0, updated: 0 },
+    });
     expect(ws.sent).toHaveLength(1);
   });
 
@@ -240,11 +303,17 @@ describe("RealtimeManager", () => {
   it("subscribe + unsubscribe work across distinct wrappers sharing connId", () => {
     const sharedId = "conn-A";
     const wsAtOpen: MockWS = {
-      sent: [], send(d) { this.sent.push(d); },
+      sent: [],
+      send(d) {
+        this.sent.push(d);
+      },
       data: { connId: sharedId },
     };
     const wsAtMessage: MockWS = {
-      sent: [], send(d) { this.sent.push(d); },
+      sent: [],
+      send(d) {
+        this.sent.push(d);
+      },
       data: { connId: sharedId },
     };
 

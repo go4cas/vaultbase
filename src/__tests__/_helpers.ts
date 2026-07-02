@@ -11,7 +11,9 @@ import { insertUser } from "../core/users-table.ts";
  * Ensure an auth collection exists with the given name. Idempotent — if
  * the collection is already present, returns it without re-creating.
  */
-export async function ensureAuthCollection(name: string): Promise<NonNullable<Awaited<ReturnType<typeof getCollection>>>> {
+export async function ensureAuthCollection(
+  name: string,
+): Promise<NonNullable<Awaited<ReturnType<typeof getCollection>>>> {
   let col = await getCollection(name);
   if (!col) {
     col = await createCollection({

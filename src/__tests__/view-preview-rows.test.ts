@@ -16,9 +16,9 @@ async function seedPosts(): Promise<void> {
     name: "posts",
     type: "base",
     fields: JSON.stringify([
-      { name: "title",  type: "text",   required: false },
-      { name: "score",  type: "number", required: false },
-      { name: "active", type: "bool",   required: false },
+      { name: "title", type: "text", required: false },
+      { name: "score", type: "number", required: false },
+      { name: "active", type: "bool", required: false },
     ]),
   });
   for (let i = 1; i <= 7; i++) {

@@ -39,15 +39,20 @@ async function buildSnapshot(): Promise<CollectionSnapshot[]> {
     type: (c.type ?? "base") as "base" | "auth" | "view",
     fields: parseFields(c.fields),
     ...(c.view_query ? { view_query: c.view_query } : {}),
-    ...(c.list_rule  ? { list_rule:  c.list_rule  } : {}),
+    ...(c.list_rule ? { list_rule: c.list_rule } : {}),
   }));
 }
 
-async function applyAdditive(snap: CollectionSnapshot[]): Promise<{ created: string[]; skipped: string[] }> {
+async function applyAdditive(
+  snap: CollectionSnapshot[],
+): Promise<{ created: string[]; skipped: string[] }> {
   const out = { created: [] as string[], skipped: [] as string[] };
   for (const c of snap) {
     const existing = await getCollection(c.name);
-    if (existing) { out.skipped.push(c.name); continue; }
+    if (existing) {
+      out.skipped.push(c.name);
+      continue;
+    }
     await createCollection({
       name: c.name,
       type: c.type,
@@ -60,7 +65,9 @@ async function applyAdditive(snap: CollectionSnapshot[]): Promise<{ created: str
   return out;
 }
 
-async function applySync(snap: CollectionSnapshot[]): Promise<{ created: string[]; updated: string[]; skipped: string[] }> {
+async function applySync(
+  snap: CollectionSnapshot[],
+): Promise<{ created: string[]; updated: string[]; skipped: string[] }> {
   const out = { created: [] as string[], updated: [] as string[], skipped: [] as string[] };
   for (const c of snap) {
     const existing = await getCollection(c.name);
@@ -92,7 +99,10 @@ async function applySync(snap: CollectionSnapshot[]): Promise<{ created: string[
 
 describe("snapshot shape", () => {
   it("captures every collection's name, type, and fields", async () => {
-    await createCollection({ name: "posts", fields: JSON.stringify([{ name: "title", type: "text" }]) });
+    await createCollection({
+      name: "posts",
+      fields: JSON.stringify([{ name: "title", type: "text" }]),
+    });
     await createCollection({ name: "users", type: "auth", fields: JSON.stringify([]) });
     const snap = await buildSnapshot();
     const names = snap.map((c) => c.name).sort();
@@ -107,7 +117,10 @@ describe("snapshot shape", () => {
   });
 
   it("includes view_query for view collections", async () => {
-    await createCollection({ name: "posts", fields: JSON.stringify([{ name: "title", type: "text" }]) });
+    await createCollection({
+      name: "posts",
+      fields: JSON.stringify([{ name: "title", type: "text" }]),
+    });
     await createCollection({
       name: "post_titles",
       type: "view",
@@ -123,7 +136,7 @@ describe("apply — additive mode", () => {
   it("creates missing collections", async () => {
     const snap: CollectionSnapshot[] = [
       { name: "posts", type: "base", fields: [{ name: "title", type: "text" }] },
-      { name: "tags",  type: "base", fields: [{ name: "label", type: "text" }] },
+      { name: "tags", type: "base", fields: [{ name: "label", type: "text" }] },
     ];
     const r = await applyAdditive(snap);
     expect(r.created.sort()).toEqual(["posts", "tags"]);
@@ -133,9 +146,19 @@ describe("apply — additive mode", () => {
   });
 
   it("skips existing collections without modifying them", async () => {
-    await createCollection({ name: "posts", fields: JSON.stringify([{ name: "title", type: "text" }]) });
+    await createCollection({
+      name: "posts",
+      fields: JSON.stringify([{ name: "title", type: "text" }]),
+    });
     const snap: CollectionSnapshot[] = [
-      { name: "posts", type: "base", fields: [{ name: "title", type: "text" }, { name: "body", type: "text" }] },
+      {
+        name: "posts",
+        type: "base",
+        fields: [
+          { name: "title", type: "text" },
+          { name: "body", type: "text" },
+        ],
+      },
     ];
     const r = await applyAdditive(snap);
     expect(r.created).toEqual([]);
@@ -146,7 +169,10 @@ describe("apply — additive mode", () => {
   });
 
   it("preserves data in additive mode (new install path)", async () => {
-    await createCollection({ name: "posts", fields: JSON.stringify([{ name: "title", type: "text" }]) });
+    await createCollection({
+      name: "posts",
+      fields: JSON.stringify([{ name: "title", type: "text" }]),
+    });
     await createRecord("posts", { title: "hello" });
     // Apply same snapshot; data should be untouched.
     const snap = await buildSnapshot();
@@ -158,9 +184,19 @@ describe("apply — additive mode", () => {
 
 describe("apply — sync mode", () => {
   it("updates existing collections to match snapshot", async () => {
-    await createCollection({ name: "posts", fields: JSON.stringify([{ name: "title", type: "text" }]) });
+    await createCollection({
+      name: "posts",
+      fields: JSON.stringify([{ name: "title", type: "text" }]),
+    });
     const snap: CollectionSnapshot[] = [
-      { name: "posts", type: "base", fields: [{ name: "title", type: "text" }, { name: "body", type: "text" }] },
+      {
+        name: "posts",
+        type: "base",
+        fields: [
+          { name: "title", type: "text" },
+          { name: "body", type: "text" },
+        ],
+      },
     ];
     const r = await applySync(snap);
     expect(r.updated).toEqual(["posts"]);
@@ -170,7 +206,10 @@ describe("apply — sync mode", () => {
   });
 
   it("skips collections already in sync", async () => {
-    await createCollection({ name: "posts", fields: JSON.stringify([{ name: "title", type: "text" }]) });
+    await createCollection({
+      name: "posts",
+      fields: JSON.stringify([{ name: "title", type: "text" }]),
+    });
     const snap = await buildSnapshot();
     const r = await applySync(snap);
     expect(r.skipped).toEqual(["posts"]);
@@ -178,9 +217,17 @@ describe("apply — sync mode", () => {
   });
 
   it("propagates rule changes", async () => {
-    await createCollection({ name: "posts", fields: JSON.stringify([{ name: "title", type: "text" }]) });
+    await createCollection({
+      name: "posts",
+      fields: JSON.stringify([{ name: "title", type: "text" }]),
+    });
     const snap: CollectionSnapshot[] = [
-      { name: "posts", type: "base", fields: [{ name: "title", type: "text" }], list_rule: '@request.auth.id != ""' },
+      {
+        name: "posts",
+        type: "base",
+        fields: [{ name: "title", type: "text" }],
+        list_rule: '@request.auth.id != ""',
+      },
     ];
     const r = await applySync(snap);
     expect(r.updated).toEqual(["posts"]);

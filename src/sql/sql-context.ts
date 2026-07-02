@@ -21,7 +21,7 @@
  * still applies). Strings + comments are pre-filtered by callers.
  */
 
-import { meaningful, tokenize, tokenAtOffset, unquoteIdent, type SqlToken } from "./sql-tokenizer.ts";
+import { meaningful, tokenize, unquoteIdent, type SqlToken } from "./sql-tokenizer.ts";
 
 export type SqlContext =
   | { kind: "afterDot"; base: string }
@@ -33,8 +33,19 @@ export type SqlContext =
 const TABLE_KWS = new Set(["FROM", "JOIN", "INTO", "UPDATE", "TABLE", "VIEW", "INDEX"]);
 /** Keywords that start a "column-expecting" clause. */
 const COLUMN_KWS = new Set([
-  "SELECT", "WHERE", "ON", "ORDER", "GROUP", "HAVING", "SET", "BY", "AND", "OR",
-  "RETURNING", "USING", "VALUES",
+  "SELECT",
+  "WHERE",
+  "ON",
+  "ORDER",
+  "GROUP",
+  "HAVING",
+  "SET",
+  "BY",
+  "AND",
+  "OR",
+  "RETURNING",
+  "USING",
+  "VALUES",
 ]);
 
 export interface AnalyzeOpts {
@@ -85,9 +96,12 @@ export function analyzeContext(opts: AnalyzeOpts): {
   // and before THAT should be an identifier (or quoted ident).
   const beforePrefix = prefixStart - 1;
   if (beforePrefix >= 0 && src[beforePrefix] === ".") {
-    let baseEnd = beforePrefix;
+    const baseEnd = beforePrefix;
     let baseStart = baseEnd;
-    if (baseStart > 0 && (src[baseStart - 1] === '"' || src[baseStart - 1] === "]" || src[baseStart - 1] === "`")) {
+    if (
+      baseStart > 0 &&
+      (src[baseStart - 1] === '"' || src[baseStart - 1] === "]" || src[baseStart - 1] === "`")
+    ) {
       // Quoted identifier — walk backward to matching opener.
       const openCh = src[baseStart - 1] === '"' ? '"' : src[baseStart - 1] === "]" ? "[" : "`";
       baseStart -= 1;
@@ -97,10 +111,12 @@ export function analyzeContext(opts: AnalyzeOpts): {
       while (baseStart > 0 && isIdentChar(src[baseStart - 1] ?? "")) baseStart--;
     }
     const base = unquoteIdent(src.slice(baseStart, baseEnd));
-    if (base) return {
-      context: { kind: "afterDot", base },
-      prefix, prefixStart,
-    };
+    if (base)
+      return {
+        context: { kind: "afterDot", base },
+        prefix,
+        prefixStart,
+      };
   }
 
   // Walk meaningful tokens BEFORE the cursor, find the most recent
@@ -207,11 +223,28 @@ export function buildAliasMap(src: string, tokens?: SqlToken[]): Map<string, str
 }
 
 const CLAUSE_TERMINATORS = new Set([
-  "WHERE", "GROUP", "ORDER", "HAVING", "LIMIT", "JOIN", "ON", "USING",
-  "UNION", "INTERSECT", "EXCEPT", "RETURNING", "VALUES", "SET",
+  "WHERE",
+  "GROUP",
+  "ORDER",
+  "HAVING",
+  "LIMIT",
+  "JOIN",
+  "ON",
+  "USING",
+  "UNION",
+  "INTERSECT",
+  "EXCEPT",
+  "RETURNING",
+  "VALUES",
+  "SET",
   // Joins (LEFT/RIGHT/FULL/INNER/CROSS/NATURAL JOIN are all opened by JOIN
   // when scanning forward — these stop a FROM table list cleanly).
-  "LEFT", "RIGHT", "FULL", "INNER", "CROSS", "NATURAL",
+  "LEFT",
+  "RIGHT",
+  "FULL",
+  "INNER",
+  "CROSS",
+  "NATURAL",
 ]);
 
 function optionalAlias(toks: SqlToken[], idx: number): { name: string; next: number } | null {
@@ -235,8 +268,34 @@ function optionalAlias(toks: SqlToken[], idx: number): { name: string; next: num
 
 /** Common SQL keywords that should never be misread as a bare alias. */
 const BARE_ALIAS_NEVER = new Set([
-  "ON", "USING", "WHERE", "GROUP", "ORDER", "HAVING", "LIMIT", "OFFSET",
-  "VALUES", "SET", "INNER", "OUTER", "LEFT", "RIGHT", "FULL", "CROSS",
-  "NATURAL", "JOIN", "AND", "OR", "NOT", "WITH", "RECURSIVE", "UNION",
-  "INTERSECT", "EXCEPT", "PRIMARY", "FOREIGN", "REFERENCES", "RETURNING",
+  "ON",
+  "USING",
+  "WHERE",
+  "GROUP",
+  "ORDER",
+  "HAVING",
+  "LIMIT",
+  "OFFSET",
+  "VALUES",
+  "SET",
+  "INNER",
+  "OUTER",
+  "LEFT",
+  "RIGHT",
+  "FULL",
+  "CROSS",
+  "NATURAL",
+  "JOIN",
+  "AND",
+  "OR",
+  "NOT",
+  "WITH",
+  "RECURSIVE",
+  "UNION",
+  "INTERSECT",
+  "EXCEPT",
+  "PRIMARY",
+  "FOREIGN",
+  "REFERENCES",
+  "RETURNING",
 ]);

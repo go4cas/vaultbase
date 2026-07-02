@@ -7,15 +7,8 @@
  * runner story (backend + frontend logic) lives in one suite.
  */
 import { describe, expect, it } from "bun:test";
-import {
-  tokenize,
-  meaningful,
-  unquoteIdent,
-} from "../sql/sql-tokenizer.ts";
-import {
-  analyzeContext,
-  buildAliasMap,
-} from "../sql/sql-context.ts";
+import { tokenize, meaningful, unquoteIdent } from "../sql/sql-tokenizer.ts";
+import { analyzeContext, buildAliasMap } from "../sql/sql-context.ts";
 
 describe("tokenizer", () => {
   it("splits a basic SELECT into idents + punct", () => {
@@ -40,8 +33,8 @@ describe("tokenizer", () => {
     const t = meaningful(tokenize(`SELECT "long name", [also], \`foo\` FROM t`));
     expect(t[1]!.text).toBe('"long name"');
     expect(unquoteIdent('"long name"')).toBe("long name");
-    expect(unquoteIdent('[also]')).toBe("also");
-    expect(unquoteIdent('`foo`')).toBe("foo");
+    expect(unquoteIdent("[also]")).toBe("also");
+    expect(unquoteIdent("`foo`")).toBe("foo");
   });
 
   it("treats `''` as escaped quote inside strings", () => {

@@ -81,7 +81,11 @@ export function unregisterMcpEventClient(id: string): void {
 export function broadcastMcpEvent(payload: unknown): void {
   const text = JSON.stringify(payload);
   for (const c of clients.values()) {
-    try { c.send(text); } catch { /* handler cleans up */ }
+    try {
+      c.send(text);
+    } catch {
+      /* handler cleans up */
+    }
   }
 }
 

@@ -17,7 +17,7 @@ async function getStatus(): Promise<{ has_admin: boolean }> {
   const app = makeAuthPlugin(SECRET);
   const res = await app.handle(new Request("http://localhost/admin/setup/status"));
   expect(res.status).toBe(200);
-  const body = await res.json() as { data: { has_admin: boolean } };
+  const body = (await res.json()) as { data: { has_admin: boolean } };
   return body.data;
 }
 
@@ -28,7 +28,7 @@ async function postSetup(email: string, password: string): Promise<Response> {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email, password }),
-    })
+    }),
   );
 }
 
@@ -53,7 +53,7 @@ describe("setup status", () => {
     await postSetup("admin@example.com", "super-strong-password");
     const r = await postSetup("intruder@example.com", "another-strong-password");
     expect(r.status).toBe(400);
-    const body = await r.json() as { error: string; code: number };
+    const body = (await r.json()) as { error: string; code: number };
     expect(body.code).toBe(400);
     // Verify only the original row exists.
     const rows = await getDb().select().from(admin);

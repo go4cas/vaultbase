@@ -28,7 +28,10 @@ afterEach(() => closeDb());
  * private key. Generate a throwaway P-256 key for the test, export it as
  * PKCS8 PEM, and feed that PEM into the settings.
  */
-async function generateAndStoreFakeApplePrivateKey(): Promise<{ privateKeyPem: string; publicKey: jose.KeyLike }> {
+async function generateAndStoreFakeApplePrivateKey(): Promise<{
+  privateKeyPem: string;
+  publicKey: jose.KeyLike;
+}> {
   const { privateKey, publicKey } = await jose.generateKeyPair("ES256", { extractable: true });
   const privateKeyPem = await jose.exportPKCS8(privateKey);
   return { privateKeyPem, publicKey };
@@ -36,11 +39,11 @@ async function generateAndStoreFakeApplePrivateKey(): Promise<{ privateKeyPem: s
 
 describe("Apple OAuth2", () => {
   it("appears in the providers registry with the correct endpoints", () => {
-    expect(PROVIDERS["apple"]).toBeDefined();
-    expect(PROVIDERS["apple"]?.authorizeUrl).toBe("https://appleid.apple.com/auth/authorize");
-    expect(PROVIDERS["apple"]?.tokenUrl).toBe("https://appleid.apple.com/auth/token");
-    expect(PROVIDERS["apple"]?.fetchProfileFromTokenResponse).toBeDefined();
-    expect(PROVIDERS["apple"]?.buildClientSecret).toBeDefined();
+    expect(PROVIDERS.apple).toBeDefined();
+    expect(PROVIDERS.apple?.authorizeUrl).toBe("https://appleid.apple.com/auth/authorize");
+    expect(PROVIDERS.apple?.tokenUrl).toBe("https://appleid.apple.com/auth/token");
+    expect(PROVIDERS.apple?.fetchProfileFromTokenResponse).toBeDefined();
+    expect(PROVIDERS.apple?.buildClientSecret).toBeDefined();
   });
 
   it("isProviderEnabled requires team_id, key_id, private_key + client_id all set", async () => {
@@ -69,7 +72,7 @@ describe("Apple OAuth2", () => {
 
     // Decode header — alg must be ES256 with the configured kid.
     const headerJson = JSON.parse(
-      new TextDecoder().decode(jose.base64url.decode(jwt.split(".")[0]!))
+      new TextDecoder().decode(jose.base64url.decode(jwt.split(".")[0]!)),
     );
     expect(headerJson.alg).toBe("ES256");
     expect(headerJson.kid).toBe("KEYID12345");
@@ -128,10 +131,10 @@ describe("Apple OAuth2", () => {
 
 describe("Twitter OAuth2", () => {
   it("is registered with the v2 endpoints + requiresPkce flag", () => {
-    expect(PROVIDERS["twitter"]).toBeDefined();
-    expect(PROVIDERS["twitter"]?.authorizeUrl).toBe("https://twitter.com/i/oauth2/authorize");
-    expect(PROVIDERS["twitter"]?.tokenUrl).toBe("https://api.twitter.com/2/oauth2/token");
-    expect(PROVIDERS["twitter"]?.requiresPkce).toBe(true);
+    expect(PROVIDERS.twitter).toBeDefined();
+    expect(PROVIDERS.twitter?.authorizeUrl).toBe("https://twitter.com/i/oauth2/authorize");
+    expect(PROVIDERS.twitter?.tokenUrl).toBe("https://api.twitter.com/2/oauth2/token");
+    expect(PROVIDERS.twitter?.requiresPkce).toBe(true);
     expect(providerRequiresPkce("twitter")).toBe(true);
   });
 

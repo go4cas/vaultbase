@@ -116,7 +116,13 @@ export async function sendOneSignal(
   payload: NotificationPayload,
 ): Promise<SendResult> {
   if (!config.app_id || !config.api_key) {
-    return { provider: "onesignal", ok: false, delivered: 0, invalidTokens: [], message: "OneSignal not configured" };
+    return {
+      provider: "onesignal",
+      ok: false,
+      delivered: 0,
+      invalidTokens: [],
+      message: "OneSignal not configured",
+    };
   }
 
   const body = {
@@ -142,13 +148,17 @@ export async function sendOneSignal(
 
   const text = await res.text();
   let parsed: { id?: string; recipients?: number; errors?: unknown } = {};
-  try { parsed = JSON.parse(text); } catch { /* leave empty */ }
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    /* leave empty */
+  }
 
   // Permanent client errors (bad app_id, bad api_key, malformed body) — don't retry.
   if (res.status === 400 || res.status === 401 || res.status === 403 || res.status === 404) {
     return {
       provider: "onesignal",
-      ok: true,        // "ok" here means "don't retry" (we've made our decision)
+      ok: true, // "ok" here means "don't retry" (we've made our decision)
       delivered: 0,
       invalidTokens: [],
       message: `OneSignal ${res.status}: ${text.slice(0, 200)}`,
@@ -167,9 +177,10 @@ export async function sendOneSignal(
   }
 
   const recipients = typeof parsed.recipients === "number" ? parsed.recipients : 0;
-  const note = recipients === 0
-    ? ` (warning: recipients=0 — client likely missed OneSignal.login("${externalId}"))`
-    : "";
+  const note =
+    recipients === 0
+      ? ` (warning: recipients=0 — client likely missed OneSignal.login("${externalId}"))`
+      : "";
   return {
     provider: "onesignal",
     ok: true,
@@ -206,7 +217,9 @@ function parseServiceAccount(raw: string): ServiceAccount {
   try {
     sa = JSON.parse(raw) as ServiceAccount;
   } catch (e) {
-    throw new Error(`Invalid FCM service account JSON: ${e instanceof Error ? e.message : String(e)}`);
+    throw new Error(
+      `Invalid FCM service account JSON: ${e instanceof Error ? e.message : String(e)}`,
+    );
   }
   if (!sa.client_email || !sa.private_key || !sa.project_id) {
     throw new Error("FCM service account JSON missing client_email / private_key / project_id");
@@ -241,9 +254,11 @@ async function getFcmAccessToken(sa: ServiceAccount): Promise<string> {
     }).toString(),
   });
   const text = await res.text();
-  if (!res.ok) throw new Error(`FCM OAuth token mint failed (${res.status}): ${text.slice(0, 300)}`);
+  if (!res.ok)
+    throw new Error(`FCM OAuth token mint failed (${res.status}): ${text.slice(0, 300)}`);
   const json = JSON.parse(text) as { access_token?: string; expires_in?: number };
-  if (!json.access_token) throw new Error(`FCM OAuth response missing access_token: ${text.slice(0, 200)}`);
+  if (!json.access_token)
+    throw new Error(`FCM OAuth response missing access_token: ${text.slice(0, 200)}`);
   const token = json.access_token;
   const ttl = typeof json.expires_in === "number" ? json.expires_in : 3600;
   fcmAccessTokenCache.set(sa.client_email, { token, expiresAt: now + ttl });
@@ -272,10 +287,22 @@ export async function sendFcm(
   payload: NotificationPayload,
 ): Promise<SendResult> {
   if (tokens.length === 0) {
-    return { provider: "fcm", ok: true, delivered: 0, invalidTokens: [], message: "FCM no devices for user" };
+    return {
+      provider: "fcm",
+      ok: true,
+      delivered: 0,
+      invalidTokens: [],
+      message: "FCM no devices for user",
+    };
   }
   if (!config.service_account) {
-    return { provider: "fcm", ok: false, delivered: 0, invalidTokens: [], message: "FCM not configured" };
+    return {
+      provider: "fcm",
+      ok: false,
+      delivered: 0,
+      invalidTokens: [],
+      message: "FCM not configured",
+    };
   }
 
   const sa = parseServiceAccount(config.service_account);
@@ -284,28 +311,34 @@ export async function sendFcm(
   const url = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
 
   // FCM v1 has no batch endpoint; parallel per-token is the standard pattern.
-  const results = await Promise.allSettled(tokens.map(async (t) => {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        message: {
-          token: t.token,
-          notification: { title: payload.title, body: payload.body },
-          data: stringifyData(payload.data),
+  const results = await Promise.allSettled(
+    tokens.map(async (t) => {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
         },
-      }),
-    });
-    const body = await res.text();
-    let parsed: { error?: { status?: string; details?: Array<{ errorCode?: string }> } } = {};
-    try { parsed = JSON.parse(body); } catch { /* leave empty */ }
-    const code = parsed.error?.details?.[0]?.errorCode ?? parsed.error?.status ?? null;
-    return { id: t.id, token: t.token, status: res.status, ok: res.ok, code, body };
-  }));
+        body: JSON.stringify({
+          message: {
+            token: t.token,
+            notification: { title: payload.title, body: payload.body },
+            data: stringifyData(payload.data),
+          },
+        }),
+      });
+      const body = await res.text();
+      let parsed: { error?: { status?: string; details?: Array<{ errorCode?: string }> } } = {};
+      try {
+        parsed = JSON.parse(body);
+      } catch {
+        /* leave empty */
+      }
+      const code = parsed.error?.details?.[0]?.errorCode ?? parsed.error?.status ?? null;
+      return { id: t.id, token: t.token, status: res.status, ok: res.ok, code, body };
+    }),
+  );
 
   let delivered = 0;
   let transient = 0;
@@ -320,9 +353,17 @@ export async function sendFcm(
       continue;
     }
     const v = r.value;
-    if (v.ok) { delivered++; continue; }
+    if (v.ok) {
+      delivered++;
+      continue;
+    }
     // Permanent token-level errors — disable in caller's table.
-    if (v.code === "UNREGISTERED" || v.code === "INVALID_ARGUMENT" || v.code === "SENDER_ID_MISMATCH" || v.code === "NOT_FOUND") {
+    if (
+      v.code === "UNREGISTERED" ||
+      v.code === "INVALID_ARGUMENT" ||
+      v.code === "SENDER_ID_MISMATCH" ||
+      v.code === "NOT_FOUND"
+    ) {
       invalidTokens.push(v.id);
       summaries.push(`token[${i}] ${v.code} → marked dead`);
       continue;
@@ -344,7 +385,8 @@ export async function sendFcm(
     ok,
     delivered,
     invalidTokens,
-    message: `FCM tokens=${tokens.length} delivered=${delivered} transient=${transient} dead=${invalidTokens.length}` +
+    message:
+      `FCM tokens=${tokens.length} delivered=${delivered} transient=${transient} dead=${invalidTokens.length}` +
       (summaries.length ? ` :: ${summaries.slice(0, 5).join("; ")}` : ""),
   };
 }
@@ -402,7 +444,9 @@ async function notifyWorker(ctx: JobContext): Promise<void> {
     for (const id of result.invalidTokens) {
       try {
         ctx.helpers.db.exec(`UPDATE vb_device_tokens SET enabled = 0 WHERE id = ?`, id);
-      } catch { /* table may be gone — ignore */ }
+      } catch {
+        /* table may be gone — ignore */
+      }
     }
   } else {
     ctx.helpers.log(`notify: unknown provider "${(job as { provider?: string }).provider}"`);
@@ -465,8 +509,9 @@ export async function dispatchNotification(
 ): Promise<DispatchResult> {
   const inbox = opts.inbox !== false;
   const push = opts.push !== false;
-  const providers = (opts.providers ?? getEnabledProviders())
-    .filter((p): p is ProviderName => PROVIDER_NAMES.includes(p));
+  const providers = (opts.providers ?? getEnabledProviders()).filter((p): p is ProviderName =>
+    PROVIDER_NAMES.includes(p),
+  );
 
   const out: DispatchResult = { inboxRowId: null, enqueued: [] };
 
@@ -484,8 +529,8 @@ export async function dispatchNotification(
         .run(
           id,
           userId,
-          (payload.data && typeof (payload.data as Record<string, unknown>)["type"] === "string")
-            ? String((payload.data as Record<string, unknown>)["type"])
+          payload.data && typeof (payload.data as Record<string, unknown>).type === "string"
+            ? String((payload.data as Record<string, unknown>).type)
             : "",
           payload.title,
           payload.body,
@@ -503,7 +548,11 @@ export async function dispatchNotification(
 
   if (push) {
     for (const provider of providers) {
-      const job = await enqueue(NOTIFY_QUEUE, { provider, userId, payload } satisfies NotifyJobPayload);
+      const job = await enqueue(NOTIFY_QUEUE, {
+        provider,
+        userId,
+        payload,
+      } satisfies NotifyJobPayload);
       out.enqueued.push({ provider, jobId: job.jobId, deduped: job.deduped });
     }
   }
@@ -551,7 +600,7 @@ export async function bootstrapNotificationCollections(): Promise<{
       // Update is allowed so clients can mark-as-read.
       list_rule: "user = @request.auth.id",
       view_rule: "user = @request.auth.id",
-      create_rule: "",                          // admin-only direct create (server uses raw SQL)
+      create_rule: "", // admin-only direct create (server uses raw SQL)
       update_rule: "user = @request.auth.id",
       delete_rule: "user = @request.auth.id",
     });
@@ -598,7 +647,9 @@ export interface ConnectionTestResult {
   detail: string;
 }
 
-export async function testOneSignalConnection(config: OneSignalConfig): Promise<ConnectionTestResult> {
+export async function testOneSignalConnection(
+  config: OneSignalConfig,
+): Promise<ConnectionTestResult> {
   if (!config.app_id || !config.api_key) {
     return { ok: false, detail: "App ID and REST API Key required" };
   }
@@ -615,8 +666,11 @@ export async function testOneSignalConnection(config: OneSignalConfig): Promise<
 export async function testFcmConnection(config: FcmConfig): Promise<ConnectionTestResult> {
   if (!config.service_account) return { ok: false, detail: "Service account JSON required" };
   let sa: ServiceAccount;
-  try { sa = parseServiceAccount(config.service_account); }
-  catch (e) { return { ok: false, detail: e instanceof Error ? e.message : String(e) }; }
+  try {
+    sa = parseServiceAccount(config.service_account);
+  } catch (e) {
+    return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+  }
   try {
     // Mint a token — proves the JSON parses, the private key is RS256-valid,
     // and Google accepts our service account. Doesn't send any messages.

@@ -33,7 +33,7 @@ export function invalidateEmailCache(): void {
 
 function readConfig(): SmtpConfig {
   const s = getAllSettings();
-  const port = parseInt(s["smtp.port"] ?? "587");
+  const port = parseInt(s["smtp.port"] ?? "587", 10);
   return {
     enabled: s["smtp.enabled"] === "1" || s["smtp.enabled"] === "true",
     host: s["smtp.host"] ?? "",
@@ -52,7 +52,8 @@ export function isSmtpConfigured(): boolean {
 
 function getTransporter(): { config: SmtpConfig; transporter: Transporter } {
   const now = Date.now();
-  if (cached && cached.expires > now) return { config: cached.config, transporter: cached.transporter };
+  if (cached && cached.expires > now)
+    return { config: cached.config, transporter: cached.transporter };
   const config = readConfig();
   if (!config.enabled || !config.host || !config.from) {
     throw new EmailNotConfiguredError();

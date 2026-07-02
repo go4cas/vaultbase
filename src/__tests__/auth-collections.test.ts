@@ -34,18 +34,17 @@ describe("collection type column", () => {
 });
 
 describe("reserved field name enforcement", () => {
-  it.each(AUTH_RESERVED_FIELD_NAMES.map((n) => [n]))(
-    "rejects '%s' on auth collections at create time",
-    async (reservedName) => {
-      await expect(
-        createCollection({
-          name: "users",
-          type: "auth",
-          fields: JSON.stringify([{ name: reservedName, type: "text" }]),
-        })
-      ).rejects.toThrow(CollectionValidationError);
-    }
-  );
+  it.each(
+    AUTH_RESERVED_FIELD_NAMES.map((n) => [n]),
+  )("rejects '%s' on auth collections at create time", async (reservedName) => {
+    await expect(
+      createCollection({
+        name: "users",
+        type: "auth",
+        fields: JSON.stringify([{ name: reservedName, type: "text" }]),
+      }),
+    ).rejects.toThrow(CollectionValidationError);
+  });
 
   it("allows 'email' on a base collection", async () => {
     await expect(
@@ -53,7 +52,7 @@ describe("reserved field name enforcement", () => {
         name: "contacts",
         type: "base",
         fields: JSON.stringify([{ name: "email", type: "text" }]),
-      })
+      }),
     ).resolves.toBeDefined();
   });
 
@@ -69,7 +68,7 @@ describe("reserved field name enforcement", () => {
           { name: "name", type: "text" },
           { name: "verified", type: "bool" },
         ]),
-      })
+      }),
     ).rejects.toThrow(CollectionValidationError);
   });
 
@@ -79,10 +78,16 @@ describe("reserved field name enforcement", () => {
         name: "users",
         type: "auth",
         fields: JSON.stringify([
-          { name: "email",    type: "email", required: true, implicit: true, options: { unique: true } },
-          { name: "verified", type: "bool",  implicit: true },
+          {
+            name: "email",
+            type: "email",
+            required: true,
+            implicit: true,
+            options: { unique: true },
+          },
+          { name: "verified", type: "bool", implicit: true },
         ]),
-      })
+      }),
     ).resolves.toBeDefined();
   });
 
@@ -92,7 +97,7 @@ describe("reserved field name enforcement", () => {
         name: "users",
         type: "auth",
         fields: JSON.stringify([
-          { name: "email",    type: "text" },
+          { name: "email", type: "text" },
           { name: "password", type: "text" },
           { name: "username", type: "text" },
         ]),
@@ -127,7 +132,13 @@ describe("implicit fields auto-injected on auth create", () => {
       name: "users",
       type: "auth",
       fields: JSON.stringify([
-        { name: "email", type: "email", required: true, implicit: true, options: { min: 5, unique: true } },
+        {
+          name: "email",
+          type: "email",
+          required: true,
+          implicit: true,
+          options: { min: 5, unique: true },
+        },
       ]),
     });
     const fields = parseFields(col.fields);

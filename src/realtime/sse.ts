@@ -42,9 +42,16 @@ export function openSSEStream(): SSEHandle {
   const cleanup = () => {
     if (closed) return;
     closed = true;
-    if (heartbeat) { clearInterval(heartbeat); heartbeat = null; }
+    if (heartbeat) {
+      clearInterval(heartbeat);
+      heartbeat = null;
+    }
     unregisterSSEClient(clientId);
-    try { controller?.close(); } catch { /* already closed */ }
+    try {
+      controller?.close();
+    } catch {
+      /* already closed */
+    }
     controller = null;
   };
 
@@ -77,8 +84,11 @@ export function openSSEStream(): SSEHandle {
       // starting with `:`) are ignored by clients but produce traffic.
       heartbeat = setInterval(() => {
         if (closed || !controller) return;
-        try { controller.enqueue(encoder.encode(`: ping\n\n`)); }
-        catch { cleanup(); }
+        try {
+          controller.enqueue(encoder.encode(`: ping\n\n`));
+        } catch {
+          cleanup();
+        }
       }, HEARTBEAT_MS);
     },
     cancel() {
@@ -91,7 +101,7 @@ export function openSSEStream(): SSEHandle {
     headers: {
       "content-type": "text/event-stream; charset=utf-8",
       "cache-control": "no-cache, no-transform",
-      "connection": "keep-alive",
+      connection: "keep-alive",
       "x-accel-buffering": "no", // disable buffering on nginx-style proxies
     },
   });

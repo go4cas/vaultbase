@@ -26,8 +26,13 @@ interface DoctorIssue {
 }
 
 const AUTH_RESERVED_NAMES = new Set([
-  "email", "password_hash", "email_verified", "totp_secret",
-  "totp_enabled", "is_anonymous", "password_reset_at",
+  "email",
+  "password_hash",
+  "email_verified",
+  "totp_secret",
+  "totp_enabled",
+  "is_anonymous",
+  "password_reset_at",
 ]);
 
 export interface DoctorReport {
@@ -43,24 +48,31 @@ export function runDoctor(dbPath: string): DoctorReport {
 
   try {
     // No legacy auth state? Doctor is always green for fresh installs.
-    const usersExists = db.prepare(
-      `SELECT name FROM sqlite_master WHERE type='table' AND name='vaultbase_users'`,
-    ).get() as { name: string } | undefined;
-    const collectionsExists = db.prepare(
-      `SELECT name FROM sqlite_master WHERE type='table' AND name='vaultbase_collections'`,
-    ).get() as { name: string } | undefined;
+    const usersExists = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='vaultbase_users'`)
+      .get() as { name: string } | undefined;
+    const collectionsExists = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='vaultbase_collections'`)
+      .get() as { name: string } | undefined;
     if (!collectionsExists) return { blockers, warnings, ok: true };
 
-    const authCols = db.prepare(
-      `SELECT id, name, fields FROM vaultbase_collections WHERE type='auth'`,
-    ).all() as Array<{ id: string; name: string; fields: string }>;
+    const authCols = db
+      .prepare(`SELECT id, name, fields FROM vaultbase_collections WHERE type='auth'`)
+      .all() as Array<{ id: string; name: string; fields: string }>;
 
     for (const col of authCols) {
-      let fields: Array<{ name?: unknown; implicit?: unknown; system?: unknown; type?: unknown }> = [];
-      try { fields = JSON.parse(col.fields || "[]") as typeof fields; } catch { /* skip */ }
+      let fields: Array<{ name?: unknown; implicit?: unknown; system?: unknown; type?: unknown }> =
+        [];
+      try {
+        fields = JSON.parse(col.fields || "[]") as typeof fields;
+      } catch {
+        /* skip */
+      }
       const customNames = new Set(
         fields
-          .filter((f) => typeof f.name === "string" && !f.implicit && !f.system && f.type !== "autodate")
+          .filter(
+            (f) => typeof f.name === "string" && !f.implicit && !f.system && f.type !== "autodate",
+          )
           .map((f) => f.name as string),
       );
 
@@ -77,15 +89,22 @@ export function runDoctor(dbPath: string): DoctorReport {
 
       // 2. Stranded rows in vb_<col>.
       const tbl = `vb_${col.name}`;
-      const tblExists = db.prepare(
-        `SELECT name FROM sqlite_master WHERE type='table' AND name=?`,
-      ).get(tbl) as { name: string } | undefined;
+      const tblExists = db
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`)
+        .get(tbl) as { name: string } | undefined;
       if (tblExists) {
-        const cnt = (db.prepare(`SELECT count(*) AS n FROM "${tbl.replace(/"/g, '""')}"`).get() as { n: number })?.n ?? 0;
+        const cnt =
+          (
+            db.prepare(`SELECT count(*) AS n FROM "${tbl.replace(/"/g, '""')}"`).get() as {
+              n: number;
+            }
+          )?.n ?? 0;
         if (cnt > 0) {
           // Determine if these rows are pre-migration shape (no email column
           // yet) or stranded data (email column present but NULL).
-          const cols = db.prepare(`PRAGMA table_info("${tbl.replace(/"/g, '""')}")`).all() as Array<{ name: string }>;
+          const cols = db
+            .prepare(`PRAGMA table_info("${tbl.replace(/"/g, '""')}")`)
+            .all() as Array<{ name: string }>;
           const colNames = new Set(cols.map((c) => c.name));
           if (!colNames.has("email")) {
             blockers.push({
@@ -94,7 +113,14 @@ export function runDoctor(dbPath: string): DoctorReport {
               message: `${tbl} contains ${cnt} row(s) but lacks the auth columns. Pre-v0.11 stranded data. Inspect via the SQL runner; either drop the rows or re-create them via the auth signup flow before migrating.`,
             });
           } else {
-            const orphans = (db.prepare(`SELECT count(*) AS n FROM "${tbl.replace(/"/g, '""')}" WHERE email IS NULL OR password_hash IS NULL`).get() as { n: number })?.n ?? 0;
+            const orphans =
+              (
+                db
+                  .prepare(
+                    `SELECT count(*) AS n FROM "${tbl.replace(/"/g, '""')}" WHERE email IS NULL OR password_hash IS NULL`,
+                  )
+                  .get() as { n: number }
+              )?.n ?? 0;
             if (orphans > 0) {
               blockers.push({
                 level: "blocker",
@@ -108,10 +134,12 @@ export function runDoctor(dbPath: string): DoctorReport {
 
       // 3. Duplicate emails in vaultbase_users for this collection.
       if (usersExists) {
-        const dups = (db.prepare(
-          `SELECT email, count(*) AS n FROM vaultbase_users
+        const dups = db
+          .prepare(
+            `SELECT email, count(*) AS n FROM vaultbase_users
            WHERE collection_id = ? GROUP BY email HAVING n > 1 LIMIT 10`,
-        ).all(col.id) as Array<{ email: string; n: number }>);
+          )
+          .all(col.id) as Array<{ email: string; n: number }>;
         for (const d of dups) {
           blockers.push({
             level: "blocker",
@@ -122,15 +150,17 @@ export function runDoctor(dbPath: string): DoctorReport {
 
         // 4. JSON `data` keys not mapped to any custom field.
         try {
-          const rows = db.prepare(
-            `SELECT data FROM vaultbase_users WHERE collection_id = ? LIMIT 200`,
-          ).all(col.id) as Array<{ data: string }>;
+          const rows = db
+            .prepare(`SELECT data FROM vaultbase_users WHERE collection_id = ? LIMIT 200`)
+            .all(col.id) as Array<{ data: string }>;
           const seen = new Set<string>();
           for (const r of rows) {
             try {
               const parsed = JSON.parse(r.data || "{}") as Record<string, unknown>;
               for (const k of Object.keys(parsed)) seen.add(k);
-            } catch { /* skip */ }
+            } catch {
+              /* skip */
+            }
           }
           for (const k of seen) {
             if (!customNames.has(k)) {
@@ -141,7 +171,9 @@ export function runDoctor(dbPath: string): DoctorReport {
               });
             }
           }
-        } catch { /* shrug */ }
+        } catch {
+          /* shrug */
+        }
       }
     }
   } finally {
@@ -174,6 +206,8 @@ export function runDoctorCli(_argv: readonly string[], dbPath: string): number {
     process.stdout.write("\nFix the blockers, then re-run `vaultbase doctor`.\n");
     return 1;
   }
-  process.stdout.write("\nWarnings are advisory — migration will proceed. Address them if the dropped data matters.\n");
+  process.stdout.write(
+    "\nWarnings are advisory — migration will proceed. Address them if the dropped data matters.\n",
+  );
   return 0;
 }

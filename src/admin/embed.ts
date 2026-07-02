@@ -9,9 +9,9 @@
  * any quirk where Bun macros resolve `import.meta.dir` differently than
  * runtime expects.
  */
-import { existsSync, readdirSync, readFileSync } from "fs";
-import { join, resolve } from "path";
-import { gzipSync } from "zlib";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { gzipSync } from "node:zlib";
 
 export function embedAdminFiles(): Record<string, string> {
   const candidates = [
@@ -30,16 +30,18 @@ export function embedAdminFiles(): Record<string, string> {
   if (!distDir) {
     process.stderr.write(
       `[embed-admin] WARNING: admin/dist not found. Tried:\n` +
-      candidates.map((c) => `  - ${c}\n`).join("") +
-      `Binary will serve "Admin UI not built" at /_/.\n` +
-      `Run \`bun run build:admin\` before \`bun build --compile\`.\n`,
+        candidates.map((c) => `  - ${c}\n`).join("") +
+        `Binary will serve "Admin UI not built" at /_/.\n` +
+        `Run \`bun run build:admin\` before \`bun build --compile\`.\n`,
     );
     return {};
   }
 
   const files: Record<string, string> = {};
   walk(distDir, "", files);
-  process.stderr.write(`[embed-admin] embedded ${Object.keys(files).length} files from ${distDir}\n`);
+  process.stderr.write(
+    `[embed-admin] embedded ${Object.keys(files).length} files from ${distDir}\n`,
+  );
   return files;
 }
 
@@ -48,7 +50,7 @@ function walk(dir: string, prefix: string, out: Record<string, string>): void {
     const full = join(dir, entry.name);
     const rel = prefix + entry.name;
     if (entry.isDirectory()) {
-      walk(full, rel + "/", out);
+      walk(full, `${rel}/`, out);
     } else {
       const buf = readFileSync(full);
       const compressed = gzipSync(buf, { level: 9 });

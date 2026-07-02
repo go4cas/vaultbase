@@ -3,10 +3,20 @@ import Elysia, { t } from "elysia";
 import { getDb } from "../db/client.ts";
 import { invalidateRateLimitCache } from "./ratelimit.ts";
 import { invalidateEmailCache, sendEmail, verifySmtp } from "../core/email.ts";
-import { invalidateStorageCache, testStorage, getStorageStatus, clearThumbCache } from "../core/storage.ts";
+import {
+  invalidateStorageCache,
+  testStorage,
+  getStorageStatus,
+  clearThumbCache,
+} from "../core/storage.ts";
 import { invalidateEgressCache } from "../core/hook-egress.ts";
 import { invalidateCorsCache } from "../core/cors.ts";
-import { getUpdateStatus, runUpdateCheck, startUpdateCheckScheduler, stopUpdateCheckScheduler } from "../core/update-check.ts";
+import {
+  getUpdateStatus,
+  runUpdateCheck,
+  startUpdateCheckScheduler,
+  stopUpdateCheckScheduler,
+} from "../core/update-check.ts";
 import { isAuthWindowKey, validateWindowSeconds } from "../core/auth-tokens.ts";
 import { verifyAuthToken } from "../core/sec.ts";
 import {
@@ -74,7 +84,7 @@ function maybeEncrypt(key: string, value: string): string {
       warnedPlaintextKeys.add(key);
       process.stderr.write(
         `[settings] "${key}" looks like a secret but VAULTBASE_ENCRYPTION_KEY ` +
-        `is not set — storing plaintext. Set the env var to encrypt at rest.\n`,
+          `is not set — storing plaintext. Set the env var to encrypt at rest.\n`,
       );
     }
     return value;
@@ -92,7 +102,7 @@ function maybeDecrypt(key: string, value: string): string {
       const msg = e instanceof Error ? e.message : String(e);
       process.stderr.write(
         `[settings] failed to decrypt "${key}" — VAULTBASE_ENCRYPTION_KEY ` +
-        `missing, wrong, or value corrupted (${msg}). Returning empty string.\n`,
+          `missing, wrong, or value corrupted (${msg}). Returning empty string.\n`,
       );
     }
     return "";
@@ -101,9 +111,10 @@ function maybeDecrypt(key: string, value: string): string {
 
 /** Read a single setting; returns the default when missing. */
 export function getSetting(key: string, defaultVal: string): string {
-  const row = rawClient()
-    .prepare(`SELECT value FROM vaultbase_settings WHERE key = ?`)
-    .get(key) as { value: string } | undefined | null;
+  const row = rawClient().prepare(`SELECT value FROM vaultbase_settings WHERE key = ?`).get(key) as
+    | { value: string }
+    | undefined
+    | null;
   // bun:sqlite returns null (not undefined) on no-match — must catch both.
   if (row == null) return defaultVal;
   return maybeDecrypt(key, row.value);
@@ -114,15 +125,16 @@ export function setSetting(key: string, value: string): void {
   rawClient()
     .prepare(
       `INSERT INTO vaultbase_settings (key, value, updated_at) VALUES (?, ?, unixepoch())
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = unixepoch()`
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = unixepoch()`,
     )
     .run(key, stored);
 }
 
 export function getAllSettings(): Record<string, string> {
-  const rows = rawClient()
-    .prepare(`SELECT key, value FROM vaultbase_settings`)
-    .all() as Array<{ key: string; value: string }>;
+  const rows = rawClient().prepare(`SELECT key, value FROM vaultbase_settings`).all() as Array<{
+    key: string;
+    value: string;
+  }>;
   const out: Record<string, string> = {};
   for (const r of rows) out[r.key] = maybeDecrypt(r.key, r.value);
   return out;
@@ -136,104 +148,123 @@ async function isAdmin(request: Request, jwtSecret: string): Promise<boolean> {
 }
 
 export function makeSettingsPlugin(jwtSecret: string) {
-  return new Elysia({ name: "settings" })
-    // Read all settings
-    .get("/admin/settings", async ({ request, set }) => {
-      if (!(await isAdmin(request, jwtSecret))) {
-        set.status = 401; return { error: "Unauthorized", code: 401 };
-      }
-      return { data: getAllSettings() };
-    })
-    // Update settings (partial — keys not in body are left alone)
-    .patch(
-      "/admin/settings",
-      async ({ request, body, set }) => {
+  return (
+    new Elysia({ name: "settings" })
+      // Read all settings
+      .get("/admin/settings", async ({ request, set }) => {
         if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401; return { error: "Unauthorized", code: 401 };
-        }
-        // Pre-validate auth window keys before any write — reject the whole
-        // PATCH on the first invalid value rather than half-applying.
-        for (const [k, v] of Object.entries(body)) {
-          if (isAuthWindowKey(k)) {
-            const err = validateWindowSeconds(v);
-            if (err) { set.status = 422; return { error: `${k}: ${err}`, code: 422 }; }
-          }
-        }
-        for (const [k, v] of Object.entries(body)) {
-          setSetting(k, String(v));
-        }
-        // Bust caches that depend on settings
-        invalidateRateLimitCache();
-        invalidateEmailCache();
-        // Storage driver / S3 creds may have changed — drop the cached client
-        // and the local thumb cache (different bucket means different objects)
-        invalidateStorageCache();
-        clearThumbCache();
-        invalidateEgressCache();
-        invalidateCorsCache();
-        // Re-arm the update-check scheduler if the toggle flipped.
-        if (Object.prototype.hasOwnProperty.call(body, "update_check.enabled")) {
-          if (String(body["update_check.enabled"]) === "1") startUpdateCheckScheduler();
-          else stopUpdateCheckScheduler();
+          set.status = 401;
+          return { error: "Unauthorized", code: 401 };
         }
         return { data: getAllSettings() };
-      },
-      { body: t.Record(t.String(), t.Any()) }
-    )
-    // Send test email — verifies + delivers a one-line message
-    .post(
-      "/admin/settings/smtp/test",
-      async ({ request, body, set }) => {
+      })
+      // Update settings (partial — keys not in body are left alone)
+      .patch(
+        "/admin/settings",
+        async ({ request, body, set }) => {
+          if (!(await isAdmin(request, jwtSecret))) {
+            set.status = 401;
+            return { error: "Unauthorized", code: 401 };
+          }
+          // Pre-validate auth window keys before any write — reject the whole
+          // PATCH on the first invalid value rather than half-applying.
+          for (const [k, v] of Object.entries(body)) {
+            if (isAuthWindowKey(k)) {
+              const err = validateWindowSeconds(v);
+              if (err) {
+                set.status = 422;
+                return { error: `${k}: ${err}`, code: 422 };
+              }
+            }
+          }
+          for (const [k, v] of Object.entries(body)) {
+            setSetting(k, String(v));
+          }
+          // Bust caches that depend on settings
+          invalidateRateLimitCache();
+          invalidateEmailCache();
+          // Storage driver / S3 creds may have changed — drop the cached client
+          // and the local thumb cache (different bucket means different objects)
+          invalidateStorageCache();
+          clearThumbCache();
+          invalidateEgressCache();
+          invalidateCorsCache();
+          // Re-arm the update-check scheduler if the toggle flipped.
+          if (Object.hasOwn(body, "update_check.enabled")) {
+            if (String(body["update_check.enabled"]) === "1") startUpdateCheckScheduler();
+            else stopUpdateCheckScheduler();
+          }
+          return { data: getAllSettings() };
+        },
+        { body: t.Record(t.String(), t.Any()) },
+      )
+      // Send test email — verifies + delivers a one-line message
+      .post(
+        "/admin/settings/smtp/test",
+        async ({ request, body, set }) => {
+          if (!(await isAdmin(request, jwtSecret))) {
+            set.status = 401;
+            return { error: "Unauthorized", code: 401 };
+          }
+          if (!body.to || typeof body.to !== "string") {
+            set.status = 422;
+            return { error: "`to` required", code: 422 };
+          }
+          const v = await verifySmtp();
+          if (!v.ok) {
+            set.status = 422;
+            return { error: v.error ?? "SMTP verify failed", code: 422 };
+          }
+          try {
+            const info = await sendEmail({
+              to: body.to,
+              subject: "Vaultbase SMTP test",
+              text: "If you can read this, your SMTP settings are working.",
+            });
+            return { data: { messageId: info.messageId } };
+          } catch (e) {
+            set.status = 500;
+            return { error: e instanceof Error ? e.message : String(e), code: 500 };
+          }
+        },
+        { body: t.Object({ to: t.String() }) },
+      )
+      // Storage round-trip test: write probe object → read back → delete
+      .post("/admin/settings/storage/test", async ({ request, set }) => {
         if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401; return { error: "Unauthorized", code: 401 };
+          set.status = 401;
+          return { error: "Unauthorized", code: 401 };
         }
-        if (!body.to || typeof body.to !== "string") {
-          set.status = 422; return { error: "`to` required", code: 422 };
-        }
-        const v = await verifySmtp();
-        if (!v.ok) { set.status = 422; return { error: v.error ?? "SMTP verify failed", code: 422 }; }
-        try {
-          const info = await sendEmail({
-            to: body.to,
-            subject: "Vaultbase SMTP test",
-            text: "If you can read this, your SMTP settings are working.",
-          });
-          return { data: { messageId: info.messageId } };
-        } catch (e) {
+        const result = await testStorage();
+        if (!result.ok) {
           set.status = 500;
-          return { error: e instanceof Error ? e.message : String(e), code: 500 };
+          return { error: result.error ?? "Storage test failed", code: 500 };
         }
-      },
-      { body: t.Object({ to: t.String() }) }
-    )
-    // Storage round-trip test: write probe object → read back → delete
-    .post("/admin/settings/storage/test", async ({ request, set }) => {
-      if (!(await isAdmin(request, jwtSecret))) {
-        set.status = 401; return { error: "Unauthorized", code: 401 };
-      }
-      const result = await testStorage();
-      if (!result.ok) { set.status = 500; return { error: result.error ?? "Storage test failed", code: 500 }; }
-      return { data: result };
-    })
-    // Storage status — what driver is in use, plus relevant identifiers
-    .get("/admin/settings/storage/status", async ({ request, set }) => {
-      if (!(await isAdmin(request, jwtSecret))) {
-        set.status = 401; return { error: "Unauthorized", code: 401 };
-      }
-      return { data: getStorageStatus() };
-    })
-    // Update checker — current vs latest GitHub release.
-    .get("/admin/update-status", async ({ request, set }) => {
-      if (!(await isAdmin(request, jwtSecret))) {
-        set.status = 401; return { error: "Unauthorized", code: 401 };
-      }
-      return { data: getUpdateStatus() };
-    })
-    .post("/admin/update-status/check", async ({ request, set }) => {
-      if (!(await isAdmin(request, jwtSecret))) {
-        set.status = 401; return { error: "Unauthorized", code: 401 };
-      }
-      await runUpdateCheck();
-      return { data: getUpdateStatus() };
-    });
+        return { data: result };
+      })
+      // Storage status — what driver is in use, plus relevant identifiers
+      .get("/admin/settings/storage/status", async ({ request, set }) => {
+        if (!(await isAdmin(request, jwtSecret))) {
+          set.status = 401;
+          return { error: "Unauthorized", code: 401 };
+        }
+        return { data: getStorageStatus() };
+      })
+      // Update checker — current vs latest GitHub release.
+      .get("/admin/update-status", async ({ request, set }) => {
+        if (!(await isAdmin(request, jwtSecret))) {
+          set.status = 401;
+          return { error: "Unauthorized", code: 401 };
+        }
+        return { data: getUpdateStatus() };
+      })
+      .post("/admin/update-status/check", async ({ request, set }) => {
+        if (!(await isAdmin(request, jwtSecret))) {
+          set.status = 401;
+          return { error: "Unauthorized", code: 401 };
+        }
+        await runUpdateCheck();
+        return { data: getUpdateStatus() };
+      })
+  );
 }

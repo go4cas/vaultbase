@@ -38,7 +38,8 @@ describe("helpers.recordRule", () => {
   it("simulated beforeCreate: hook runs under runWithHookRequest and rules accumulate alongside an HTTP-layer eval", () => {
     const req = makeReq();
     // Pretend the records-API layer already recorded its own create_rule eval.
-    const { recordRuleEval } = require("../core/request-context.ts") as typeof import("../core/request-context.ts");
+    const { recordRuleEval } =
+      require("../core/request-context.ts") as typeof import("../core/request-context.ts");
     recordRuleEval(req, {
       rule: "create_rule",
       collection: "posts",
@@ -105,7 +106,7 @@ describe("helpers.recordRule", () => {
     // No ctx.request, no ALS scope.
     const helpers = makeHookHelpers({});
     expect(() =>
-      helpers.recordRule({ rule: "x", outcome: "deny", reason: "no req" })
+      helpers.recordRule({ rule: "x", outcome: "deny", reason: "no req" }),
     ).not.toThrow();
     // And of course no runtime side-effect we can observe — the contract is
     // simply "don't blow up". For belt-and-suspenders, a fresh Request stays
