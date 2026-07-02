@@ -20,7 +20,9 @@
  * depends on. Saved-query rows are owner-scoped.
  */
 
-import Elysia, { t } from "elysia";
+import { Hono } from "hono";
+import { Type as t } from "@sinclair/typebox";
+import { jsonBody } from "./validator.ts";
 import { Database } from "bun:sqlite";
 import { extractBearer, verifyAuthToken } from "../core/sec.ts";
 import { runSql, MAX_SQL_RESULT_ROWS } from "../core/sql-runner.ts";
@@ -52,16 +54,27 @@ async function getAdmin(request: Request, jwtSecret: string): Promise<AdminCtx |
 
 export function makeSqlPlugin(jwtSecret: string, dbPath: string) {
   return (
-    new Elysia({ name: "sql-runner" })
+    new Hono()
       // ── Run ────────────────────────────────────────────────────────────
       .post(
         "/admin/sql/run",
-        async ({ request, set, body }) => {
-          const me = await getAdmin(request, jwtSecret);
+        jsonBody(
+          t.Object({
+            sql: t.String({ maxLength: 100_000 }),
+            mode: t.Union([t.Literal("readonly"), t.Literal("sandbox")]),
+            params: t.Optional(t.Array(t.Union([t.String(), t.Number(), t.Boolean(), t.Null()]))),
+            timeoutMs: t.Optional(t.Number({ minimum: 100, maximum: 30_000 })),
+          }),
+        ),
+        async (c) => {
+          const me = await getAdmin(c.req.raw, jwtSecret);
           if (!me) {
-            set.status = 401;
-            return { error: "Unauthorized — interactive admin session required", code: 401 };
+            return c.json(
+              { error: "Unauthorized — interactive admin session required", code: 401 },
+              401,
+            );
           }
+          const body = c.req.valid("json");
 
           if (body.mode === "sandbox" && !sandboxExists(me.id)) {
             // Auto-create on first sandbox run for a friendlier UX. Caller can
@@ -77,69 +90,63 @@ export function makeSqlPlugin(jwtSecret: string, dbPath: string) {
             ...(body.params ? { params: body.params } : {}),
             ...(body.timeoutMs ? { timeoutMs: body.timeoutMs } : {}),
           });
-          return { data: result };
-        },
-        {
-          body: t.Object({
-            sql: t.String({ maxLength: 100_000 }),
-            mode: t.Union([t.Literal("readonly"), t.Literal("sandbox")]),
-            params: t.Optional(t.Array(t.Union([t.String(), t.Number(), t.Boolean(), t.Null()]))),
-            timeoutMs: t.Optional(t.Number({ minimum: 100, maximum: 30_000 })),
-          }),
+          return c.json({ data: result });
         },
       )
 
       // ── Sandbox lifecycle ──────────────────────────────────────────────
-      .get("/admin/sql/sandbox", async ({ request, set }) => {
-        const me = await getAdmin(request, jwtSecret);
+      .get("/admin/sql/sandbox", async (c) => {
+        const me = await getAdmin(c.req.raw, jwtSecret);
         if (!me) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        return { data: describeSandbox(me.id) };
+        return c.json({ data: describeSandbox(me.id) });
       })
-      .post("/admin/sql/sandbox/reset", async ({ request, set }) => {
-        const me = await getAdmin(request, jwtSecret);
+      .post("/admin/sql/sandbox/reset", async (c) => {
+        const me = await getAdmin(c.req.raw, jwtSecret);
         if (!me) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         try {
           const info = resetSandbox(me.id, dbPath);
-          return { data: info };
+          return c.json({ data: info });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
-          set.status = 500;
-          return { error: `Sandbox reset failed: ${msg}`, code: 500 };
+          return c.json({ error: `Sandbox reset failed: ${msg}`, code: 500 }, 500);
         }
       })
-      .delete("/admin/sql/sandbox", async ({ request, set }) => {
-        const me = await getAdmin(request, jwtSecret);
+      .delete("/admin/sql/sandbox", async (c) => {
+        const me = await getAdmin(c.req.raw, jwtSecret);
         if (!me) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const removed = dropSandbox(me.id);
-        return { data: { removed } };
+        return c.json({ data: { removed } });
       })
 
       // ── Saved queries ──────────────────────────────────────────────────
-      .get("/admin/sql/queries", async ({ request, set }) => {
-        const me = await getAdmin(request, jwtSecret);
+      .get("/admin/sql/queries", async (c) => {
+        const me = await getAdmin(c.req.raw, jwtSecret);
         if (!me) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        return { data: await listSavedQueries(me.id) };
+        return c.json({ data: await listSavedQueries(me.id) });
       })
       .post(
         "/admin/sql/queries",
-        async ({ request, set, body }) => {
-          const me = await getAdmin(request, jwtSecret);
+        jsonBody(
+          t.Object({
+            name: t.String({ minLength: 1, maxLength: 100 }),
+            sql: t.String({ minLength: 1, maxLength: 100_000 }),
+            description: t.Optional(t.String({ maxLength: 500 })),
+          }),
+        ),
+        async (c) => {
+          const me = await getAdmin(c.req.raw, jwtSecret);
           if (!me) {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
+            return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
+          const body = c.req.valid("json");
           try {
             const q = await createSavedQuery({
               name: body.name,
@@ -148,93 +155,84 @@ export function makeSqlPlugin(jwtSecret: string, dbPath: string) {
               ownerAdminId: me.id,
               ownerAdminEmail: me.email,
             });
-            return { data: q };
+            return c.json({ data: q });
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            set.status = 400;
-            return { error: msg, code: 400 };
+            return c.json({ error: msg, code: 400 }, 400);
           }
         },
-        {
-          body: t.Object({
-            name: t.String({ minLength: 1, maxLength: 100 }),
-            sql: t.String({ minLength: 1, maxLength: 100_000 }),
-            description: t.Optional(t.String({ maxLength: 500 })),
-          }),
-        },
       )
-      .get("/admin/sql/queries/:id", async ({ request, set, params }) => {
-        const me = await getAdmin(request, jwtSecret);
+      .get("/admin/sql/queries/:id", async (c) => {
+        const me = await getAdmin(c.req.raw, jwtSecret);
         if (!me) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        const q = await getSavedQuery(params.id, me.id);
+        const q = await getSavedQuery(c.req.param("id"), me.id);
         if (!q) {
-          set.status = 404;
-          return { error: "Not found", code: 404 };
+          return c.json({ error: "Not found", code: 404 }, 404);
         }
-        return { data: q };
+        return c.json({ data: q });
       })
       .patch(
         "/admin/sql/queries/:id",
-        async ({ request, set, params, body }) => {
-          const me = await getAdmin(request, jwtSecret);
+        jsonBody(
+          t.Object({
+            name: t.Optional(t.String({ minLength: 1, maxLength: 100 })),
+            sql: t.Optional(t.String({ minLength: 1, maxLength: 100_000 })),
+            description: t.Optional(t.Union([t.String({ maxLength: 500 }), t.Null()])),
+          }),
+        ),
+        async (c) => {
+          const me = await getAdmin(c.req.raw, jwtSecret);
           if (!me) {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
+            return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
+          const body = c.req.valid("json");
           try {
             const patch: { name?: string; sql?: string; description?: string | null } = {};
             if (body.name !== undefined) patch.name = body.name;
             if (body.sql !== undefined) patch.sql = body.sql;
             if (body.description !== undefined) patch.description = body.description;
-            const q = await updateSavedQuery(params.id, me.id, patch);
+            const q = await updateSavedQuery(c.req.param("id"), me.id, patch);
             if (!q) {
-              set.status = 404;
-              return { error: "Not found", code: 404 };
+              return c.json({ error: "Not found", code: 404 }, 404);
             }
-            return { data: q };
+            return c.json({ data: q });
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            set.status = 400;
-            return { error: msg, code: 400 };
+            return c.json({ error: msg, code: 400 }, 400);
           }
         },
-        {
-          body: t.Object({
-            name: t.Optional(t.String({ minLength: 1, maxLength: 100 })),
-            sql: t.Optional(t.String({ minLength: 1, maxLength: 100_000 })),
-            description: t.Optional(t.Union([t.String({ maxLength: 500 }), t.Null()])),
-          }),
-        },
       )
-      .delete("/admin/sql/queries/:id", async ({ request, set, params }) => {
-        const me = await getAdmin(request, jwtSecret);
+      .delete("/admin/sql/queries/:id", async (c) => {
+        const me = await getAdmin(c.req.raw, jwtSecret);
         if (!me) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        const ok = await deleteSavedQuery(params.id, me.id);
+        const ok = await deleteSavedQuery(c.req.param("id"), me.id);
         if (!ok) {
-          set.status = 404;
-          return { error: "Not found", code: 404 };
+          return c.json({ error: "Not found", code: 404 }, 404);
         }
-        return { data: { deleted: true } };
+        return c.json({ data: { deleted: true } });
       })
       .post(
         "/admin/sql/queries/:id/run",
-        async ({ request, set, params, body }) => {
-          const me = await getAdmin(request, jwtSecret);
+        jsonBody(
+          t.Object({
+            mode: t.Union([t.Literal("readonly"), t.Literal("sandbox")]),
+          }),
+        ),
+        async (c) => {
+          const me = await getAdmin(c.req.raw, jwtSecret);
           if (!me) {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
+            return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
-          const q = await getSavedQuery(params.id, me.id);
+          const id = c.req.param("id");
+          const q = await getSavedQuery(id, me.id);
           if (!q) {
-            set.status = 404;
-            return { error: "Not found", code: 404 };
+            return c.json({ error: "Not found", code: 404 }, 404);
           }
+          const body = c.req.valid("json");
 
           if (body.mode === "sandbox" && !sandboxExists(me.id)) resetSandbox(me.id, dbPath);
 
@@ -244,47 +242,39 @@ export function makeSqlPlugin(jwtSecret: string, dbPath: string) {
             adminId: me.id,
             mode: body.mode,
           });
-          await recordSavedQueryRun(params.id, me.id, {
+          await recordSavedQueryRun(id, me.id, {
             ok: result.ok,
             durationMs: result.durationMs,
             rowCount: result.rowCount,
             error: result.error ?? null,
           });
-          return { data: result };
-        },
-        {
-          body: t.Object({
-            mode: t.Union([t.Literal("readonly"), t.Literal("sandbox")]),
-          }),
+          return c.json({ data: result });
         },
       )
 
       // ── Constants the UI may want to know ──────────────────────────────
-      .get("/admin/sql/meta", async ({ request, set }) => {
-        const me = await getAdmin(request, jwtSecret);
+      .get("/admin/sql/meta", async (c) => {
+        const me = await getAdmin(c.req.raw, jwtSecret);
         if (!me) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        return { data: { maxRows: MAX_SQL_RESULT_ROWS } };
+        return c.json({ data: { maxRows: MAX_SQL_RESULT_ROWS } });
       })
 
       // ── Rich schema for IDE intellisense ───────────────────────────────
       // Pulls PRAGMA table_info + index_list + foreign_key_list for every
       // table + view in the live DB. Powers the editor's autocomplete +
       // hover providers. Read-only — no schema mutation here.
-      .get("/admin/sql/schema", async ({ request, set }) => {
-        const me = await getAdmin(request, jwtSecret);
+      .get("/admin/sql/schema", async (c) => {
+        const me = await getAdmin(c.req.raw, jwtSecret);
         if (!me) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         try {
-          return { data: introspectSchema(dbPath) };
+          return c.json({ data: introspectSchema(dbPath) });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
-          set.status = 500;
-          return { error: `Schema introspection failed: ${msg}`, code: 500 };
+          return c.json({ error: `Schema introspection failed: ${msg}`, code: 500 }, 500);
         }
       })
   );
