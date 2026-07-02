@@ -16,7 +16,8 @@
  * once — see `@vaultbase/mcp` for a stdio↔HTTP bridge that does this.
  */
 
-import Elysia from "elysia";
+import { Hono } from "hono";
+import { getConnInfo } from "hono/bun";
 import { verifyAuthToken, extractBearer, trustedClientIp } from "../core/sec.ts";
 import { hasScope } from "../core/api-tokens.ts";
 import { buildRegistry, createDispatcher } from "../mcp/server.ts";
@@ -83,22 +84,25 @@ function isJsonRpcRequest(v: unknown): v is JsonRpcRequest {
 }
 
 export function makeMcpPlugin(jwtSecret: string) {
-  return new Elysia({ name: "mcp-http" })
-    .post("/mcp", async ({ request, set, body, server }) => {
-      void server; // peer-IP not needed for the POST path
-      const auth = await authenticate(request, jwtSecret);
+  return new Hono()
+    .post("/mcp", async (c) => {
+      const auth = await authenticate(c.req.raw, jwtSecret);
       if ("status" in auth) {
-        set.status = auth.status;
-        return auth.body;
+        return c.json(auth.body, auth.status);
+      }
+      let body: unknown;
+      try {
+        body = await c.req.json();
+      } catch {
+        body = null;
       }
       if (!isJsonRpcRequest(body)) {
-        set.status = 400;
         const err: JsonRpcResponse = {
           jsonrpc: "2.0",
           id: null,
           error: { code: RPC_ERR.InvalidRequest, message: "Not a JSON-RPC 2.0 request" },
         };
-        return err;
+        return c.json(err, 400);
       }
 
       // Build a fresh registry per request — collections may have changed
@@ -109,112 +113,112 @@ export function makeMcpPlugin(jwtSecret: string) {
       const dispatcher = createDispatcher(reg, auth.ctx);
       const res = await dispatcher.handle(body);
       if (res === null) {
-        set.status = 204;
-        return null;
+        return c.body(null, 204);
       }
-      return res;
+      return c.json(res);
     })
-    .get("/mcp/events", ({ request, set, server }) => {
+    .get("/mcp/events", async (c) => {
       // Auth gate: SSE handlers can't easily return JSON, so we return a
       // small text body with the right status. EventSource clients surface
       // this as `onerror` with the status; that's the Right Thing™.
-      // Note: returning a Promise<Response> straight from the handler.
-      return (async (): Promise<Response> => {
-        const auth = await authenticate(request, jwtSecret);
-        if ("status" in auth) {
-          return new Response(JSON.stringify(auth.body), {
-            status: auth.status,
-            headers: { "content-type": "application/json" },
-          });
+      const request = c.req.raw;
+      const auth = await authenticate(request, jwtSecret);
+      if ("status" in auth) {
+        return new Response(JSON.stringify(auth.body), {
+          status: auth.status,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
+      let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
+      let heartbeat: ReturnType<typeof setInterval> | null = null;
+      let closed = false;
+      let clientId = "";
+
+      const cleanup = (): void => {
+        if (closed) return;
+        closed = true;
+        if (heartbeat) {
+          clearInterval(heartbeat);
+          heartbeat = null;
         }
-
-        let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
-        let heartbeat: ReturnType<typeof setInterval> | null = null;
-        let closed = false;
-        let clientId = "";
-
-        const cleanup = (): void => {
-          if (closed) return;
-          closed = true;
-          if (heartbeat) {
-            clearInterval(heartbeat);
-            heartbeat = null;
-          }
-          if (clientId) unregisterMcpEventClient(clientId);
-          try {
-            controller?.close();
-          } catch {
-            /* already closed */
-          }
-          controller = null;
-        };
-
-        // Honor VAULTBASE_TRUSTED_PROXIES: only consult X-Forwarded-For when
-        // the immediate peer is in the trust list. Otherwise the peer IP is
-        // authoritative — non-proxied clients can't spoof the origin field.
-        let peerIp: string | null = null;
+        if (clientId) unregisterMcpEventClient(clientId);
         try {
-          const s = server as { requestIP?: (r: Request) => { address: string } | null };
-          peerIp = s?.requestIP?.(request)?.address ?? null;
+          controller?.close();
         } catch {
-          /* requestIP unsupported in tests */
+          /* already closed */
         }
-        const ip = trustedClientIp(request, peerIp);
-        const ua = request.headers.get("user-agent");
+        controller = null;
+      };
 
-        const stream = new ReadableStream<Uint8Array>({
-          start(c) {
-            controller = c;
-            const adapter: McpEventClient = {
-              tokenId: auth.ctx.tokenId,
-              tokenName: auth.ctx.tokenName,
-              scopes: auth.ctx.scopes,
-              adminId: auth.ctx.adminId,
-              adminEmail: auth.ctx.adminEmail,
-              // Skip the placeholder "unknown" trustedClientIp returns when
-              // no peer IP is resolvable (test transports / direct stdio).
-              ...(ip && ip !== "unknown" ? { ip } : {}),
-              ...(ua ? { userAgent: ua } : {}),
-              connectedAt: Math.floor(Date.now() / 1000),
-              send(payload) {
-                if (closed || !controller) return;
-                try {
-                  controller.enqueue(sseFormat("message", payload));
-                } catch {
-                  cleanup();
-                }
-              },
-            };
-            clientId = registerMcpEventClient(adapter);
+      // Honor VAULTBASE_TRUSTED_PROXIES: only consult X-Forwarded-For when
+      // the immediate peer is in the trust list. Otherwise the peer IP is
+      // authoritative — non-proxied clients can't spoof the origin field.
+      let peerIp: string | null = null;
+      try {
+        peerIp = getConnInfo(c).remote.address ?? null;
+      } catch {
+        /* requestIP unsupported in tests */
+      }
+      const ip = trustedClientIp(request, peerIp);
+      const ua = request.headers.get("user-agent");
 
-            // Greeting — clients can use this to confirm the channel is up.
-            const greeting = JSON.stringify({
-              jsonrpc: "2.0",
-              method: "vaultbase/connected",
-              params: { tokenName: auth.ctx.tokenName, scopes: auth.ctx.scopes },
-            });
-            c.enqueue(sseFormat("message", greeting));
-
-            heartbeat = setInterval(() => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(ctrl) {
+          controller = ctrl;
+          const adapter: McpEventClient = {
+            tokenId: auth.ctx.tokenId,
+            tokenName: auth.ctx.tokenName,
+            scopes: auth.ctx.scopes,
+            adminId: auth.ctx.adminId,
+            adminEmail: auth.ctx.adminEmail,
+            // Skip the placeholder "unknown" trustedClientIp returns when
+            // no peer IP is resolvable (test transports / direct stdio).
+            ...(ip && ip !== "unknown" ? { ip } : {}),
+            ...(ua ? { userAgent: ua } : {}),
+            connectedAt: Math.floor(Date.now() / 1000),
+            send(payload) {
               if (closed || !controller) return;
               try {
-                controller.enqueue(encoder.encode(`: ping\n\n`));
+                controller.enqueue(sseFormat("message", payload));
               } catch {
                 cleanup();
               }
-            }, HEARTBEAT_MS);
-          },
-          cancel() {
-            cleanup();
-          },
-        });
+            },
+          };
+          clientId = registerMcpEventClient(adapter);
 
-        request.signal?.addEventListener("abort", cleanup);
+          // Greeting — clients can use this to confirm the channel is up.
+          const greeting = JSON.stringify({
+            jsonrpc: "2.0",
+            method: "vaultbase/connected",
+            params: { tokenName: auth.ctx.tokenName, scopes: auth.ctx.scopes },
+          });
+          ctrl.enqueue(sseFormat("message", greeting));
 
-        set.headers["content-type"] = "text/event-stream; charset=utf-8";
-        set.headers["cache-control"] = "no-cache";
-        set.headers.connection = "keep-alive";
-        return new Response(stream, { status: 200 });
-      })();
+          heartbeat = setInterval(() => {
+            if (closed || !controller) return;
+            try {
+              controller.enqueue(encoder.encode(`: ping\n\n`));
+            } catch {
+              cleanup();
+            }
+          }, HEARTBEAT_MS);
+        },
+        cancel() {
+          cleanup();
+        },
+      });
+
+      request.signal?.addEventListener("abort", cleanup);
+
+      return new Response(stream, {
+        status: 200,
+        headers: {
+          "content-type": "text/event-stream; charset=utf-8",
+          "cache-control": "no-cache",
+          connection: "keep-alive",
+        },
+      });
     });
 }

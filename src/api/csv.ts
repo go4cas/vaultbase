@@ -1,4 +1,4 @@
-import Elysia from "elysia";
+import { Hono } from "hono";
 import { encodeRow, parseCsvToObjects } from "../core/csv.ts";
 import { getCollection, parseFields, type FieldDef } from "../core/collections.ts";
 import { createRecord, listRecords, type RecordWithMeta } from "../core/records.ts";
@@ -131,34 +131,22 @@ export function formatRowsForCsv(records: RecordWithMeta[], columns: CsvColumn[]
 
 export function makeCsvPlugin(jwtSecret: string) {
   return (
-    new Elysia({ name: "csv" })
-      // Export all rows of a base collection as CSV — streamed.
-      //
-      // Why streaming: at ~100k rows the buffered version (encodeCsv on the full
-      // row matrix) blows out memory. Here we page through `listRecords` and
-      // enqueue each page's CSV bytes as we go, so the response size is bounded
-      // by the page size, not the table size.
-      //
-      // Output is byte-identical to the previous buffered implementation:
-      //   header CRLF row1 CRLF row2 ... CRLF rowN     (no trailing CRLF)
-      .get("/admin/export/:collection", async ({ params, request, set }) => {
+    new Hono()
+      .get("/admin/export/:collection", async (c) => {
         // Atomic auth/rule check — runs synchronously before we hand back a Response
         // so unauthorized callers get a plain JSON error, never a stream.
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 403;
-          return { error: "Forbidden", code: 403 };
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Forbidden", code: 403 }, 403);
         }
-        const col = await getCollection(params.collection);
+        const col = await getCollection(c.req.param("collection"));
         if (!col) {
-          set.status = 404;
-          return { error: "Collection not found", code: 404 };
+          return c.json({ error: "Collection not found", code: 404 }, 404);
         }
         if (col.type !== "base") {
-          set.status = 422;
-          return {
-            error: `Export only supported on base collections (got ${col.type})`,
-            code: 422,
-          };
+          return c.json(
+            { error: `Export only supported on base collections (got ${col.type})`, code: 422 },
+            422,
+          );
         }
 
         const fields = exportColumnsForFields(parseFields(col.fields));
@@ -236,36 +224,34 @@ export function makeCsvPlugin(jwtSecret: string) {
       })
 
       // Import CSV rows into a base collection.
-      .post("/admin/import/:collection", async ({ params, request, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 403;
-          return { error: "Forbidden", code: 403 };
+      .post("/admin/import/:collection", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Forbidden", code: 403 }, 403);
         }
-        const col = await getCollection(params.collection);
+        const col = await getCollection(c.req.param("collection"));
         if (!col) {
-          set.status = 404;
-          return { error: "Collection not found", code: 404 };
+          return c.json({ error: "Collection not found", code: 404 }, 404);
         }
         if (col.type !== "base") {
-          set.status = 422;
-          return {
-            error: `Import only supported on base collections (got ${col.type})`,
-            code: 422,
-          };
+          return c.json(
+            { error: `Import only supported on base collections (got ${col.type})`, code: 422 },
+            422,
+          );
         }
 
-        const text = await request.text();
+        const text = await c.req.text();
         if (!text.trim()) {
-          set.status = 422;
-          return { error: "Empty CSV body", code: 422 };
+          return c.json({ error: "Empty CSV body", code: 422 }, 422);
         }
 
         let parsed: Record<string, string>[];
         try {
           parsed = parseCsvToObjects(text);
         } catch (e) {
-          set.status = 422;
-          return { error: e instanceof Error ? e.message : "CSV parse failed", code: 422 };
+          return c.json(
+            { error: e instanceof Error ? e.message : "CSV parse failed", code: 422 },
+            422,
+          );
         }
 
         const fields = parseFields(col.fields);
@@ -296,14 +282,14 @@ export function makeCsvPlugin(jwtSecret: string) {
           }
         }
 
-        return {
+        return c.json({
           data: {
             created,
             failed: errors.length,
             total: parsed.length,
             errors: errors.slice(0, 50), // cap to keep response reasonable
           },
-        };
+        });
       })
   );
 }
