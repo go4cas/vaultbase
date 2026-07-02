@@ -39,98 +39,102 @@ function sqliteSnapshot(): SqliteSnapshot | null {
 }
 
 export function makeMetricsPlugin(jwtSecret: string) {
-  return new Hono()
-    .get("/_/metrics", async (c) => {
-      if (!(await isAdmin(c.req.raw, jwtSecret))) {
-        return c.json({ error: "Unauthorized", code: 401 }, 401);
-      }
-      return c.json({
-        ...globalMetrics.snapshot(),
-        sqlite: sqliteSnapshot(),
-      });
-    })
-    .post("/_/metrics/reset", async (c) => {
-      if (!(await isAdmin(c.req.raw, jwtSecret))) {
-        return c.json({ error: "Unauthorized", code: 401 }, 401);
-      }
-      globalMetrics.reset();
-      return c.json({ data: { reset: true } });
-    })
-    // Public Prometheus exposition. Off by default; enable via
-    // `metrics.enabled` setting. Optional bearer auth via `metrics.token`.
-    .get("/metrics", (c) => {
-      if (getSetting("metrics.enabled", "0") !== "1") {
-        return c.text("", 404);
-      }
-      const required = getSetting("metrics.token", "");
-      if (required) {
-        const got = (c.req.header("authorization") ?? "").replace(/^Bearer\s+/i, "");
-        if (got !== required) {
-          c.header("www-authenticate", "Bearer");
-          return c.text("", 401);
+  return (
+    new Hono()
+      .get("/_/metrics", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-      }
-      const snap = globalMetrics.snapshot();
-      const sql = sqliteSnapshot();
-      const lines: string[] = [];
-      const push = (
-        name: string,
-        help: string,
-        type: string,
-        samples: Array<[string, number]>,
-      ) => {
-        lines.push(`# HELP ${name} ${help}`);
-        lines.push(`# TYPE ${name} ${type}`);
-        for (const [labels, val] of samples) {
-          lines.push(`${name}${labels} ${val}`);
+        return c.json({
+          ...globalMetrics.snapshot(),
+          sqlite: sqliteSnapshot(),
+        });
+      })
+      .post("/_/metrics/reset", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-      };
-      push("vaultbase_uptime_seconds", "Process uptime in seconds.", "gauge", [
-        ["", snap.uptime_seconds],
-      ]);
-      push("vaultbase_requests_total", "Total finished requests since boot.", "counter", [
-        ["", snap.requests_total],
-      ]);
-      push("vaultbase_rps_1min", "Requests per second over the last 60 s.", "gauge", [
-        ["", snap.rps_1min],
-      ]);
-      // Per-step summary — emit p50/p90/p99/p99.9 quantiles + count.
-      const stepSamples: Array<[string, number]> = [];
-      const stepCount: Array<[string, number]> = [];
-      const stepSum: Array<[string, number]> = [];
-      for (const step of STEPS) {
-        const h = snap.steps[step];
-        stepSamples.push([`{step="${step}",quantile="0.5"}`, h.p50_us]);
-        stepSamples.push([`{step="${step}",quantile="0.9"}`, h.p90_us]);
-        stepSamples.push([`{step="${step}",quantile="0.99"}`, h.p99_us]);
-        stepSamples.push([`{step="${step}",quantile="0.999"}`, h.p99_9_us]);
-        stepCount.push([`{step="${step}"}`, h.count]);
-        // _sum derived from mean × count — Prometheus contract is honoured.
-        stepSum.push([`{step="${step}"}`, Math.round(h.mean_us * h.count)]);
-      }
-      push(
-        "vaultbase_step_duration_microseconds",
-        "Per-step request latency (microseconds).",
-        "summary",
-        stepSamples,
-      );
-      lines.push(`# TYPE vaultbase_step_duration_microseconds_count counter`);
-      for (const [labels, val] of stepCount)
-        lines.push(`vaultbase_step_duration_microseconds_count${labels} ${val}`);
-      lines.push(`# TYPE vaultbase_step_duration_microseconds_sum counter`);
-      for (const [labels, val] of stepSum)
-        lines.push(`vaultbase_step_duration_microseconds_sum${labels} ${val}`);
-      if (sql) {
-        push("vaultbase_sqlite_page_count", "SQLite database page count.", "gauge", [
-          ["", sql.page_count],
+        globalMetrics.reset();
+        return c.json({ data: { reset: true } });
+      })
+      // Public Prometheus exposition. Off by default; enable via
+      // `metrics.enabled` setting. Optional bearer auth via `metrics.token`.
+      .get("/metrics", (c) => {
+        if (getSetting("metrics.enabled", "0") !== "1") {
+          return c.text("", 404);
+        }
+        const required = getSetting("metrics.token", "");
+        if (required) {
+          const got = (c.req.header("authorization") ?? "").replace(/^Bearer\s+/i, "");
+          if (got !== required) {
+            c.header("www-authenticate", "Bearer");
+            return c.text("", 401);
+          }
+        }
+        const snap = globalMetrics.snapshot();
+        const sql = sqliteSnapshot();
+        const lines: string[] = [];
+        const push = (
+          name: string,
+          help: string,
+          type: string,
+          samples: Array<[string, number]>,
+        ) => {
+          lines.push(`# HELP ${name} ${help}`);
+          lines.push(`# TYPE ${name} ${type}`);
+          for (const [labels, val] of samples) {
+            lines.push(`${name}${labels} ${val}`);
+          }
+        };
+        push("vaultbase_uptime_seconds", "Process uptime in seconds.", "gauge", [
+          ["", snap.uptime_seconds],
         ]);
-        push("vaultbase_sqlite_page_size", "SQLite database page size (B).", "gauge", [
-          ["", sql.page_size],
+        push("vaultbase_requests_total", "Total finished requests since boot.", "counter", [
+          ["", snap.requests_total],
         ]);
-        push("vaultbase_sqlite_wal_pages", "SQLite WAL log pages.", "gauge", [["", sql.wal_pages]]);
-      }
-      return c.text(`${lines.join("\n")}\n`, 200, {
-        "content-type": "text/plain; version=0.0.4; charset=utf-8",
-      });
-    });
+        push("vaultbase_rps_1min", "Requests per second over the last 60 s.", "gauge", [
+          ["", snap.rps_1min],
+        ]);
+        // Per-step summary — emit p50/p90/p99/p99.9 quantiles + count.
+        const stepSamples: Array<[string, number]> = [];
+        const stepCount: Array<[string, number]> = [];
+        const stepSum: Array<[string, number]> = [];
+        for (const step of STEPS) {
+          const h = snap.steps[step];
+          stepSamples.push([`{step="${step}",quantile="0.5"}`, h.p50_us]);
+          stepSamples.push([`{step="${step}",quantile="0.9"}`, h.p90_us]);
+          stepSamples.push([`{step="${step}",quantile="0.99"}`, h.p99_us]);
+          stepSamples.push([`{step="${step}",quantile="0.999"}`, h.p99_9_us]);
+          stepCount.push([`{step="${step}"}`, h.count]);
+          // _sum derived from mean × count — Prometheus contract is honoured.
+          stepSum.push([`{step="${step}"}`, Math.round(h.mean_us * h.count)]);
+        }
+        push(
+          "vaultbase_step_duration_microseconds",
+          "Per-step request latency (microseconds).",
+          "summary",
+          stepSamples,
+        );
+        lines.push(`# TYPE vaultbase_step_duration_microseconds_count counter`);
+        for (const [labels, val] of stepCount)
+          lines.push(`vaultbase_step_duration_microseconds_count${labels} ${val}`);
+        lines.push(`# TYPE vaultbase_step_duration_microseconds_sum counter`);
+        for (const [labels, val] of stepSum)
+          lines.push(`vaultbase_step_duration_microseconds_sum${labels} ${val}`);
+        if (sql) {
+          push("vaultbase_sqlite_page_count", "SQLite database page count.", "gauge", [
+            ["", sql.page_count],
+          ]);
+          push("vaultbase_sqlite_page_size", "SQLite database page size (B).", "gauge", [
+            ["", sql.page_size],
+          ]);
+          push("vaultbase_sqlite_wal_pages", "SQLite WAL log pages.", "gauge", [
+            ["", sql.wal_pages],
+          ]);
+        }
+        return c.text(`${lines.join("\n")}\n`, 200, {
+          "content-type": "text/plain; version=0.0.4; charset=utf-8",
+        });
+      })
+  );
 }

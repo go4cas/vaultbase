@@ -6,7 +6,7 @@
  * enumerated.
  */
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
-import Elysia from "elysia";
+import { Hono } from "hono";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -47,10 +47,8 @@ async function adminToken(adminId: string, adminEmail: string): Promise<string> 
   return token;
 }
 
-function mkApp(): Elysia {
-  return new Elysia().group("/api/v1", (app) =>
-    app.use(makeMcpAdminPlugin(SECRET)),
-  ) as unknown as Elysia;
+function mkApp() {
+  return new Hono().route("/api/v1", makeMcpAdminPlugin(SECRET));
 }
 
 beforeEach(async () => {
@@ -68,7 +66,7 @@ afterEach(() => {
 describe("GET /admin/mcp/clients", () => {
   it("requires admin auth", async () => {
     const app = mkApp();
-    const res = await app.handle(new Request("http://localhost/api/v1/admin/mcp/clients"));
+    const res = await app.request(new Request("http://localhost/api/v1/admin/mcp/clients"));
     expect(res.status).toBe(401);
   });
 
@@ -76,7 +74,7 @@ describe("GET /admin/mcp/clients", () => {
     const a = await seedAdmin();
     const tok = await adminToken(a.id, a.email);
     const app = mkApp();
-    const res = await app.handle(
+    const res = await app.request(
       new Request("http://localhost/api/v1/admin/mcp/clients", {
         headers: { Authorization: `Bearer ${tok}` },
       }),
@@ -104,7 +102,7 @@ describe("GET /admin/mcp/clients", () => {
     });
 
     try {
-      const res = await app.handle(
+      const res = await app.request(
         new Request("http://localhost/api/v1/admin/mcp/clients", {
           headers: { Authorization: `Bearer ${tok}` },
         }),
@@ -122,7 +120,7 @@ describe("GET /admin/mcp/clients", () => {
 describe("GET /admin/mcp/catalog", () => {
   it("requires admin auth", async () => {
     const app = mkApp();
-    const res = await app.handle(new Request("http://localhost/api/v1/admin/mcp/catalog"));
+    const res = await app.request(new Request("http://localhost/api/v1/admin/mcp/catalog"));
     expect(res.status).toBe(401);
   });
 
@@ -137,7 +135,7 @@ describe("GET /admin/mcp/catalog", () => {
       view_rule: null,
     });
     const app = mkApp();
-    const res = await app.handle(
+    const res = await app.request(
       new Request("http://localhost/api/v1/admin/mcp/catalog", {
         headers: { Authorization: `Bearer ${tok}` },
       }),

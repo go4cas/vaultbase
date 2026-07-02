@@ -10,7 +10,7 @@
  * so no scopes are exercised.
  */
 
-import Elysia from "elysia";
+import { Hono } from "hono";
 import { extractBearer, verifyAuthToken } from "../core/sec.ts";
 import { listMcpEventClients } from "../mcp/events.ts";
 import { buildRegistry } from "../mcp/server.ts";
@@ -31,27 +31,25 @@ async function getAdmin(request: Request, jwtSecret: string): Promise<AdminCtx |
 }
 
 export function makeMcpAdminPlugin(jwtSecret: string) {
-  return new Elysia({ name: "mcp-admin" })
-    .get("/admin/mcp/clients", async ({ request, set }) => {
-      const me = await getAdmin(request, jwtSecret);
+  return new Hono()
+    .get("/admin/mcp/clients", async (c) => {
+      const me = await getAdmin(c.req.raw, jwtSecret);
       if (!me) {
-        set.status = 401;
-        return { error: "Unauthorized", code: 401 };
+        return c.json({ error: "Unauthorized", code: 401 }, 401);
       }
-      return { data: listMcpEventClients() };
+      return c.json({ data: listMcpEventClients() });
     })
-    .get("/admin/mcp/catalog", async ({ request, set }) => {
-      const me = await getAdmin(request, jwtSecret);
+    .get("/admin/mcp/catalog", async (c) => {
+      const me = await getAdmin(c.req.raw, jwtSecret);
       if (!me) {
-        set.status = 401;
-        return { error: "Unauthorized", code: 401 };
+        return c.json({ error: "Unauthorized", code: 401 }, 401);
       }
       const reg = await buildRegistry(false);
       const tools = reg.list();
       const resources = listResources();
       const templates = listResourceTemplates();
       const prompts = listPrompts();
-      return {
+      return c.json({
         data: {
           tools,
           resources,
@@ -64,6 +62,6 @@ export function makeMcpAdminPlugin(jwtSecret: string) {
             prompts: prompts.length,
           },
         },
-      };
+      });
     });
 }

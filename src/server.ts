@@ -270,7 +270,6 @@ export function createServer(config: Config) {
         .use(makeLogsPlugin(config.jwtSecret))
         .use(makeAuthPlugin(config.jwtSecret))
         .use(makeAdminsPlugin(config.jwtSecret))
-        .use(makeBackupPlugin(config.jwtSecret, config.dbPath))
         .use(makeIndexesPlugin(config.jwtSecret))
         .use(makeSettingsPlugin(config.jwtSecret))
         .use(makeHooksPlugin(config.jwtSecret))
@@ -283,9 +282,7 @@ export function createServer(config: Config) {
         .use(makeAuditLogPlugin(config.jwtSecret))
         .use(makeApiTokensPlugin(config.jwtSecret))
         .use(makeMcpPlugin(config.jwtSecret))
-        .use(makeMcpAdminPlugin(config.jwtSecret))
         .use(makeSqlPlugin(config.jwtSecret, config.dbPath))
-        .use(makeSecurityPlugin(config.jwtSecret, config.encryptionKey))
         .use(makeFlagsPlugin(config.jwtSecret))
         .use(makeWebhooksPlugin(config.jwtSecret))
         .use(makeNotificationsPlugin(config.jwtSecret))
@@ -381,6 +378,9 @@ export function createServer(config: Config) {
   });
   migrated.route("/api/v1", makeThemePlugin());
   migrated.route("/api/v1", makeMetricsPlugin(config.jwtSecret));
+  migrated.route("/api/v1", makeBackupPlugin(config.jwtSecret, config.dbPath));
+  migrated.route("/api/v1", makeSecurityPlugin(config.jwtSecret, config.encryptionKey));
+  migrated.route("/api/v1", makeMcpAdminPlugin(config.jwtSecret));
   app.route("/", migrated);
 
   // The realtime manager keys subscriptions by `ws.data.connId` on a `WSLike
