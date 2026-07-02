@@ -81,15 +81,21 @@ or %APPDATA%\\Claude\\claude_desktop_config.json):
 `);
 }
 
-export async function runMcpCli(argv: string[], dbPath: string, jwtSecret: string, logsDir: string, uploadDir: string): Promise<void> {
+export async function runMcpCli(
+  argv: string[],
+  dbPath: string,
+  jwtSecret: string,
+  logsDir: string,
+  uploadDir: string,
+): Promise<void> {
   const flags = parseFlags(argv);
 
-  const tokenRaw = flags.token
-    ?? process.env["VAULTBASE_MCP_TOKEN"]
-    ?? process.env["VAULTBASE_API_TOKEN"]
-    ?? null;
+  const tokenRaw =
+    flags.token ?? process.env.VAULTBASE_MCP_TOKEN ?? process.env.VAULTBASE_API_TOKEN ?? null;
   if (!tokenRaw) {
-    process.stderr.write(`vaultbase mcp: no token provided. Pass --token vbat_…, or set VAULTBASE_MCP_TOKEN env.\n`);
+    process.stderr.write(
+      `vaultbase mcp: no token provided. Pass --token vbat_…, or set VAULTBASE_MCP_TOKEN env.\n`,
+    );
     process.exit(2);
   }
 
@@ -101,8 +107,10 @@ export async function runMcpCli(argv: string[], dbPath: string, jwtSecret: strin
   await runMigrations();
 
   const ctx = await verifyAuthToken(stripApiTokenPrefix(tokenRaw), jwtSecret, { audience: "api" });
-  if (!ctx || !ctx.viaApiToken) {
-    process.stderr.write(`vaultbase mcp: token verification failed. Mint a fresh token with \`vaultbase token mint --scope mcp:read\`.\n`);
+  if (!ctx?.viaApiToken) {
+    process.stderr.write(
+      `vaultbase mcp: token verification failed. Mint a fresh token with \`vaultbase token mint --scope mcp:read\`.\n`,
+    );
     process.exit(2);
   }
 
@@ -113,7 +121,7 @@ export async function runMcpCli(argv: string[], dbPath: string, jwtSecret: strin
   if (!ok) {
     process.stderr.write(
       `vaultbase mcp: token lacks any mcp:* scope. Has: [${scopes.join(", ")}]. ` +
-      `Mint a new token with \`vaultbase token mint --scope mcp:read\` (or mcp:write/mcp:admin).\n`,
+        `Mint a new token with \`vaultbase token mint --scope mcp:read\` (or mcp:write/mcp:admin).\n`,
     );
     process.exit(3);
   }

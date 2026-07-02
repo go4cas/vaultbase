@@ -114,7 +114,9 @@ describe("sanitizeHtml — preserves Quill output shape", () => {
 
 describe("sanitizeHtml — entity-encoded scheme bypass", () => {
   it("rejects javascript: encoded as hex numeric character refs", () => {
-    const out = sanitizeHtml(`<a href="&#x6A;&#x61;&#x76;&#x61;&#x73;&#x63;&#x72;&#x69;&#x70;&#x74;&#x3A;alert(1)">x</a>`);
+    const out = sanitizeHtml(
+      `<a href="&#x6A;&#x61;&#x76;&#x61;&#x73;&#x63;&#x72;&#x69;&#x70;&#x74;&#x3A;alert(1)">x</a>`,
+    );
     expect(out).toBe(`<a>x</a>`);
   });
 

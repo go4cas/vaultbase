@@ -20,14 +20,14 @@ import { isEncrypted } from "../core/encryption.ts";
 const ENC_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="; // 32 bytes base64
 
 beforeEach(async () => {
-  process.env["VAULTBASE_ENCRYPTION_KEY"] = ENC_KEY;
+  process.env.VAULTBASE_ENCRYPTION_KEY = ENC_KEY;
   initDb(":memory:");
   await runMigrations();
 });
 
 afterEach(() => {
   closeDb();
-  delete process.env["VAULTBASE_ENCRYPTION_KEY"];
+  delete process.env.VAULTBASE_ENCRYPTION_KEY;
 });
 
 const FIELDS = [
@@ -51,13 +51,13 @@ describe("N-6a: encrypted-field values are encrypted at rest in history rows", (
     const stored = JSON.parse(rows[0]!.snapshot) as Record<string, unknown>;
 
     // `secret` must be a vbenc:1:... string, NOT plaintext.
-    expect(typeof stored["secret"]).toBe("string");
-    expect(isEncrypted(stored["secret"] as string)).toBe(true);
-    expect(stored["secret"]).not.toBe("very-private");
+    expect(typeof stored.secret).toBe("string");
+    expect(isEncrypted(stored.secret as string)).toBe(true);
+    expect(stored.secret).not.toBe("very-private");
 
     // Non-encrypted fields stay plaintext.
-    expect(stored["title"]).toBe("hi");
-    expect(stored["id"]).toBe(r.id);
+    expect(stored.title).toBe("hi");
+    expect(stored.id).toBe(r.id);
   });
 
   it("listRecordHistory decrypts snapshots back to plaintext for API consumers", async () => {
@@ -67,7 +67,7 @@ describe("N-6a: encrypted-field values are encrypted at rest in history rows", (
 
     const list = await listRecordHistory("notes", r.id);
     expect(list.totalItems).toBe(2);
-    const seen = list.data.map((e) => e.snapshot["secret"]);
+    const seen = list.data.map((e) => e.snapshot.secret);
     expect(seen).toContain("very-private");
     expect(seen).toContain("still-private");
   });
@@ -75,6 +75,6 @@ describe("N-6a: encrypted-field values are encrypted at rest in history rows", (
   it("preserves the live record's plaintext API shape (no regression)", async () => {
     await withHistoryAndEncryption();
     const r = await createRecord("notes", { title: "x", secret: "shh" }, null);
-    expect(r["secret"]).toBe("shh");
+    expect(r.secret).toBe("shh");
   });
 });

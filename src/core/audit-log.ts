@@ -24,7 +24,7 @@ function clientIp(request: Request): string | null {
   // one trusted-proxy CIDR is configured — otherwise fall back to null,
   // matching ratelimit's defensive default. Operators who want exact IPs
   // here should set VAULTBASE_TRUSTED_PROXIES.
-  const trustedRaw = process.env["VAULTBASE_TRUSTED_PROXIES"] ?? "";
+  const trustedRaw = process.env.VAULTBASE_TRUSTED_PROXIES ?? "";
   if (!trustedRaw.trim()) return null;
   const xff = request.headers.get("x-forwarded-for");
   if (!xff) return null;
@@ -37,10 +37,10 @@ const AUDITED_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /** Skip audit on these admin sub-paths to keep the log signal-rich. */
 const SKIP_PATHS: ReadonlyArray<string | RegExp> = [
-  "/api/admin/setup",            // covered explicitly elsewhere
-  "/api/admin/auth/login",       // login attempts already logged separately
+  "/api/admin/setup", // covered explicitly elsewhere
+  "/api/admin/auth/login", // login attempts already logged separately
   "/api/admin/auth/logout",
-  "/api/admin/migrations/diff",  // read-only despite being POST
+  "/api/admin/migrations/diff", // read-only despite being POST
   /^\/api\/admin\/preview-/,
   /^\/api\/admin\/.*\/preview$/,
 ];
@@ -77,11 +77,17 @@ function deriveAction(method: string, rawPath: string): { action: string; target
   // routes, indexes, admins, auth-users, migrations, backup, etc.
   const noun = resource.replace(/-/g, "_");
   const verb =
-    method === "POST"   ? (sub ? sub : "create") :
-    method === "PUT"    ? "replace" :
-    method === "PATCH"  ? "update" :
-    method === "DELETE" ? "delete" :
-    method.toLowerCase();
+    method === "POST"
+      ? sub
+        ? sub
+        : "create"
+      : method === "PUT"
+        ? "replace"
+        : method === "PATCH"
+          ? "update"
+          : method === "DELETE"
+            ? "delete"
+            : method.toLowerCase();
   const action = `${noun}.${verb}`;
   return { action, target: id };
 }
@@ -116,19 +122,21 @@ export async function recordAuditEntry(opts: RecordOpts): Promise<void> {
 
   const { action, target } = deriveAction(method, url.pathname);
   try {
-    await getDb().insert(auditLog).values({
-      id: crypto.randomUUID(),
-      actor_id: opts.actor?.id ?? null,
-      actor_email: opts.actor?.email ?? null,
-      method,
-      path: url.pathname,
-      action,
-      target,
-      status: opts.status,
-      ip: clientIp(opts.request),
-      summary: opts.summary ? trim(opts.summary, 1024) : null,
-      at: Math.floor(Date.now() / 1000),
-    });
+    await getDb()
+      .insert(auditLog)
+      .values({
+        id: crypto.randomUUID(),
+        actor_id: opts.actor?.id ?? null,
+        actor_email: opts.actor?.email ?? null,
+        method,
+        path: url.pathname,
+        action,
+        target,
+        status: opts.status,
+        ip: clientIp(opts.request),
+        summary: opts.summary ? trim(opts.summary, 1024) : null,
+        at: Math.floor(Date.now() / 1000),
+      });
   } catch {
     // Audit must never break a request. Real failures still surface in
     // the file logger via the parent onAfterHandle.
@@ -178,7 +186,8 @@ export async function listAuditEntries(opts: ListAuditOpts = {}): Promise<{
   if (opts.actionPrefix) filters.push(like(auditLog.action, `${opts.actionPrefix}%`));
   if (opts.from !== undefined) filters.push(gte(auditLog.at, opts.from));
   if (opts.to !== undefined) filters.push(lte(auditLog.at, opts.to));
-  const where = filters.length === 0 ? undefined : (filters.length === 1 ? filters[0] : and(...filters));
+  const where =
+    filters.length === 0 ? undefined : filters.length === 1 ? filters[0] : and(...filters);
 
   const totalRow = await (where
     ? db.select({ n: sql<number>`COUNT(*)` }).from(auditLog).where(where)
@@ -186,7 +195,13 @@ export async function listAuditEntries(opts: ListAuditOpts = {}): Promise<{
   const totalItems = (totalRow[0]?.n ?? 0) as number;
 
   const rows = await (where
-    ? db.select().from(auditLog).where(where).orderBy(desc(auditLog.at)).limit(perPage).offset(offset)
+    ? db
+        .select()
+        .from(auditLog)
+        .where(where)
+        .orderBy(desc(auditLog.at))
+        .limit(perPage)
+        .offset(offset)
     : db.select().from(auditLog).orderBy(desc(auditLog.at)).limit(perPage).offset(offset));
 
   return {

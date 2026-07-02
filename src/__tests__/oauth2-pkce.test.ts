@@ -100,7 +100,7 @@ describe("verifyChallenge round-trip", () => {
 
   it("returns false for a verifier with disallowed characters", async () => {
     // 43 chars but contains '!' which is not in the unreserved set.
-    const bad = "!" + "a".repeat(42);
+    const bad = `!${"a".repeat(42)}`;
     const c = await codeChallengeFromVerifier(bad); // valid hash, but the verifier itself is invalid
     expect(await verifyChallenge(bad, c)).toBe(false);
   });
@@ -108,7 +108,7 @@ describe("verifyChallenge round-trip", () => {
   it("returns false on length mismatch between expected and provided challenge", async () => {
     const v = generateCodeVerifier();
     const c = await codeChallengeFromVerifier(v);
-    expect(await verifyChallenge(v, c + "x")).toBe(false);
+    expect(await verifyChallenge(v, `${c}x`)).toBe(false);
     expect(await verifyChallenge(v, c.slice(0, -1))).toBe(false);
   });
 });

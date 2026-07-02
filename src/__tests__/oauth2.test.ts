@@ -19,9 +19,19 @@ afterEach(() => closeDb());
 
 describe("provider registry", () => {
   it.each([
-    "google", "github", "gitlab", "facebook", "microsoft",
-    "discord", "twitch", "spotify", "linkedin", "slack",
-    "bitbucket", "notion", "patreon",
+    "google",
+    "github",
+    "gitlab",
+    "facebook",
+    "microsoft",
+    "discord",
+    "twitch",
+    "spotify",
+    "linkedin",
+    "slack",
+    "bitbucket",
+    "notion",
+    "patreon",
   ])("ships %s", (name) => {
     expect(PROVIDERS[name]).toBeDefined();
     expect(PROVIDERS[name]?.authorizeUrl).toMatch(/^https:\/\//);
@@ -110,19 +120,23 @@ describe("buildAuthorizeUrl", () => {
   });
 
   it("throws on unknown provider", () => {
-    expect(() => buildAuthorizeUrl({
-      provider: "notreal",
-      redirectUri: "https://example.com/cb",
-      state: "x",
-    })).toThrow(/Unknown OAuth2 provider/);
+    expect(() =>
+      buildAuthorizeUrl({
+        provider: "notreal",
+        redirectUri: "https://example.com/cb",
+        state: "x",
+      }),
+    ).toThrow(/Unknown OAuth2 provider/);
   });
 
   it("throws when provider isn't enabled", () => {
     setSetting("oauth2.github.enabled", "0");
-    expect(() => buildAuthorizeUrl({
-      provider: "github",
-      redirectUri: "https://example.com/cb",
-      state: "x",
-    })).toThrow(/not enabled/);
+    expect(() =>
+      buildAuthorizeUrl({
+        provider: "github",
+        redirectUri: "https://example.com/cb",
+        state: "x",
+      }),
+    ).toThrow(/not enabled/);
   });
 });

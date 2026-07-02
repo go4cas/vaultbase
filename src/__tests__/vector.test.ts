@@ -5,12 +5,7 @@ import { createCollection } from "../core/collections.ts";
 import { createRecord } from "../core/records.ts";
 import { validateRecord, ValidationError } from "../core/validate.ts";
 import { makeRecordsPlugin } from "../api/records.ts";
-import {
-  cosineSimilarity,
-  parseVectorParam,
-  topK,
-  VectorParseError,
-} from "../core/vector.ts";
+import { cosineSimilarity, parseVectorParam, topK, VectorParseError } from "../core/vector.ts";
 
 const SECRET = "test-secret-vector";
 
@@ -120,20 +115,28 @@ describe("topK", () => {
 describe("vector field validation", () => {
   it("accepts a number array of the right length", async () => {
     const col = await setupCollection();
-    await expect(validateRecord(col, { title: "x", embedding: [1, 2, 3, 4] }, "create")).resolves.toBeUndefined();
+    await expect(
+      validateRecord(col, { title: "x", embedding: [1, 2, 3, 4] }, "create"),
+    ).resolves.toBeUndefined();
   });
   it("rejects wrong length", async () => {
     const col = await setupCollection();
-    await expect(validateRecord(col, { title: "x", embedding: [1, 2, 3] }, "create")).rejects.toThrow(ValidationError);
+    await expect(
+      validateRecord(col, { title: "x", embedding: [1, 2, 3] }, "create"),
+    ).rejects.toThrow(ValidationError);
   });
   it("rejects non-numeric elements", async () => {
     const col = await setupCollection();
-    await expect(validateRecord(col, { title: "x", embedding: [1, 2, "three", 4] }, "create")).rejects.toThrow(ValidationError);
+    await expect(
+      validateRecord(col, { title: "x", embedding: [1, 2, "three", 4] }, "create"),
+    ).rejects.toThrow(ValidationError);
   });
   it("rejects schema with bad dimensions", async () => {
     const bad = await createCollection({
       name: "bad",
-      fields: JSON.stringify([{ name: "v", type: "vector", required: false, options: { dimensions: 0 } }]),
+      fields: JSON.stringify([
+        { name: "v", type: "vector", required: false, options: { dimensions: 0 } },
+      ]),
     });
     await expect(validateRecord(bad, { v: [] }, "create")).rejects.toThrow(ValidationError);
   });
@@ -143,18 +146,18 @@ describe("vector storage round-trip", () => {
   it("persists + decodes a number array", async () => {
     await setupCollection();
     const r = await createRecord("docs", { title: "x", embedding: [0.1, 0.2, 0.3, 0.4] }, null);
-    expect(Array.isArray(r["embedding"])).toBe(true);
-    expect(r["embedding"]).toEqual([0.1, 0.2, 0.3, 0.4]);
+    expect(Array.isArray(r.embedding)).toBe(true);
+    expect(r.embedding).toEqual([0.1, 0.2, 0.3, 0.4]);
   });
 });
 
 describe("nearVector list-API endpoint", () => {
   async function seedFour() {
     await setupCollection();
-    await createRecord("docs", { title: "axis-x",   embedding: [1, 0, 0, 0] }, null);
-    await createRecord("docs", { title: "near-x",   embedding: [0.9, 0.1, 0, 0] }, null);
-    await createRecord("docs", { title: "axis-y",   embedding: [0, 1, 0, 0] }, null);
-    await createRecord("docs", { title: "anti-x",   embedding: [-1, 0, 0, 0] }, null);
+    await createRecord("docs", { title: "axis-x", embedding: [1, 0, 0, 0] }, null);
+    await createRecord("docs", { title: "near-x", embedding: [0.9, 0.1, 0, 0] }, null);
+    await createRecord("docs", { title: "axis-y", embedding: [0, 1, 0, 0] }, null);
+    await createRecord("docs", { title: "anti-x", embedding: [-1, 0, 0, 0] }, null);
   }
 
   it("orders results by cosine similarity to ?nearVector", async () => {
@@ -166,7 +169,7 @@ describe("nearVector list-API endpoint", () => {
     url.searchParams.set("nearLimit", "3");
     const res = await app.handle(new Request(url.href));
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: { title: string; _score: number }[] };
+    const body = (await res.json()) as { data: { title: string; _score: number }[] };
     expect(body.data).toHaveLength(3);
     expect(body.data[0]?.title).toBe("axis-x");
     expect(body.data[1]?.title).toBe("near-x");
@@ -203,7 +206,7 @@ describe("nearVector list-API endpoint", () => {
     url.searchParams.set("nearVectorField", "embedding");
     url.searchParams.set("nearMinScore", "0.5");
     const res = await app.handle(new Request(url.href));
-    const body = await res.json() as { data: { title: string }[] };
+    const body = (await res.json()) as { data: { title: string }[] };
     // Only axis-x (1.0) and near-x (~0.994) should pass minScore=0.5
     expect(body.data.map((d) => d.title).sort()).toEqual(["axis-x", "near-x"]);
   });

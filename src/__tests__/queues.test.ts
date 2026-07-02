@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { initDb, closeDb, getDb } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
@@ -45,19 +45,21 @@ async function insertWorker(opts: {
 }): Promise<string> {
   const id = crypto.randomUUID();
   const now = Math.floor(Date.now() / 1000);
-  await getDb().insert(workers).values({
-    id,
-    name: opts.name ?? "",
-    queue: opts.queue,
-    code: opts.code,
-    enabled: 1,
-    concurrency: opts.concurrency ?? 1,
-    retry_max: opts.retry_max ?? 3,
-    retry_backoff: opts.retry_backoff ?? "exponential",
-    retry_delay_ms: opts.retry_delay_ms ?? 50,
-    created_at: now,
-    updated_at: now,
-  });
+  await getDb()
+    .insert(workers)
+    .values({
+      id,
+      name: opts.name ?? "",
+      queue: opts.queue,
+      code: opts.code,
+      enabled: 1,
+      concurrency: opts.concurrency ?? 1,
+      retry_max: opts.retry_max ?? 3,
+      retry_backoff: opts.retry_backoff ?? "exponential",
+      retry_delay_ms: opts.retry_delay_ms ?? 50,
+      created_at: now,
+      updated_at: now,
+    });
   invalidateWorkerCache();
   return id;
 }
@@ -67,7 +69,9 @@ async function getJob(id: string) {
   return r[0];
 }
 
-function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 async function waitForStatus(id: string, want: string, timeoutMs = 4000): Promise<void> {
   const t0 = Date.now();
@@ -76,7 +80,9 @@ async function waitForStatus(id: string, want: string, timeoutMs = 4000): Promis
     if (j?.status === want) return;
     await sleep(40);
   }
-  throw new Error(`Timed out waiting for job ${id} → ${want} (last status: ${(await getJob(id))?.status})`);
+  throw new Error(
+    `Timed out waiting for job ${id} → ${want} (last status: ${(await getJob(id))?.status})`,
+  );
 }
 
 describe("queues", () => {

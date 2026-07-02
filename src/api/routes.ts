@@ -25,7 +25,10 @@ function validatePath(path: string): string | null {
  * Wired into the main Elysia app's onRequest hook so it fires before route
  * resolution (preventing collisions with built-in /api/:collection routes).
  */
-export async function tryDispatchCustom(request: Request, jwtSecret: string): Promise<Response | undefined> {
+export async function tryDispatchCustom(
+  request: Request,
+  jwtSecret: string,
+): Promise<Response | undefined> {
   const url = new URL(request.url);
   const inner = customInnerPath(url.pathname);
   if (inner === null) return undefined;
@@ -37,16 +40,22 @@ export async function tryDispatchCustom(request: Request, jwtSecret: string): Pr
         headers: { "content-type": "application/json" },
       });
     }
-    const headers: Record<string, string> = { "content-type": "application/json", ...result.headers };
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      ...result.headers,
+    };
     const body = typeof result.body === "string" ? result.body : JSON.stringify(result.body);
     return new Response(body, { status: result.status, headers });
   } catch (e) {
     console.error("[routes] tryDispatchCustom failed:", e);
     const msg = e instanceof Error ? e.message : String(e);
-    return new Response(JSON.stringify({ error: `Custom route dispatch failed: ${msg}`, code: 500 }), {
-      status: 500,
-      headers: { "content-type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ error: `Custom route dispatch failed: ${msg}`, code: 500 }),
+      {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      },
+    );
   }
 }
 
@@ -54,7 +63,8 @@ export function makeRoutesPlugin(jwtSecret: string) {
   return new Elysia({ name: "routes" })
     .get("/admin/routes", async ({ request, set }) => {
       if (!(await isAdmin(request, jwtSecret))) {
-        set.status = 401; return { error: "Unauthorized", code: 401 };
+        set.status = 401;
+        return { error: "Unauthorized", code: 401 };
       }
       const rows = await getDb().select().from(routes);
       return { data: rows };
@@ -64,26 +74,33 @@ export function makeRoutesPlugin(jwtSecret: string) {
       "/admin/routes",
       async ({ request, body, set }) => {
         if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401; return { error: "Unauthorized", code: 401 };
+          set.status = 401;
+          return { error: "Unauthorized", code: 401 };
         }
         const method = (body.method ?? "GET").toUpperCase();
-        if (!ROUTE_METHODS.includes(method as typeof ROUTE_METHODS[number])) {
-          set.status = 422; return { error: `Invalid method: ${method}`, code: 422 };
+        if (!ROUTE_METHODS.includes(method as (typeof ROUTE_METHODS)[number])) {
+          set.status = 422;
+          return { error: `Invalid method: ${method}`, code: 422 };
         }
         const pathErr = validatePath(body.path ?? "");
-        if (pathErr) { set.status = 422; return { error: pathErr, code: 422 }; }
+        if (pathErr) {
+          set.status = 422;
+          return { error: pathErr, code: 422 };
+        }
         const id = crypto.randomUUID();
         const now = Math.floor(Date.now() / 1000);
-        await getDb().insert(routes).values({
-          id,
-          name: body.name ?? "",
-          method,
-          path: body.path,
-          code: body.code ?? "",
-          enabled: body.enabled === false ? 0 : 1,
-          created_at: now,
-          updated_at: now,
-        });
+        await getDb()
+          .insert(routes)
+          .values({
+            id,
+            name: body.name ?? "",
+            method,
+            path: body.path,
+            code: body.code ?? "",
+            enabled: body.enabled === false ? 0 : 1,
+            created_at: now,
+            updated_at: now,
+          });
         invalidateRoutesCache();
         const row = await getDb().select().from(routes).where(eq(routes.id, id)).limit(1);
         return { data: row[0] };
@@ -96,29 +113,41 @@ export function makeRoutesPlugin(jwtSecret: string) {
           code: t.Optional(t.String()),
           enabled: t.Optional(t.Boolean()),
         }),
-      }
+      },
     )
 
     .patch(
       "/admin/routes/:id",
       async ({ request, params, body, set }) => {
         if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401; return { error: "Unauthorized", code: 401 };
+          set.status = 401;
+          return { error: "Unauthorized", code: 401 };
         }
-        const update: { name?: string; method?: string; path?: string; code?: string; enabled?: number; updated_at: number } = {
+        const update: {
+          name?: string;
+          method?: string;
+          path?: string;
+          code?: string;
+          enabled?: number;
+          updated_at: number;
+        } = {
           updated_at: Math.floor(Date.now() / 1000),
         };
         if (body.name !== undefined) update.name = body.name;
         if (body.method !== undefined) {
           const m = body.method.toUpperCase();
-          if (!ROUTE_METHODS.includes(m as typeof ROUTE_METHODS[number])) {
-            set.status = 422; return { error: `Invalid method: ${body.method}`, code: 422 };
+          if (!ROUTE_METHODS.includes(m as (typeof ROUTE_METHODS)[number])) {
+            set.status = 422;
+            return { error: `Invalid method: ${body.method}`, code: 422 };
           }
           update.method = m;
         }
         if (body.path !== undefined) {
           const pathErr = validatePath(body.path);
-          if (pathErr) { set.status = 422; return { error: pathErr, code: 422 }; }
+          if (pathErr) {
+            set.status = 422;
+            return { error: pathErr, code: 422 };
+          }
           update.path = body.path;
         }
         if (body.code !== undefined) update.code = body.code;
@@ -126,7 +155,10 @@ export function makeRoutesPlugin(jwtSecret: string) {
         await getDb().update(routes).set(update).where(eq(routes.id, params.id));
         invalidateRoutesCache();
         const row = await getDb().select().from(routes).where(eq(routes.id, params.id)).limit(1);
-        if (row.length === 0) { set.status = 404; return { error: "Route not found", code: 404 }; }
+        if (row.length === 0) {
+          set.status = 404;
+          return { error: "Route not found", code: 404 };
+        }
         return { data: row[0] };
       },
       {
@@ -137,12 +169,13 @@ export function makeRoutesPlugin(jwtSecret: string) {
           code: t.Optional(t.String()),
           enabled: t.Optional(t.Boolean()),
         }),
-      }
+      },
     )
 
     .delete("/admin/routes/:id", async ({ request, params, set }) => {
       if (!(await isAdmin(request, jwtSecret))) {
-        set.status = 401; return { error: "Unauthorized", code: 401 };
+        set.status = 401;
+        return { error: "Unauthorized", code: 401 };
       }
       await getDb().delete(routes).where(eq(routes.id, params.id));
       invalidateRoutesCache();

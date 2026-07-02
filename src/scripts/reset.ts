@@ -7,15 +7,15 @@
  *   bun run db:reset --force   # skip confirmation
  */
 
-import { existsSync, rmSync } from "fs";
-import { join } from "path";
+import { existsSync, rmSync } from "node:fs";
+import { join } from "node:path";
 
-if (process.env["NODE_ENV"] === "production") {
+if (process.env.NODE_ENV === "production") {
   console.error("✗ db:reset is dev-only. Refusing to run with NODE_ENV=production.");
   process.exit(1);
 }
 
-const dataDir = process.env["VAULTBASE_DATA_DIR"] ?? "./vaultbase_data";
+const dataDir = process.env.VAULTBASE_DATA_DIR ?? "./vaultbase_data";
 const force = process.argv.includes("--force");
 
 const targets = [

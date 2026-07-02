@@ -36,12 +36,12 @@ interface ParsedRule extends RateLimitRule {
 }
 
 const DEFAULT_RULES: RateLimitRule[] = [
-  { label: "*:auth",    max: 10,  windowMs: 3000,  audience: "all" },
-  { label: "*:create",  max: 60,  windowMs: 5000,  audience: "all" },
-  { label: "/api/*",    max: 300, windowMs: 10000, audience: "all" },
+  { label: "*:auth", max: 10, windowMs: 3000, audience: "all" },
+  { label: "*:create", max: 60, windowMs: 5000, audience: "all" },
+  { label: "/api/*", max: 300, windowMs: 10000, audience: "all" },
 ];
 
-const DEFAULT_ENABLED = (process.env["VAULTBASE_RATE_ENABLED"] ?? "1") !== "0";
+const DEFAULT_ENABLED = (process.env.VAULTBASE_RATE_ENABLED ?? "1") !== "0";
 
 const SKIP_PREFIXES = ["/_/", "/realtime", "/api/health", "/api/admin/logs"];
 function shouldSkip(path: string): boolean {
@@ -50,7 +50,10 @@ function shouldSkip(path: string): boolean {
 
 const RESERVED_TOP = new Set(["admin", "auth", "files", "collections", "health"]);
 
-interface Bucket { tokens: number; lastRefill: number }
+interface Bucket {
+  tokens: number;
+  lastRefill: number;
+}
 const buckets = new Map<string, Bucket>();
 
 interface Config {
@@ -81,13 +84,15 @@ function parseRules(raw: string): RateLimitRule[] {
       const label = String(r.label ?? "").trim();
       const max = Number(r.max);
       const windowMs = Number(r.windowMs);
-      const audience = (r.audience === "guest" || r.audience === "auth") ? r.audience : "all";
+      const audience = r.audience === "guest" || r.audience === "auth" ? r.audience : "all";
       if (!label || !Number.isFinite(max) || max < 1) continue;
       if (!Number.isFinite(windowMs) || windowMs < 1) continue;
       out.push({ label, max, windowMs, audience });
     }
     return out;
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
 function loadConfig(): Config {
@@ -105,17 +110,25 @@ function loadConfig(): Config {
     let legacyMax: number | null = null;
     let legacyWindow: number | null = null;
     for (const r of rows) {
-      if (r.key === "rate_limit.enabled")   enabled = r.value === "1" || r.value === "true";
-      if (r.key === "rate_limit.rules")     rulesFromDb = parseRules(r.value);
-      if (r.key === "rate_limit.max")       { const v = parseInt(r.value); if (!isNaN(v) && v > 0) legacyMax = v; }
-      if (r.key === "rate_limit.window_ms") { const v = parseInt(r.value); if (!isNaN(v) && v > 0) legacyWindow = v; }
+      if (r.key === "rate_limit.enabled") enabled = r.value === "1" || r.value === "true";
+      if (r.key === "rate_limit.rules") rulesFromDb = parseRules(r.value);
+      if (r.key === "rate_limit.max") {
+        const v = parseInt(r.value, 10);
+        if (!Number.isNaN(v) && v > 0) legacyMax = v;
+      }
+      if (r.key === "rate_limit.window_ms") {
+        const v = parseInt(r.value, 10);
+        if (!Number.isNaN(v) && v > 0) legacyWindow = v;
+      }
     }
     if (rulesFromDb && rulesFromDb.length > 0) {
       rules = rulesFromDb;
     } else if (legacyMax !== null && legacyWindow !== null) {
       rules = [{ label: "*", max: legacyMax, windowMs: legacyWindow, audience: "all" }];
     }
-  } catch { /* DB not initialized — defaults */ }
+  } catch {
+    /* DB not initialized — defaults */
+  }
 
   const parsed: ParsedRule[] = rules.map((r) => ({ ...r, ...parseLabel(r.label) }));
   cachedConfig = { enabled, rules: parsed, expires: now + CONFIG_TTL_MS };
@@ -144,7 +157,8 @@ function detectAction(method: string, rawPath: string): RuleAction | null {
     path.endsWith("/login") ||
     path.endsWith("/register") ||
     path.endsWith("/refresh")
-  ) return "auth";
+  )
+    return "auth";
 
   // Records paths: /api/<collection> or /api/<collection>/<id>
   // Skip reserved top-level segments.
@@ -156,10 +170,10 @@ function detectAction(method: string, rawPath: string): RuleAction | null {
   const M = method.toUpperCase();
   if (!id) {
     if (M === "POST") return "create";
-    if (M === "GET")  return "list";
+    if (M === "GET") return "list";
     return null;
   }
-  if (M === "GET")    return "view";
+  if (M === "GET") return "view";
   if (M === "PATCH" || M === "PUT") return "update";
   if (M === "DELETE") return "delete";
   return null;
@@ -180,7 +194,12 @@ function audienceMatches(audience: RuleAudience, hasAuth: boolean): boolean {
   return hasAuth;
 }
 
-function findRule(rules: ParsedRule[], path: string, method: string, hasAuth: boolean): { rule: ParsedRule; index: number } | null {
+function findRule(
+  rules: ParsedRule[],
+  path: string,
+  method: string,
+  hasAuth: boolean,
+): { rule: ParsedRule; index: number } | null {
   const action = detectAction(method, path);
   for (let i = 0; i < rules.length; i++) {
     const r = rules[i]!;
@@ -217,31 +236,36 @@ setInterval(() => {
 }, 60_000);
 
 export function makeRateLimitPlugin() {
-  return new Elysia({ name: "rate-limit" }).onBeforeHandle({ as: "global" }, ({ request, server, set }) => {
-    const path = normalizeApiPath(new URL(request.url).pathname);
-    if (shouldSkip(path)) return;
-    const cfg = loadConfig();
-    if (!cfg.enabled || cfg.rules.length === 0) return;
+  return new Elysia({ name: "rate-limit" }).onBeforeHandle(
+    { as: "global" },
+    ({ request, server, set }) => {
+      const path = normalizeApiPath(new URL(request.url).pathname);
+      if (shouldSkip(path)) return;
+      const cfg = loadConfig();
+      if (!cfg.enabled || cfg.rules.length === 0) return;
 
-    const hasAuth = !!request.headers.get("authorization");
-    const match = findRule(cfg.rules, path, request.method, hasAuth);
-    if (!match) return;
+      const hasAuth = !!request.headers.get("authorization");
+      const match = findRule(cfg.rules, path, request.method, hasAuth);
+      if (!match) return;
 
-    // Bun exposes the peer IP via `server.requestIP(request)`. Elysia surfaces
-    // `server` on the handler context.
-    let peerIp: string | null = null;
-    try {
-      const s = server as unknown as { requestIP?: (r: Request) => { address: string } | null };
-      peerIp = s?.requestIP?.(request)?.address ?? null;
-    } catch { /* not all runtimes expose this */ }
-    const ip = ipFromRequest(request, peerIp);
-    const key = `${ip}|${match.index}`;
-    if (!consumeToken(key, match.rule.max, match.rule.windowMs)) {
-      set.status = 429;
-      set.headers["Retry-After"] = String(Math.ceil(match.rule.windowMs / 1000));
-      return { error: `Rate limit exceeded (rule: ${match.rule.label})`, code: 429 };
-    }
-  });
+      // Bun exposes the peer IP via `server.requestIP(request)`. Elysia surfaces
+      // `server` on the handler context.
+      let peerIp: string | null = null;
+      try {
+        const s = server as unknown as { requestIP?: (r: Request) => { address: string } | null };
+        peerIp = s?.requestIP?.(request)?.address ?? null;
+      } catch {
+        /* not all runtimes expose this */
+      }
+      const ip = ipFromRequest(request, peerIp);
+      const key = `${ip}|${match.index}`;
+      if (!consumeToken(key, match.rule.max, match.rule.windowMs)) {
+        set.status = 429;
+        set.headers["Retry-After"] = String(Math.ceil(match.rule.windowMs / 1000));
+        return { error: `Rate limit exceeded (rule: ${match.rule.label})`, code: 429 };
+      }
+    },
+  );
 }
 
 // Exposed for admin UI / tests

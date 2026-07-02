@@ -53,7 +53,7 @@ export class EgressBlockedError extends Error {
   constructor(url: string, resolvedIp: string, cidr: string) {
     super(
       `helpers.http: egress to ${url} blocked — resolved IP ${resolvedIp} is in denylist range ${cidr}. ` +
-      `Override per-server via Settings → hooks.http.deny (or set "off" to disable; not recommended for public-internet deployments).`,
+        `Override per-server via Settings → hooks.http.deny (or set "off" to disable; not recommended for public-internet deployments).`,
     );
     this.name = "EgressBlockedError";
     this.url = url;
@@ -187,7 +187,7 @@ export function ipInCidr(ip: string, cidr: ParsedCidr): boolean {
       if (bytes[i] !== cidr.network[i]) return false;
       bitsLeft -= 8;
     } else {
-      const mask = 0xff << (8 - bitsLeft) & 0xff;
+      const mask = (0xff << (8 - bitsLeft)) & 0xff;
       if ((bytes[i]! & mask) !== (cidr.network[i]! & mask)) return false;
       bitsLeft = 0;
     }
@@ -271,9 +271,15 @@ export function invalidateEgressCache(): void {
  * the deny list (and not rescued by the allow list). Returns the resolved
  * IP family the request will use, for logging.
  */
-export async function assertEgressAllowed(url: string): Promise<{ ip: string; family: 4 | 6 } | null> {
+export async function assertEgressAllowed(
+  url: string,
+): Promise<{ ip: string; family: 4 | 6 } | null> {
   let parsed: URL;
-  try { parsed = new URL(url); } catch { return null; /* let fetch fail naturally */ }
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null; /* let fetch fail naturally */
+  }
 
   // Don't enforce on non-network protocols — let fetch error out.
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;

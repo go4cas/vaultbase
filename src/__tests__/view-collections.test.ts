@@ -10,7 +10,13 @@ import {
   updateCollection,
   validateViewQuery,
 } from "../core/collections.ts";
-import { createRecord, deleteRecord, listRecords, ReadOnlyCollectionError, updateRecord } from "../core/records.ts";
+import {
+  createRecord,
+  deleteRecord,
+  listRecords,
+  ReadOnlyCollectionError,
+  updateRecord,
+} from "../core/records.ts";
 
 beforeEach(async () => {
   initDb(":memory:");
@@ -53,7 +59,10 @@ describe("validateViewQuery", () => {
 
 describe("view collection lifecycle", () => {
   async function seedSource() {
-    await createCollection({ name: "posts", fields: JSON.stringify([{ name: "title", type: "text" }]) });
+    await createCollection({
+      name: "posts",
+      fields: JSON.stringify([{ name: "title", type: "text" }]),
+    });
     await createRecord("posts", { title: "alpha" });
     await createRecord("posts", { title: "beta" });
   }
@@ -63,7 +72,7 @@ describe("view collection lifecycle", () => {
     const col = await createCollection({
       name: "post_titles",
       type: "view",
-      view_query: 'SELECT id, title FROM vb_posts',
+      view_query: "SELECT id, title FROM vb_posts",
       fields: JSON.stringify([]),
     });
     expect(col.type).toBe("view");
@@ -73,7 +82,7 @@ describe("view collection lifecycle", () => {
 
     const result = await listRecords("post_titles");
     expect(result.totalItems).toBe(2);
-    const titles = result.data.map((r) => r["title"]).sort();
+    const titles = result.data.map((r) => r.title).sort();
     expect(titles).toEqual(["alpha", "beta"]);
   });
 
@@ -90,7 +99,7 @@ describe("view collection lifecycle", () => {
 
   it("rejects creation when view_query is missing", async () => {
     await expect(
-      createCollection({ name: "broken", type: "view", fields: JSON.stringify([]) })
+      createCollection({ name: "broken", type: "view", fields: JSON.stringify([]) }),
     ).rejects.toThrow(/view_query/);
   });
 
@@ -128,7 +137,10 @@ describe("view collection lifecycle", () => {
 
 describe("view collections are read-only via the records API", () => {
   async function setupView() {
-    await createCollection({ name: "posts", fields: JSON.stringify([{ name: "title", type: "text" }]) });
+    await createCollection({
+      name: "posts",
+      fields: JSON.stringify([{ name: "title", type: "text" }]),
+    });
     await createRecord("posts", { title: "x" });
     await createCollection({
       name: "post_titles",
@@ -139,14 +151,18 @@ describe("view collections are read-only via the records API", () => {
 
   it("createRecord throws ReadOnlyCollectionError", async () => {
     await setupView();
-    await expect(createRecord("post_titles", { title: "y" })).rejects.toThrow(ReadOnlyCollectionError);
+    await expect(createRecord("post_titles", { title: "y" })).rejects.toThrow(
+      ReadOnlyCollectionError,
+    );
   });
 
   it("updateRecord throws ReadOnlyCollectionError", async () => {
     await setupView();
     const list = await listRecords("post_titles");
     const id = String(list.data[0]!.id);
-    await expect(updateRecord("post_titles", id, { title: "z" })).rejects.toThrow(ReadOnlyCollectionError);
+    await expect(updateRecord("post_titles", id, { title: "z" })).rejects.toThrow(
+      ReadOnlyCollectionError,
+    );
   });
 
   it("deleteRecord throws ReadOnlyCollectionError", async () => {
@@ -159,7 +175,10 @@ describe("view collections are read-only via the records API", () => {
 
 describe("inferViewColumns + fieldsFromViewColumns", () => {
   it("returns column names for a SELECT", async () => {
-    await createCollection({ name: "posts", fields: JSON.stringify([{ name: "title", type: "text" }]) });
+    await createCollection({
+      name: "posts",
+      fields: JSON.stringify([{ name: "title", type: "text" }]),
+    });
     const cols = inferViewColumns("SELECT id, title FROM vb_posts");
     expect(cols).toContain("id");
     expect(cols).toContain("title");

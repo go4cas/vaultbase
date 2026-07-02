@@ -42,7 +42,9 @@ async function signAdmin(opts: { id?: string; jti?: string; iat?: number } = {})
       password_reset_at: 0,
       created_at: now,
     });
-  } catch { /* already inserted */ }
+  } catch {
+    /* already inserted */
+  }
   return await new jose.SignJWT({ id, email: "admin@test.local", jti })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuer("vaultbase")
@@ -70,10 +72,12 @@ describe("N-1: admin endpoints honour token revocation", () => {
     const jti = crypto.randomUUID();
     const token = await signAdmin({ jti });
     // Pre-revoke the jti.
-    await getDb().insert(tokenRevocations).values({
-      jti,
-      expires_at: Math.floor(Date.now() / 1000) + 3600,
-    });
+    await getDb()
+      .insert(tokenRevocations)
+      .values({
+        jti,
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+      });
     const app = makeMetricsPlugin(SECRET);
     const res = await app.handle(metricsReq(token));
     expect(res.status).toBe(401);
@@ -84,9 +88,12 @@ describe("N-1: admin endpoints honour token revocation", () => {
     const oldIat = Math.floor(Date.now() / 1000) - 3600;
     const token = await signAdmin({ id, iat: oldIat });
     // Bump password_reset_at to a moment AFTER iat.
-    await getDb().update(adminTable).set({
-      password_reset_at: oldIat + 60,
-    }).where(eq(adminTable.id, id));
+    await getDb()
+      .update(adminTable)
+      .set({
+        password_reset_at: oldIat + 60,
+      })
+      .where(eq(adminTable.id, id));
     const app = makeMetricsPlugin(SECRET);
     const res = await app.handle(metricsReq(token));
     expect(res.status).toBe(401);
@@ -104,10 +111,17 @@ describe("N-1: admin endpoints honour token revocation", () => {
     const id = "admin-4";
     const now = Math.floor(Date.now() / 1000);
     await getDb().insert(adminTable).values({
-      id, email: "admin@test.local", password_hash: "x",
-      password_reset_at: 0, created_at: now,
+      id,
+      email: "admin@test.local",
+      password_hash: "x",
+      password_reset_at: 0,
+      created_at: now,
     });
-    const token = await new jose.SignJWT({ id, email: "admin@test.local", jti: crypto.randomUUID() })
+    const token = await new jose.SignJWT({
+      id,
+      email: "admin@test.local",
+      jti: crypto.randomUUID(),
+    })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuer("not-vaultbase")
       .setAudience("admin")

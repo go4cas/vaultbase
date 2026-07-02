@@ -20,7 +20,7 @@
 import { getAllSettings } from "../api/settings.ts";
 
 interface CorsConfig {
-  origins: string[];          // empty = block
+  origins: string[]; // empty = block
   wildcard: boolean;
   methods: string;
   headers: string;
@@ -40,11 +40,18 @@ function load(): CorsConfig {
   if (cache && now - cache.loaded_at < CACHE_TTL_MS) return cache.config;
 
   let s: Record<string, string> = {};
-  try { s = getAllSettings(); } catch { /* DB not initialised in tests — fall through */ }
+  try {
+    s = getAllSettings();
+  } catch {
+    /* DB not initialised in tests — fall through */
+  }
 
   const rawOrigins = (s["cors.origins"] ?? "").trim();
   const list = rawOrigins
-    ? rawOrigins.split(",").map((x) => x.trim()).filter(Boolean)
+    ? rawOrigins
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean)
     : [];
   const wildcard = list.includes("*");
   const credentials = (s["cors.credentials"] ?? "0") === "1";
@@ -84,10 +91,9 @@ export function applyCorsHeaders(
   // Echo the matched origin (or `*` for true wildcard without creds).
   set.headers["Access-Control-Allow-Origin"] = cfg.wildcard ? "*" : origin;
   // Vary: Origin so caches don't serve a wrong-origin response to peers.
-  const existingVary = set.headers["Vary"];
-  set.headers["Vary"] = existingVary && existingVary !== "Origin"
-    ? `${existingVary}, Origin`
-    : "Origin";
+  const existingVary = set.headers.Vary;
+  set.headers.Vary =
+    existingVary && existingVary !== "Origin" ? `${existingVary}, Origin` : "Origin";
   if (cfg.credentials) {
     set.headers["Access-Control-Allow-Credentials"] = "true";
   }
@@ -113,7 +119,7 @@ export function handleCorsPreflight(request: Request): Response | null {
     "Access-Control-Allow-Methods": cfg.methods,
     "Access-Control-Allow-Headers": reqHeaders || cfg.headers,
     "Access-Control-Max-Age": String(cfg.maxAge),
-    "Vary": "Origin, Access-Control-Request-Headers",
+    Vary: "Origin, Access-Control-Request-Headers",
   };
   if (cfg.credentials) headers["Access-Control-Allow-Credentials"] = "true";
   // No-op acknowledgement of method — browsers don't need it echoed but

@@ -38,16 +38,18 @@ export async function createSavedQuery(input: CreateInput): Promise<SavedQuery> 
   validate(input);
   const id = crypto.randomUUID();
   const now = Math.floor(Date.now() / 1000);
-  await getDb().insert(sqlQueries).values({
-    id,
-    name: input.name.trim(),
-    sql: input.sql,
-    description: input.description?.trim() || null,
-    owner_admin_id: input.ownerAdminId,
-    owner_admin_email: input.ownerAdminEmail,
-    created_at: now,
-    updated_at: now,
-  });
+  await getDb()
+    .insert(sqlQueries)
+    .values({
+      id,
+      name: input.name.trim(),
+      sql: input.sql,
+      description: input.description?.trim() || null,
+      owner_admin_id: input.ownerAdminId,
+      owner_admin_email: input.ownerAdminEmail,
+      created_at: now,
+      updated_at: now,
+    });
   const out = await getSavedQuery(id, input.ownerAdminId);
   if (!out) throw new Error("createSavedQuery: post-insert read returned null");
   return out;
@@ -122,16 +124,19 @@ export async function recordSavedQueryRun(
 ): Promise<void> {
   const existing = await getSavedQuery(id, ownerAdminId);
   if (!existing) return;
-  await getDb().update(sqlQueries).set({
-    last_run_at: Math.floor(Date.now() / 1000),
-    last_run_ms: result.durationMs,
-    last_row_count: result.ok ? result.rowCount : null,
-    last_error: result.ok ? null : (result.error ?? "error"),
-  }).where(eq(sqlQueries.id, id));
+  await getDb()
+    .update(sqlQueries)
+    .set({
+      last_run_at: Math.floor(Date.now() / 1000),
+      last_run_ms: result.durationMs,
+      last_row_count: result.ok ? result.rowCount : null,
+      last_error: result.ok ? null : (result.error ?? "error"),
+    })
+    .where(eq(sqlQueries.id, id));
 }
 
 function validate(input: CreateInput): void {
-  if (!input.name || !input.name.trim()) throw new Error("name is required");
+  if (!input.name?.trim()) throw new Error("name is required");
   if (input.name.length > MAX_SAVED_QUERY_NAME_LEN) throw new Error("name too long");
   if (!input.sql) throw new Error("sql is required");
   if (input.sql.length > MAX_SAVED_QUERY_SQL_LEN) throw new Error("sql too long");

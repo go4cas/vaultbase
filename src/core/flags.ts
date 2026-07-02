@@ -72,10 +72,17 @@ export interface SegmentDefinition {
 }
 
 export type Operator =
-  | "eq" | "neq"
-  | "in" | "not_in"
-  | "contains" | "starts_with" | "ends_with"
-  | "gt" | "gte" | "lt" | "lte"
+  | "eq"
+  | "neq"
+  | "in"
+  | "not_in"
+  | "contains"
+  | "starts_with"
+  | "ends_with"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
   | "between"
   | "exists"
   | "regex";
@@ -90,7 +97,9 @@ interface CacheEntry {
 let cache: CacheEntry | null = null;
 const CACHE_TTL_MS = 5_000;
 
-export function invalidateFlagCache(): void { cache = null; }
+export function invalidateFlagCache(): void {
+  cache = null;
+}
 
 async function load(): Promise<CacheEntry> {
   const now = Date.now();
@@ -106,7 +115,9 @@ async function load(): Promise<CacheEntry> {
   return cache;
 }
 
-async function loadFlags(): Promise<Map<string, FlagDefinition>> { return (await load()).flags; }
+async function loadFlags(): Promise<Map<string, FlagDefinition>> {
+  return (await load()).flags;
+}
 
 // ── Decode / encode ─────────────────────────────────────────────────────────
 
@@ -135,7 +146,9 @@ function decodeSegment(r: SegmentRow): SegmentDefinition {
   try {
     const parsed = JSON.parse(r.conditions) as unknown;
     if (parsed && typeof parsed === "object") conditions = parsed as Condition;
-  } catch { /* keep empty */ }
+  } catch {
+    /* keep empty */
+  }
   return {
     name: r.name,
     description: r.description,
@@ -147,12 +160,16 @@ function decodeSegment(r: SegmentRow): SegmentDefinition {
 
 function decodeFlag(r: DbRow): FlagDefinition {
   const safeJson = <T>(s: string, fallback: T): T => {
-    try { return JSON.parse(s) as T; } catch { return fallback; }
+    try {
+      return JSON.parse(s) as T;
+    } catch {
+      return fallback;
+    }
   };
   return {
     key: r.key,
     description: r.description,
-    type: (r.type === "string" || r.type === "number" || r.type === "json") ? r.type : "bool",
+    type: r.type === "string" || r.type === "number" || r.type === "json" ? r.type : "bool",
     enabled: r.enabled === 1,
     default_value: safeJson<FlagValue>(r.default_value, false),
     variations: safeJson<Variation[]>(r.variations, []),
@@ -191,19 +208,24 @@ export async function upsertSegment(input: UpsertSegmentInput): Promise<SegmentD
     throw new Error("Invalid name: lowercase alphanumerics + . _ -, max 64");
   }
   const db = getDb();
-  const existing = await db.select().from(flagSegments).where(eq(flagSegments.name, input.name)).limit(1);
+  const existing = await db
+    .select()
+    .from(flagSegments)
+    .where(eq(flagSegments.name, input.name))
+    .limit(1);
   const now = Math.floor(Date.now() / 1000);
   if (existing.length === 0) {
     await db.insert(flagSegments).values({
       name: input.name,
       description: input.description ?? "",
       conditions: JSON.stringify(input.conditions ?? { all: [] }),
-      created_at: now, updated_at: now,
+      created_at: now,
+      updated_at: now,
     });
   } else {
     const patch: Record<string, unknown> = { updated_at: now };
-    if (input.description !== undefined) patch["description"] = input.description;
-    if (input.conditions !== undefined)  patch["conditions"]  = JSON.stringify(input.conditions);
+    if (input.description !== undefined) patch.description = input.description;
+    if (input.conditions !== undefined) patch.conditions = JSON.stringify(input.conditions);
     await db.update(flagSegments).set(patch).where(eq(flagSegments.name, input.name));
   }
   invalidateFlagCache();
@@ -232,7 +254,11 @@ export async function upsertFlag(input: UpsertInput): Promise<FlagDefinition> {
     throw new Error("Invalid key: lowercase alphanumerics + . _ -, max 64");
   }
   const db = getDb();
-  const existing = await db.select().from(featureFlags).where(eq(featureFlags.key, input.key)).limit(1);
+  const existing = await db
+    .select()
+    .from(featureFlags)
+    .where(eq(featureFlags.key, input.key))
+    .limit(1);
   const now = Math.floor(Date.now() / 1000);
   if (existing.length === 0) {
     await db.insert(featureFlags).values({
@@ -248,12 +274,13 @@ export async function upsertFlag(input: UpsertInput): Promise<FlagDefinition> {
     });
   } else {
     const patch: Record<string, unknown> = { updated_at: now };
-    if (input.description !== undefined)   patch["description"] = input.description;
-    if (input.type !== undefined)          patch["type"] = input.type;
-    if (input.enabled !== undefined)       patch["enabled"] = input.enabled ? 1 : 0;
-    if (input.default_value !== undefined) patch["default_value"] = JSON.stringify(input.default_value);
-    if (input.variations !== undefined)    patch["variations"] = JSON.stringify(input.variations);
-    if (input.rules !== undefined)         patch["rules"] = JSON.stringify(input.rules);
+    if (input.description !== undefined) patch.description = input.description;
+    if (input.type !== undefined) patch.type = input.type;
+    if (input.enabled !== undefined) patch.enabled = input.enabled ? 1 : 0;
+    if (input.default_value !== undefined)
+      patch.default_value = JSON.stringify(input.default_value);
+    if (input.variations !== undefined) patch.variations = JSON.stringify(input.variations);
+    if (input.rules !== undefined) patch.rules = JSON.stringify(input.rules);
     await db.update(featureFlags).set(patch).where(eq(featureFlags.key, input.key));
   }
   invalidateFlagCache();
@@ -274,7 +301,13 @@ export type EvaluationContext = Record<string, unknown>;
 export interface EvaluationResult {
   value: FlagValue;
   variation: string | null;
-  reason: "default" | "disabled" | "rule_match" | "rule_match_rollout_skip" | "no_match" | "missing";
+  reason:
+    | "default"
+    | "disabled"
+    | "rule_match"
+    | "rule_match_rollout_skip"
+    | "no_match"
+    | "missing";
   rule_id?: string;
 }
 
@@ -343,16 +376,22 @@ function resolveVariation(flag: FlagDefinition, name: string): FlagValue {
   if (found) return found.value;
   // No variations defined → treat the variation name as a literal label
   // mapped to default for boolean flags.
-  if (flag.type === "bool") return name === "true" ? true : name === "false" ? false : flag.default_value;
+  if (flag.type === "bool")
+    return name === "true" ? true : name === "false" ? false : flag.default_value;
   return flag.default_value;
 }
 
 // ── Condition matching ──────────────────────────────────────────────────────
 
-function matchCondition(c: Condition, ctx: EvaluationContext, segments: Map<string, SegmentDefinition>, _depth = 0): boolean {
+function matchCondition(
+  c: Condition,
+  ctx: EvaluationContext,
+  segments: Map<string, SegmentDefinition>,
+  _depth = 0,
+): boolean {
   if (_depth > MAX_PREREQ_DEPTH) return false; // segment self-reference guard
   if ("all" in c) return c.all.every((sub) => matchCondition(sub, ctx, segments, _depth + 1));
-  if ("any" in c) return c.any.some((sub)  => matchCondition(sub, ctx, segments, _depth + 1));
+  if ("any" in c) return c.any.some((sub) => matchCondition(sub, ctx, segments, _depth + 1));
   if ("not" in c) return !matchCondition(c.not, ctx, segments, _depth + 1);
   if ("segment" in c) {
     const seg = segments.get(c.segment);
@@ -362,29 +401,58 @@ function matchCondition(c: Condition, ctx: EvaluationContext, segments: Map<stri
   return matchOp(c.attr, c.op, c.value, ctx);
 }
 
-function matchOp(attrPath: string, op: Operator, ruleValue: FlagValue, ctx: EvaluationContext): boolean {
+function matchOp(
+  attrPath: string,
+  op: Operator,
+  ruleValue: FlagValue,
+  ctx: EvaluationContext,
+): boolean {
   const v = readAttr(ctx, attrPath);
   switch (op) {
-    case "eq":          return v === ruleValue;
-    case "neq":         return v !== ruleValue;
-    case "in":          return Array.isArray(ruleValue) && ruleValue.includes(v as never);
-    case "not_in":      return Array.isArray(ruleValue) && !ruleValue.includes(v as never);
-    case "contains":    return typeof v === "string" && typeof ruleValue === "string" && v.includes(ruleValue);
-    case "starts_with": return typeof v === "string" && typeof ruleValue === "string" && v.startsWith(ruleValue);
-    case "ends_with":   return typeof v === "string" && typeof ruleValue === "string" && v.endsWith(ruleValue);
-    case "gt":          return typeof v === "number" && typeof ruleValue === "number" && v >  ruleValue;
-    case "gte":         return typeof v === "number" && typeof ruleValue === "number" && v >= ruleValue;
-    case "lt":          return typeof v === "number" && typeof ruleValue === "number" && v <  ruleValue;
-    case "lte":         return typeof v === "number" && typeof ruleValue === "number" && v <= ruleValue;
-    case "between":     return typeof v === "number" && Array.isArray(ruleValue)
-                            && ruleValue.length === 2 && typeof ruleValue[0] === "number" && typeof ruleValue[1] === "number"
-                            && v >= ruleValue[0] && v <= ruleValue[1];
-    case "exists":      return v !== undefined && v !== null;
+    case "eq":
+      return v === ruleValue;
+    case "neq":
+      return v !== ruleValue;
+    case "in":
+      return Array.isArray(ruleValue) && ruleValue.includes(v as never);
+    case "not_in":
+      return Array.isArray(ruleValue) && !ruleValue.includes(v as never);
+    case "contains":
+      return typeof v === "string" && typeof ruleValue === "string" && v.includes(ruleValue);
+    case "starts_with":
+      return typeof v === "string" && typeof ruleValue === "string" && v.startsWith(ruleValue);
+    case "ends_with":
+      return typeof v === "string" && typeof ruleValue === "string" && v.endsWith(ruleValue);
+    case "gt":
+      return typeof v === "number" && typeof ruleValue === "number" && v > ruleValue;
+    case "gte":
+      return typeof v === "number" && typeof ruleValue === "number" && v >= ruleValue;
+    case "lt":
+      return typeof v === "number" && typeof ruleValue === "number" && v < ruleValue;
+    case "lte":
+      return typeof v === "number" && typeof ruleValue === "number" && v <= ruleValue;
+    case "between":
+      return (
+        typeof v === "number" &&
+        Array.isArray(ruleValue) &&
+        ruleValue.length === 2 &&
+        typeof ruleValue[0] === "number" &&
+        typeof ruleValue[1] === "number" &&
+        v >= ruleValue[0] &&
+        v <= ruleValue[1]
+      );
+    case "exists":
+      return v !== undefined && v !== null;
     case "regex": {
       if (typeof v !== "string" || typeof ruleValue !== "string") return false;
-      try { return new RegExp(ruleValue).test(v); } catch { return false; }
+      try {
+        return new RegExp(ruleValue).test(v);
+      } catch {
+        return false;
+      }
     }
-    default:            return false;
+    default:
+      return false;
   }
 }
 
@@ -419,8 +487,12 @@ function bucketHashSync(input: string): number {
   return h % 100;
 }
 
-function bucketHash(input: string): number { return bucketHashSync(input); }
-function clampPercent(n: number): number { return Math.max(0, Math.min(100, Math.round(n))); }
+function bucketHash(input: string): number {
+  return bucketHashSync(input);
+}
+function clampPercent(n: number): number {
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
 
 // keep sha1Bytes exported in case admin UI wants stable bucket preview
 export { sha1Bytes };

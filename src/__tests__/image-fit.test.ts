@@ -16,18 +16,26 @@ describe("parseThumbSpec — fit modes", () => {
 
   it.each([
     ["100x100&fit=contain", "contain"],
-    ["100x100&fit=cover",   "cover"],
-    ["100x100&fit=crop",    "crop"],
+    ["100x100&fit=cover", "cover"],
+    ["100x100&fit=crop", "crop"],
   ])("accepts &fit= form: %s", (input, fit) => {
-    expect(parseThumbSpec(input)).toEqual({ width: 100, height: 100, fit: fit as ThumbSpec["fit"] });
+    expect(parseThumbSpec(input)).toEqual({
+      width: 100,
+      height: 100,
+      fit: fit as ThumbSpec["fit"],
+    });
   });
 
   it.each([
     ["200x200_contain", "contain"],
-    ["200x200_cover",   "cover"],
-    ["200x200_crop",    "crop"],
+    ["200x200_cover", "cover"],
+    ["200x200_crop", "crop"],
   ])("accepts hyphenated form: %s", (input, fit) => {
-    expect(parseThumbSpec(input)).toEqual({ width: 200, height: 200, fit: fit as ThumbSpec["fit"] });
+    expect(parseThumbSpec(input)).toEqual({
+      width: 200,
+      height: 200,
+      fit: fit as ThumbSpec["fit"],
+    });
   });
 
   it.each([
@@ -44,7 +52,11 @@ describe("parseThumbSpec — fit modes", () => {
 
 describe("thumbCachePath — fit-aware cache key", () => {
   it("contain keeps the legacy filename shape (no suffix)", () => {
-    const p = thumbCachePath("/tmp/uploads", "abc.png", { width: 100, height: 100, fit: "contain" });
+    const p = thumbCachePath("/tmp/uploads", "abc.png", {
+      width: 100,
+      height: 100,
+      fit: "contain",
+    });
     expect(p.endsWith("abc.png__100x100")).toBe(true);
   });
 
@@ -60,7 +72,11 @@ describe("thumbCachePath — fit-aware cache key", () => {
   });
 
   it("contain and cover do NOT collide", () => {
-    const a = thumbCachePath("/tmp/uploads", "abc.png", { width: 100, height: 100, fit: "contain" });
+    const a = thumbCachePath("/tmp/uploads", "abc.png", {
+      width: 100,
+      height: 100,
+      fit: "contain",
+    });
     const b = thumbCachePath("/tmp/uploads", "abc.png", { width: 100, height: 100, fit: "cover" });
     expect(a).not.toBe(b);
   });

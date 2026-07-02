@@ -1,5 +1,11 @@
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
-import { _reset, broadcast, getSSEClient, setSSESubscriptions, unregisterSSEClient } from "../realtime/manager.ts";
+import {
+  _reset,
+  broadcast,
+  getSSEClient,
+  setSSESubscriptions,
+  unregisterSSEClient,
+} from "../realtime/manager.ts";
 import { openSSEStream } from "../realtime/sse.ts";
 
 beforeEach(() => _reset());
@@ -13,7 +19,10 @@ afterEach(() => _reset());
  *
  * Each test creates its own stream + reader, so cancelling here is safe.
  */
-type AnyReader = { read(): Promise<{ done: boolean; value?: Uint8Array }>; cancel(): Promise<void> };
+type AnyReader = {
+  read(): Promise<{ done: boolean; value?: Uint8Array }>;
+  cancel(): Promise<void>;
+};
 
 async function drain(reader: AnyReader, quietMs = 80): Promise<string> {
   const decoder = new TextDecoder();
@@ -23,11 +32,17 @@ async function drain(reader: AnyReader, quietMs = 80): Promise<string> {
   while (!cancelled) {
     let perReadTimer: ReturnType<typeof setTimeout> | null = null;
     const timeout = new Promise<{ done: true }>((res) => {
-      perReadTimer = setTimeout(() => { void reader.cancel(); res({ done: true }); }, quietMs);
+      perReadTimer = setTimeout(() => {
+        void reader.cancel();
+        res({ done: true });
+      }, quietMs);
     });
     const result = await Promise.race([reader.read(), timeout]);
     if (perReadTimer) clearTimeout(perReadTimer);
-    if (result.done) { cancelled = true; break; }
+    if (result.done) {
+      cancelled = true;
+      break;
+    }
     if (result.value) out += decoder.decode(result.value, { stream: true });
   }
   return out;
@@ -61,8 +76,12 @@ describe("SSE realtime", () => {
       type: "create",
       collection: "posts",
       record: {
-        id: "p1", collectionId: "c", collectionName: "posts",
-        created: 0, updated: 0, title: "hi",
+        id: "p1",
+        collectionId: "c",
+        collectionName: "posts",
+        created: 0,
+        updated: 0,
+        title: "hi",
       },
     });
 
@@ -94,8 +113,12 @@ describe("SSE realtime", () => {
     setSSESubscriptions(clientId, ["posts"]);
     broadcast(
       "posts",
-      { type: "create", collection: "posts", record: { id: "p1", collectionId: "c", collectionName: "posts", created: 0, updated: 0 } },
-      { viewRule: "", record: { id: "p1" } } // admin-only; this client has no auth
+      {
+        type: "create",
+        collection: "posts",
+        record: { id: "p1", collectionId: "c", collectionName: "posts", created: 0, updated: 0 },
+      },
+      { viewRule: "", record: { id: "p1" } }, // admin-only; this client has no auth
     );
 
     const text = await drain(response.body!.getReader());
@@ -111,6 +134,8 @@ describe("SSE realtime", () => {
     expect(getSSEClient(clientId)).toBeUndefined();
     // Broadcasting after unregister should not throw — the dropped client
     // is no longer in any topic set.
-    expect(() => broadcast("posts", { type: "delete", collection: "posts", id: "p1" })).not.toThrow();
+    expect(() =>
+      broadcast("posts", { type: "delete", collection: "posts", id: "p1" }),
+    ).not.toThrow();
   });
 });

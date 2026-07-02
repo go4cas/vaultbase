@@ -49,9 +49,11 @@ describe("GET /:collection/:id/history", () => {
     const r = await createRecord("posts", { title: "x" }, null);
     const app = makeRecordsPlugin(SECRET);
     const adminTok = await signAdmin();
-    const res = await app.handle(new Request(`http://localhost/posts/${r.id}/history`, {
-      headers: { Authorization: `Bearer ${adminTok}` },
-    }));
+    const res = await app.handle(
+      new Request(`http://localhost/posts/${r.id}/history`, {
+        headers: { Authorization: `Bearer ${adminTok}` },
+      }),
+    );
     expect(res.status).toBe(404);
   });
 
@@ -61,11 +63,13 @@ describe("GET /:collection/:id/history", () => {
     await updateRecord("posts", r.id, { title: "v2" }, null);
     const app = makeRecordsPlugin(SECRET);
     const adminTok = await signAdmin();
-    const res = await app.handle(new Request(`http://localhost/posts/${r.id}/history`, {
-      headers: { Authorization: `Bearer ${adminTok}` },
-    }));
+    const res = await app.handle(
+      new Request(`http://localhost/posts/${r.id}/history`, {
+        headers: { Authorization: `Bearer ${adminTok}` },
+      }),
+    );
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: { totalItems: number; data: { op: string }[] } };
+    const body = (await res.json()) as { data: { totalItems: number; data: { op: string }[] } };
     expect(body.data.totalItems).toBe(2);
     const ops = body.data.data.map((e) => e.op).sort();
     expect(ops).toEqual(["create", "update"]);
@@ -95,22 +99,26 @@ describe("POST /:collection/:id/restore", () => {
     const app = makeRecordsPlugin(SECRET);
     const adminTok = await signAdmin();
 
-    const res = await app.handle(new Request(`http://localhost/posts/${r.id}/restore?at=${t0}`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${adminTok}` },
-    }));
+    const res = await app.handle(
+      new Request(`http://localhost/posts/${r.id}/restore?at=${t0}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminTok}` },
+      }),
+    );
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: Record<string, unknown> };
-    expect(body.data["title"]).toBe("v1");
+    const body = (await res.json()) as { data: Record<string, unknown> };
+    expect(body.data.title).toBe("v1");
   });
 
   it("rejects non-admin", async () => {
     await withHistory();
     const r = await createRecord("posts", { title: "v1" }, null);
     const app = makeRecordsPlugin(SECRET);
-    const res = await app.handle(new Request(`http://localhost/posts/${r.id}/restore?at=${Math.floor(Date.now() / 1000)}`, {
-      method: "POST",
-    }));
+    const res = await app.handle(
+      new Request(`http://localhost/posts/${r.id}/restore?at=${Math.floor(Date.now() / 1000)}`, {
+        method: "POST",
+      }),
+    );
     expect(res.status).toBe(403);
   });
 
@@ -119,10 +127,12 @@ describe("POST /:collection/:id/restore", () => {
     const r = await createRecord("posts", { title: "v1" }, null);
     const app = makeRecordsPlugin(SECRET);
     const adminTok = await signAdmin();
-    const res = await app.handle(new Request(`http://localhost/posts/${r.id}/restore`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${adminTok}` },
-    }));
+    const res = await app.handle(
+      new Request(`http://localhost/posts/${r.id}/restore`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminTok}` },
+      }),
+    );
     expect(res.status).toBe(422);
   });
 
@@ -133,10 +143,12 @@ describe("POST /:collection/:id/restore", () => {
     await deleteRecord("posts", r.id, null);
     const app = makeRecordsPlugin(SECRET);
     const adminTok = await signAdmin();
-    const res = await app.handle(new Request(`http://localhost/posts/${r.id}/restore?at=${Math.floor(Date.now() / 1000)}`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${adminTok}` },
-    }));
+    const res = await app.handle(
+      new Request(`http://localhost/posts/${r.id}/restore?at=${Math.floor(Date.now() / 1000)}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminTok}` },
+      }),
+    );
     expect(res.status).toBe(409);
   });
 });

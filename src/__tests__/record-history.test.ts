@@ -3,11 +3,7 @@ import { initDb, closeDb } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
 import { createCollection, updateCollection } from "../core/collections.ts";
 import { createRecord, updateRecord, deleteRecord } from "../core/records.ts";
-import {
-  listRecordHistory,
-  getHistoryAt,
-  pruneHistoryOlderThan,
-} from "../core/record-history.ts";
+import { listRecordHistory, getHistoryAt, pruneHistoryOlderThan } from "../core/record-history.ts";
 
 beforeEach(async () => {
   initDb(":memory:");
@@ -16,7 +12,10 @@ beforeEach(async () => {
 
 afterEach(() => closeDb());
 
-const FIELDS = [{ name: "title", type: "text" }, { name: "body", type: "text" }];
+const FIELDS = [
+  { name: "title", type: "text" },
+  { name: "body", type: "text" },
+];
 
 describe("record history — opt-in", () => {
   it("does NOT record when history_enabled is 0 (default)", async () => {
@@ -50,7 +49,11 @@ describe("record history — enabled", () => {
 
   it("records actor when auth context is provided", async () => {
     await withHistory();
-    const r = await createRecord("posts", { title: "x", body: "y" }, { id: "u-42", type: "user", email: "x@y.z" });
+    const r = await createRecord(
+      "posts",
+      { title: "x", body: "y" },
+      { id: "u-42", type: "user", email: "x@y.z" },
+    );
     const list = await listRecordHistory("posts", r.id);
     expect(list.data[0]?.actor_id).toBe("u-42");
     expect(list.data[0]?.actor_type).toBe("user");
@@ -71,8 +74,8 @@ describe("record history — enabled", () => {
     const list = await listRecordHistory("posts", r.id);
     const updates = list.data.filter((e) => e.op === "update");
     expect(updates).toHaveLength(1);
-    expect(updates[0]?.snapshot["title"]).toBe("v2");
-    expect(updates[0]?.snapshot["body"]).toBe("b1");
+    expect(updates[0]?.snapshot.title).toBe("v2");
+    expect(updates[0]?.snapshot.body).toBe("b1");
   });
 
   it("snapshot on delete captures pre-delete state", async () => {
@@ -81,8 +84,8 @@ describe("record history — enabled", () => {
     await deleteRecord("posts", r.id, null);
     const list = await listRecordHistory("posts", r.id);
     const del = list.data.find((e) => e.op === "delete");
-    expect(del?.snapshot["title"]).toBe("to-die");
-    expect(del?.snapshot["body"]).toBe("z");
+    expect(del?.snapshot.title).toBe("to-die");
+    expect(del?.snapshot.body).toBe("z");
   });
 
   it("getHistoryAt returns the most recent entry at-or-before cutoff", async () => {
@@ -93,9 +96,9 @@ describe("record history — enabled", () => {
     await new Promise((res) => setTimeout(res, 1100));
     await updateRecord("posts", r.id, { title: "v2" }, null);
     const before = await getHistoryAt("posts", r.id, t0);
-    expect(before?.snapshot["title"]).toBe("v1");
+    expect(before?.snapshot.title).toBe("v1");
     const after = await getHistoryAt("posts", r.id, Math.floor(Date.now() / 1000));
-    expect(after?.snapshot["title"]).toBe("v2");
+    expect(after?.snapshot.title).toBe("v2");
     const ancient = await getHistoryAt("posts", r.id, t0 - 1000);
     expect(ancient).toBeNull();
   });

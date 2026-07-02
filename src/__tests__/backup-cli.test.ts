@@ -7,7 +7,7 @@
  *   - end-to-end: real snapshot + local-file destination round-trip
  */
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { initDb, closeDb, getDb } from "../db/client.ts";
@@ -77,33 +77,47 @@ describe("end-to-end: local snapshot", () => {
     dbPath = join(tmpDir, "vaultbase.db");
     initDb(dbPath);
     await runMigrations();
-    await getDb().insert(admin).values({
-      id: "a1",
-      email: "snap@test.local",
-      password_hash: "x",
-      password_reset_at: 0,
-      created_at: Math.floor(Date.now() / 1000),
-    });
+    await getDb()
+      .insert(admin)
+      .values({
+        id: "a1",
+        email: "snap@test.local",
+        password_hash: "x",
+        password_reset_at: 0,
+        created_at: Math.floor(Date.now() / 1000),
+      });
   });
 
   afterEach(() => {
-    try { closeDb(); } catch { /* ignore */ }
+    try {
+      closeDb();
+    } catch {
+      /* ignore */
+    }
     // Windows can hold the file lock briefly after close — best-effort rm.
-    try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    try {
+      rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
   });
 
   it("writes a valid SQLite file the original DB's data is in", async () => {
     const dest = join(tmpDir, "snap.db");
-    closeDb();   // VACUUM INTO opens its own readonly handle; close ours first
+    closeDb(); // VACUUM INTO opens its own readonly handle; close ours first
     await runBackup(dbPath, ["--to", dest, "--quiet"]);
     expect(existsSync(dest)).toBe(true);
     // Verify by opening the snapshot and reading back the seeded row.
     const { Database } = await import("bun:sqlite");
     const snap = new Database(dest, { readonly: true });
     try {
-      const row = snap.query("SELECT email FROM vaultbase_admin WHERE id = 'a1'").get() as { email: string } | null;
+      const row = snap.query("SELECT email FROM vaultbase_admin WHERE id = 'a1'").get() as {
+        email: string;
+      } | null;
       expect(row?.email).toBe("snap@test.local");
-    } finally { snap.close(); }
+    } finally {
+      snap.close();
+    }
   });
 
   it("gzips when --gzip is passed", async () => {
@@ -137,8 +151,11 @@ describe("end-to-end: local snapshot", () => {
     }) as never;
     try {
       await runBackup(ghostPath, ["--to", join(tmpDir, "x.db"), "--quiet"]);
-    } catch (e) { caught = e; }
-    finally { process.exit = origExit; }
+    } catch (e) {
+      caught = e;
+    } finally {
+      process.exit = origExit;
+    }
     expect(String(caught)).toMatch(/source DB not found|exit:1/);
   });
 });

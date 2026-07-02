@@ -42,15 +42,19 @@ function getCachedStmt(client: Database, sql: string): ReturnType<Database["prep
 }
 
 function preparedAll(client: Database, sql: string, params: unknown[]): unknown[] {
-  return (getCachedStmt(client, sql) as unknown as {
-    all: (...args: unknown[]) => unknown[];
-  }).all(...params);
+  return (
+    getCachedStmt(client, sql) as unknown as {
+      all: (...args: unknown[]) => unknown[];
+    }
+  ).all(...params);
 }
 
 function preparedGet(client: Database, sql: string, params: unknown[]): unknown {
-  return (getCachedStmt(client, sql) as unknown as {
-    get: (...args: unknown[]) => unknown;
-  }).get(...params);
+  return (
+    getCachedStmt(client, sql) as unknown as {
+      get: (...args: unknown[]) => unknown;
+    }
+  ).get(...params);
 }
 
 /** Drop the cache when collection schema changes. */
@@ -95,10 +99,10 @@ async function encodeForStorage(val: unknown, field: FieldDef): Promise<unknown>
   }
   const encoded = encodeValue(val, field);
   if (
-    field.options?.encrypted
-    && ENCRYPTABLE_TYPES.has(field.type)
-    && typeof encoded === "string"
-    && encoded.length > 0
+    field.options?.encrypted &&
+    ENCRYPTABLE_TYPES.has(field.type) &&
+    typeof encoded === "string" &&
+    encoded.length > 0
   ) {
     return await encryptValue(encoded);
   }
@@ -118,22 +122,20 @@ async function decodeAfterStorage(val: unknown, field: FieldDef): Promise<unknow
  * responses. Stripped on every row projection regardless of caller.
  * Mirrors the contract enforced by /admin/users/:col in v0.10.
  */
-const AUTH_PRIVATE_COLUMNS = new Set([
-  "password_hash", "totp_secret", "password_reset_at",
-]);
+const AUTH_PRIVATE_COLUMNS = new Set(["password_hash", "totp_secret", "password_reset_at"]);
 
 async function rowToMetaAsync(
   row: Record<string, unknown>,
   col: Collection,
-  fields: FieldDef[]
+  fields: FieldDef[],
 ): Promise<RecordWithMeta> {
   const fieldByName = new Map(fields.map((f) => [f.name, f]));
   const out: RecordWithMeta = {
-    id: String(row["id"]),
+    id: String(row.id),
     collectionId: col.id,
     collectionName: col.name,
-    created: Number(row["created_at"] ?? 0),
-    updated: Number(row["updated_at"] ?? 0),
+    created: Number(row.created_at ?? 0),
+    updated: Number(row.updated_at ?? 0),
   };
   for (const [k, v] of Object.entries(row)) {
     if (k === "id" || k === "created_at" || k === "updated_at") continue;
@@ -195,11 +197,13 @@ function quoteIdent(name: string): string {
 }
 
 function isJsonField(field: FieldDef): boolean {
-  return field.type === "json"
-    || field.type === "geoPoint"
-    || field.type === "vector"
-    || (field.type === "select" && field.options?.multiple === true)
-    || (field.type === "file"   && field.options?.multiple === true);
+  return (
+    field.type === "json" ||
+    field.type === "geoPoint" ||
+    field.type === "vector" ||
+    (field.type === "select" && field.options?.multiple === true) ||
+    (field.type === "file" && field.options?.multiple === true)
+  );
 }
 
 /** Coerce a JS value to its DB-safe representation based on field type. */
@@ -213,13 +217,13 @@ function encodeValue(val: unknown, field: FieldDef): unknown {
   if (field.type === "number") {
     if (typeof val === "number") return val;
     const n = Number(val);
-    return isNaN(n) ? null : n;
+    return Number.isNaN(n) ? null : n;
   }
   if (field.type === "autodate" || field.type === "date") {
     if (typeof val === "number") return val;
     if (typeof val === "string") {
       const t = Date.parse(val);
-      return isNaN(t) ? null : Math.floor(t / 1000);
+      return Number.isNaN(t) ? null : Math.floor(t / 1000);
     }
     return null;
   }
@@ -235,24 +239,28 @@ function decodeValue(val: unknown, field: FieldDef): unknown {
   if (field.type === "bool") return val === 1 || val === true || val === "1" || val === "true";
   if (isJsonField(field)) {
     if (typeof val === "string") {
-      try { return JSON.parse(val); } catch { return val; }
+      try {
+        return JSON.parse(val);
+      } catch {
+        return val;
+      }
     }
   }
   return val;
 }
 
-function rowToMeta(
+function _rowToMeta(
   row: Record<string, unknown>,
   col: Collection,
-  fields: FieldDef[]
+  fields: FieldDef[],
 ): RecordWithMeta {
   const fieldByName = new Map(fields.map((f) => [f.name, f]));
   const out: RecordWithMeta = {
-    id: String(row["id"]),
+    id: String(row.id),
     collectionId: col.id,
     collectionName: col.name,
-    created: Number(row["created_at"] ?? 0),
-    updated: Number(row["updated_at"] ?? 0),
+    created: Number(row.created_at ?? 0),
+    updated: Number(row.updated_at ?? 0),
   };
   for (const [k, v] of Object.entries(row)) {
     if (k === "id" || k === "created_at" || k === "updated_at") continue;
@@ -267,7 +275,7 @@ function rowToMeta(
 
 export async function listRecords(
   collectionName: string,
-  opts: ListOptions = {}
+  opts: ListOptions = {},
 ): Promise<ListResult> {
   const col = await getCollection(collectionName);
   if (!col) throw new Error(`Collection '${collectionName}' not found`);
@@ -293,13 +301,27 @@ export async function listRecords(
 
   if (opts.filter) {
     let compiled;
-    try { compiled = parseFilter(opts.filter, tname, filterOpts); } catch { compiled = null; }
-    if (compiled) { whereParts.push(compiled.sql); whereParams.push(...(compiled.params as Binding[])); }
+    try {
+      compiled = parseFilter(opts.filter, tname, filterOpts);
+    } catch {
+      compiled = null;
+    }
+    if (compiled) {
+      whereParts.push(compiled.sql);
+      whereParams.push(...(compiled.params as Binding[]));
+    }
   }
   if (opts.accessRule) {
     let compiled;
-    try { compiled = parseFilter(opts.accessRule, tname, filterOpts); } catch { compiled = null; }
-    if (compiled) { whereParts.push(compiled.sql); whereParams.push(...(compiled.params as Binding[])); }
+    try {
+      compiled = parseFilter(opts.accessRule, tname, filterOpts);
+    } catch {
+      compiled = null;
+    }
+    if (compiled) {
+      whereParts.push(compiled.sql);
+      whereParams.push(...(compiled.params as Binding[]));
+    }
   }
   const whereSql = whereParts.length > 0 ? `WHERE ${whereParts.join(" AND ")}` : "";
 
@@ -315,16 +337,20 @@ export async function listRecords(
   // and any future API change to multi-statement exec would turn this into
   // RCE — fail fast instead of relying on the prepare contract.
   const sortableCols = new Set<string>([
-    "id", "created_at", "updated_at",
+    "id",
+    "created_at",
+    "updated_at",
     ...fields.filter((f) => !f.system).map((f) => f.name),
   ]);
   const sortSpec = opts.sort ?? (col.type === "view" ? "" : "-created_at");
   const orderClauses: string[] = [];
-  for (const s of sortSpec.split(",").map((x) => x.trim()).filter(Boolean)) {
+  for (const s of sortSpec
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean)) {
     const desc = s.startsWith("-");
     const field = desc ? s.slice(1) : s;
-    const colName = field === "created" ? "created_at"
-      : field === "updated" ? "updated_at" : field;
+    const colName = field === "created" ? "created_at" : field === "updated" ? "updated_at" : field;
     // View collections accept any column name (the schema is inferred from
     // the SELECT and may not be fully reflected in `fields`); base + auth
     // collections strictly whitelist.
@@ -339,7 +365,10 @@ export async function listRecords(
 
   // Execute SELECT — prepared statement cached by SQL string shape.
   const selectSql = `SELECT * FROM ${tableRef} ${whereSql} ${orderSql} LIMIT ? OFFSET ?`;
-  const rows = preparedAll(client, selectSql, [...whereParams, perPage, offset]) as Record<string, unknown>[];
+  const rows = preparedAll(client, selectSql, [...whereParams, perPage, offset]) as Record<
+    string,
+    unknown
+  >[];
 
   // Total count (optional)
   let totalItems = -1;
@@ -355,13 +384,19 @@ export async function listRecords(
 
   // Expand
   if (opts.expand) {
-    const expandPaths = opts.expand.split(",").map((s) => s.trim()).filter(Boolean);
+    const expandPaths = opts.expand
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
     await expandRelations(items, expandPaths, fields);
   }
 
   // Field projection
   if (opts.fields) {
-    const keep = opts.fields.split(",").map((s) => s.trim()).filter(Boolean);
+    const keep = opts.fields
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
     items = items.map((it) => projectFields(it, keep));
   }
 
@@ -373,7 +408,7 @@ function projectFields(item: RecordWithMeta, keep: string[]): RecordWithMeta {
   for (const k of keep) {
     if (k in item) out[k] = item[k as keyof RecordWithMeta];
   }
-  if (!("id" in out) && "id" in item) out["id"] = item.id;
+  if (!("id" in out) && "id" in item) out.id = item.id;
   return out as RecordWithMeta;
 }
 
@@ -381,14 +416,16 @@ function projectFields(item: RecordWithMeta, keep: string[]): RecordWithMeta {
 
 export async function getRecord(
   collectionName: string,
-  id: string
+  id: string,
 ): Promise<RecordWithMeta | null> {
   const col = await getCollection(collectionName);
   if (!col) return null;
   const fields = parseFields(col.fields);
   const tableRef = quoteIdent(userTableName(col.name));
   const client = rawClient();
-  const row = client.prepare(`SELECT * FROM ${tableRef} WHERE "id" = ?`).get(id) as Record<string, unknown> | undefined;
+  const row = client.prepare(`SELECT * FROM ${tableRef} WHERE "id" = ?`).get(id) as
+    | Record<string, unknown>
+    | undefined;
   return row ? await rowToMetaAsync(row, col, fields) : null;
 }
 
@@ -397,7 +434,7 @@ export async function getRecord(
 export async function createRecord(
   collectionName: string,
   data: Record<string, unknown> | null | undefined,
-  auth: AuthContext | null = null
+  auth: AuthContext | null = null,
 ): Promise<RecordWithMeta> {
   const col = await getCollection(collectionName);
   if (!col) throw new Error(`Collection '${collectionName}' not found`);
@@ -408,7 +445,7 @@ export async function createRecord(
     // run. Route callers to the auth signup flow instead.
     throw new Error(
       `'${col.name}' is an auth collection. Create users via POST /api/v1/auth/${col.name}/register ` +
-      `(or /anonymous) — direct record-create bypasses password hashing + email verification.`,
+        `(or /anonymous) — direct record-create bypasses password hashing + email verification.`,
     );
   }
   data = data ?? {};
@@ -421,7 +458,7 @@ export async function createRecord(
 
   const fields = parseFields(col.fields);
   const userFields = fields.filter((f) => !f.system && !f.implicit);
-  const fieldByName = new Map(userFields.map((f) => [f.name, f]));
+  const _fieldByName = new Map(userFields.map((f) => [f.name, f]));
   const now = Math.floor(Date.now() / 1000);
 
   // Apply autodate onCreate
@@ -436,9 +473,11 @@ export async function createRecord(
 
   for (const f of userFields) {
     if (f.type === "autodate") continue; // not stored as user column
-    if (Object.prototype.hasOwnProperty.call(data, f.name)) {
+    if (Object.hasOwn(data, f.name)) {
       insertCols.push(f.name);
-      insertVals.push(await encodeForStorage((data as Record<string, unknown>)[f.name], f) as Binding);
+      insertVals.push(
+        (await encodeForStorage((data as Record<string, unknown>)[f.name], f)) as Binding,
+      );
     }
   }
 
@@ -450,21 +489,37 @@ export async function createRecord(
   const placeholders = insertCols.map(() => "?").join(", ");
 
   const client = rawClient();
-  client.prepare(`INSERT INTO ${tableRef} (${colsSql}) VALUES (${placeholders})`).run(...insertVals);
+  client
+    .prepare(`INSERT INTO ${tableRef} (${colsSql}) VALUES (${placeholders})`)
+    .run(...insertVals);
 
-  const row = client.prepare(`SELECT * FROM ${tableRef} WHERE "id" = ?`).get(id) as Record<string, unknown>;
+  const row = client.prepare(`SELECT * FROM ${tableRef} WHERE "id" = ?`).get(id) as Record<
+    string,
+    unknown
+  >;
   const result = await rowToMetaAsync(row, col, fields);
   await maybeRecordHistory(col, id, {
     op: "create",
     snapshot: result as unknown as Record<string, unknown>,
     auth,
   });
-  broadcast(col.name, { type: "create", collection: col.name, record: result }, {
-    viewRule: col.view_rule,
-    record: result as unknown as Record<string, unknown>,
+  broadcast(
+    col.name,
+    { type: "create", collection: col.name, record: result },
+    {
+      viewRule: col.view_rule,
+      record: result as unknown as Record<string, unknown>,
+    },
+  );
+  void dispatchEvent({ event: `${col.name}.create`, data: { record: result } }).catch(() => {
+    /* swallow */
   });
-  void dispatchEvent({ event: `${col.name}.create`, data: { record: result } }).catch(() => { /* swallow */ });
-  runAfterHook(col, "afterCreate", { record: result as unknown as Record<string, unknown>, existing: null, auth, helpers });
+  runAfterHook(col, "afterCreate", {
+    record: result as unknown as Record<string, unknown>,
+    existing: null,
+    auth,
+    helpers,
+  });
   return result;
 }
 
@@ -474,7 +529,7 @@ export async function updateRecord(
   collectionName: string,
   id: string,
   data: Record<string, unknown> | null | undefined,
-  auth: AuthContext | null = null
+  auth: AuthContext | null = null,
 ): Promise<RecordWithMeta> {
   const col = await getCollection(collectionName);
   if (!col) throw new Error(`Collection '${collectionName}' not found`);
@@ -487,8 +542,15 @@ export async function updateRecord(
     // Allowing them here would let callers set raw `password_hash` (or
     // `email_verified`) bypassing the contract.
     const stripped: Record<string, unknown> = { ...(data as Record<string, unknown>) };
-    for (const k of ["password", "password_hash", "totp_secret", "totp_enabled",
-                     "email_verified", "is_anonymous", "password_reset_at"]) {
+    for (const k of [
+      "password",
+      "password_hash",
+      "totp_secret",
+      "totp_enabled",
+      "email_verified",
+      "is_anonymous",
+      "password_reset_at",
+    ]) {
       delete stripped[k];
     }
     data = stripped;
@@ -522,9 +584,11 @@ export async function updateRecord(
   const setVals: Binding[] = [];
   for (const f of userFields) {
     if (f.type === "autodate") continue;
-    if (Object.prototype.hasOwnProperty.call(data, f.name)) {
+    if (Object.hasOwn(data, f.name)) {
       setCols.push(`${quoteIdent(f.name)} = ?`);
-      setVals.push(await encodeForStorage((data as Record<string, unknown>)[f.name], f) as Binding);
+      setVals.push(
+        (await encodeForStorage((data as Record<string, unknown>)[f.name], f)) as Binding,
+      );
     }
   }
   setCols.push(`"updated_at" = ?`);
@@ -534,25 +598,37 @@ export async function updateRecord(
   const client = rawClient();
 
   if (setCols.length > 1) {
-    client.prepare(`UPDATE ${tableRef} SET ${setCols.join(", ")} WHERE "id" = ?`).run(...setVals, id);
+    client
+      .prepare(`UPDATE ${tableRef} SET ${setCols.join(", ")} WHERE "id" = ?`)
+      .run(...setVals, id);
   }
 
-  const row = client.prepare(`SELECT * FROM ${tableRef} WHERE "id" = ?`).get(id) as Record<string, unknown>;
+  const row = client.prepare(`SELECT * FROM ${tableRef} WHERE "id" = ?`).get(id) as Record<
+    string,
+    unknown
+  >;
   const result = await rowToMetaAsync(row, col, fields);
   await maybeRecordHistory(col, id, {
     op: "update",
     snapshot: result as unknown as Record<string, unknown>,
     auth,
   });
-  broadcast(col.name, { type: "update", collection: col.name, record: result }, {
-    viewRule: col.view_rule,
-    record: result as unknown as Record<string, unknown>,
+  broadcast(
+    col.name,
+    { type: "update", collection: col.name, record: result },
+    {
+      viewRule: col.view_rule,
+      record: result as unknown as Record<string, unknown>,
+    },
+  );
+  void dispatchEvent({ event: `${col.name}.update`, data: { record: result } }).catch(() => {
+    /* swallow */
   });
-  void dispatchEvent({ event: `${col.name}.update`, data: { record: result } }).catch(() => { /* swallow */ });
   runAfterHook(col, "afterUpdate", {
     record: result as unknown as Record<string, unknown>,
     existing: existing as unknown as Record<string, unknown>,
-    auth, helpers,
+    auth,
+    helpers,
   });
   return result;
 }
@@ -606,7 +682,7 @@ async function applyCascades(
   targetColName: string,
   id: string,
   auth: AuthContext | null,
-  visited: Set<string>
+  visited: Set<string>,
 ): Promise<void> {
   const key = `${targetColName}:${id}`;
   if (visited.has(key)) return;
@@ -626,7 +702,8 @@ async function applyCascades(
         .get(id);
       if (row) {
         throw new RestrictError({
-          [ref.collection.name]: `${ref.collection.name}.${ref.fieldName} still references this record`,
+          [ref.collection.name]:
+            `${ref.collection.name}.${ref.fieldName} still references this record`,
         });
       }
       continue;
@@ -646,10 +723,15 @@ async function applyCascades(
       // would be surprisingly expensive.
       for (const r of affected) {
         const rec = await getRecord(ref.collection.name, r.id);
-        if (rec) broadcast(ref.collection.name, { type: "update", collection: ref.collection.name, record: rec }, {
-          viewRule: ref.collection.view_rule,
-          record: rec as unknown as Record<string, unknown>,
-        });
+        if (rec)
+          broadcast(
+            ref.collection.name,
+            { type: "update", collection: ref.collection.name, record: rec },
+            {
+              viewRule: ref.collection.view_rule,
+              record: rec as unknown as Record<string, unknown>,
+            },
+          );
       }
       continue;
     }
@@ -668,7 +750,7 @@ async function applyCascades(
 export async function deleteRecord(
   collectionName: string,
   id: string,
-  auth: AuthContext | null = null
+  auth: AuthContext | null = null,
 ): Promise<void> {
   return deleteRecordInternal(collectionName, id, auth, new Set<string>());
 }
@@ -677,7 +759,7 @@ async function deleteRecordInternal(
   collectionName: string,
   id: string,
   auth: AuthContext | null,
-  visited: Set<string>
+  visited: Set<string>,
 ): Promise<void> {
   const col = await getCollection(collectionName);
   if (!col) throw new Error(`Collection '${collectionName}' not found`);
@@ -693,7 +775,8 @@ async function deleteRecordInternal(
   await runBeforeHook(col, "beforeDelete", {
     record: {},
     existing: existing as unknown as Record<string, unknown>,
-    auth, helpers,
+    auth,
+    helpers,
   });
 
   const tableRef = quoteIdent(userTableName(col.name));
@@ -704,16 +787,23 @@ async function deleteRecordInternal(
     auth,
   });
   // Pass the just-deleted record snapshot so per-subscriber view_rule eval still has fields.
-  broadcast(col.name, { type: "delete", collection: col.name, id }, {
-    viewRule: col.view_rule,
-    record: existing as unknown as Record<string, unknown>,
+  broadcast(
+    col.name,
+    { type: "delete", collection: col.name, id },
+    {
+      viewRule: col.view_rule,
+      record: existing as unknown as Record<string, unknown>,
+    },
+  );
+  void dispatchEvent({ event: `${col.name}.delete`, data: { id, record: existing } }).catch(() => {
+    /* swallow */
   });
-  void dispatchEvent({ event: `${col.name}.delete`, data: { id, record: existing } }).catch(() => { /* swallow */ });
 
   runAfterHook(col, "afterDelete", {
     record: {},
     existing: existing as unknown as Record<string, unknown>,
-    auth, helpers,
+    auth,
+    helpers,
   });
 }
 
@@ -739,7 +829,7 @@ function parseExpandTree(paths: string[]): Map<string, string[]> {
 async function expandRelations(
   items: RecordWithMeta[],
   expandPaths: string[],
-  schema: FieldDef[]
+  schema: FieldDef[],
 ): Promise<void> {
   if (items.length === 0 || expandPaths.length === 0) return;
   const client = rawClient();
@@ -758,7 +848,7 @@ async function expandRelations(
       ...new Set(
         items
           .map((it) => it[fieldName])
-          .filter((v): v is string => typeof v === "string" && v.length > 0)
+          .filter((v): v is string => typeof v === "string" && v.length > 0),
       ),
     ];
     if (ids.length === 0) continue;

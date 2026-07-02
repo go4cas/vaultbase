@@ -86,7 +86,11 @@ export function resetSandbox(adminId: string, livePath: string): SandboxInfo {
   // Drop the previous slot first so we close its handle deterministically.
   const old = _sandboxes.get(adminId);
   if (old) {
-    try { old.db.close(); } catch { /* already closed */ }
+    try {
+      old.db.close();
+    } catch {
+      /* already closed */
+    }
     _sandboxes.delete(adminId);
   }
 
@@ -98,10 +102,12 @@ export function resetSandbox(adminId: string, livePath: string): SandboxInfo {
   let approxSize = 0;
   try {
     // Order matters — tables before indexes/views/triggers reference them.
-    const objs = db.prepare(
-      `SELECT type, name, sql FROM _vb_live.sqlite_master
+    const objs = db
+      .prepare(
+        `SELECT type, name, sql FROM _vb_live.sqlite_master
        WHERE name NOT LIKE 'sqlite_%' AND sql IS NOT NULL`,
-    ).all() as Array<{ type: string; name: string; sql: string }>;
+      )
+      .all() as Array<{ type: string; name: string; sql: string }>;
     const order = ["table", "view", "index", "trigger"];
     const sorted = [...objs].sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type));
     for (const obj of sorted) {
@@ -114,7 +120,9 @@ export function resetSandbox(adminId: string, livePath: string): SandboxInfo {
           const ident = quoteIdent(obj.name);
           db.exec(`INSERT INTO main.${ident} SELECT * FROM _vb_live.${ident}`);
         }
-      } catch { /* skip objects that fail to recreate (rare, e.g. virtual tables) */ }
+      } catch {
+        /* skip objects that fail to recreate (rare, e.g. virtual tables) */
+      }
     }
     // Tally a rough size proxy: sum row counts × something. SQLite has no
     // bytes-per-table API; use page_count × page_size on the in-memory DB.
@@ -152,7 +160,11 @@ export function getSandboxDb(adminId: string): Database | null {
 export function dropSandbox(adminId: string): boolean {
   const slot = _sandboxes.get(adminId);
   if (!slot) return false;
-  try { slot.db.close(); } catch { /* already closed */ }
+  try {
+    slot.db.close();
+  } catch {
+    /* already closed */
+  }
   _sandboxes.delete(adminId);
   return true;
 }
@@ -166,7 +178,11 @@ export function pruneStaleSandboxes(ttlSec: number = SANDBOX_IDLE_TTL_SEC): numb
   let removed = 0;
   for (const [id, slot] of _sandboxes.entries()) {
     if (slot.lastUsedAt < cutoff) {
-      try { slot.db.close(); } catch { /* already closed */ }
+      try {
+        slot.db.close();
+      } catch {
+        /* already closed */
+      }
       _sandboxes.delete(id);
       removed++;
     }
@@ -177,7 +193,11 @@ export function pruneStaleSandboxes(ttlSec: number = SANDBOX_IDLE_TTL_SEC): numb
 /** Test-only: drop every slot. Useful for `afterEach` hygiene. */
 export function _resetSandboxRegistryForTests(): void {
   for (const [, slot] of _sandboxes.entries()) {
-    try { slot.db.close(); } catch { /* already closed */ }
+    try {
+      slot.db.close();
+    } catch {
+      /* already closed */
+    }
   }
   _sandboxes.clear();
 }

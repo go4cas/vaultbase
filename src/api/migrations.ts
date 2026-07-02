@@ -1,8 +1,5 @@
 import Elysia, { t } from "elysia";
-import {
-  listCollections,
-  parseFields,
-} from "../core/collections.ts";
+import { listCollections, parseFields } from "../core/collections.ts";
 import {
   applySnapshot,
   computeSnapshotDiff,
@@ -46,16 +43,20 @@ export function makeMigrationsPlugin(jwtSecret: string) {
             fields: parseFields(c.fields),
           };
           if (c.view_query !== null && c.view_query !== undefined) out.view_query = c.view_query;
-          if (c.list_rule !== null   && c.list_rule !== undefined)   out.list_rule   = c.list_rule;
-          if (c.view_rule !== null   && c.view_rule !== undefined)   out.view_rule   = c.view_rule;
-          if (c.create_rule !== null && c.create_rule !== undefined) out.create_rule = c.create_rule;
-          if (c.update_rule !== null && c.update_rule !== undefined) out.update_rule = c.update_rule;
-          if (c.delete_rule !== null && c.delete_rule !== undefined) out.delete_rule = c.delete_rule;
+          if (c.list_rule !== null && c.list_rule !== undefined) out.list_rule = c.list_rule;
+          if (c.view_rule !== null && c.view_rule !== undefined) out.view_rule = c.view_rule;
+          if (c.create_rule !== null && c.create_rule !== undefined)
+            out.create_rule = c.create_rule;
+          if (c.update_rule !== null && c.update_rule !== undefined)
+            out.update_rule = c.update_rule;
+          if (c.delete_rule !== null && c.delete_rule !== undefined)
+            out.delete_rule = c.delete_rule;
           return out;
         }),
       };
       set.headers["Content-Type"] = "application/json; charset=utf-8";
-      set.headers["Content-Disposition"] = `attachment; filename="vaultbase-snapshot-${snapshot.generated_at.slice(0, 10)}.json"`;
+      set.headers["Content-Disposition"] =
+        `attachment; filename="vaultbase-snapshot-${snapshot.generated_at.slice(0, 10)}.json"`;
       return snapshot;
     })
 
@@ -86,7 +87,7 @@ export function makeMigrationsPlugin(jwtSecret: string) {
         body: t.Object({
           snapshot: t.Any(),
         }),
-      }
+      },
     )
 
     .post(
@@ -126,7 +127,7 @@ export function makeMigrationsPlugin(jwtSecret: string) {
             created: result.created,
             updated: result.updated,
             skipped: [...result.skipped, ...result.unchanged],
-            errors:  result.errors,
+            errors: result.errors,
           },
         };
       },
@@ -135,6 +136,6 @@ export function makeMigrationsPlugin(jwtSecret: string) {
           snapshot: t.Any(),
           mode: t.Optional(t.String()),
         }),
-      }
+      },
     );
 }

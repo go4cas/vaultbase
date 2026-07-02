@@ -6,9 +6,9 @@ import { createCollection, type FieldDef } from "../core/collections.ts";
 import { createRecord } from "../core/records.ts";
 import { setLogsDir } from "../core/file-logger.ts";
 import { encodeCsv } from "../core/csv.ts";
-import { mkdtempSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   exportColumnsForFields,
   exportHeaderRow,
@@ -46,7 +46,9 @@ async function signAdmin(): Promise<string> {
       password_reset_at: 0,
       created_at: now,
     });
-  } catch { /* already inserted */ }
+  } catch {
+    /* already inserted */
+  }
   return await new jose.SignJWT({ id: "a1", email: "admin@test.local", jti: crypto.randomUUID() })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuer("vaultbase")
@@ -95,14 +97,17 @@ async function readAll(body: ReadableStream<Uint8Array>): Promise<string> {
   for (const c of chunks) total += c.length;
   const merged = new Uint8Array(total);
   let off = 0;
-  for (const c of chunks) { merged.set(c, off); off += c.length; }
+  for (const c of chunks) {
+    merged.set(c, off);
+    off += c.length;
+  }
   return new TextDecoder().decode(merged);
 }
 
 const NOTES_FIELDS: FieldDef[] = [
   { name: "title", type: "text", required: false },
-  { name: "n",     type: "number" },
-  { name: "tags",  type: "json" },
+  { name: "n", type: "number" },
+  { name: "tags", type: "json" },
 ];
 
 async function seedNotes(count: number): Promise<void> {
@@ -112,11 +117,15 @@ async function seedNotes(count: number): Promise<void> {
     fields: JSON.stringify(NOTES_FIELDS),
   });
   for (let i = 0; i < count; i++) {
-    await createRecord("notes", {
-      title: `note-${i}`,
-      n: i,
-      tags: [i, `t${i}`],
-    }, null);
+    await createRecord(
+      "notes",
+      {
+        title: `note-${i}`,
+        n: i,
+        tags: [i, `t${i}`],
+      },
+      null,
+    );
   }
 }
 

@@ -68,13 +68,13 @@ type ExistingCollection = NonNullable<Awaited<ReturnType<typeof getCollection>>>
 
 export function isCollectionInSync(
   existing: Awaited<ReturnType<typeof getCollection>>,
-  snap: CollectionSnapshot
+  snap: CollectionSnapshot,
 ): boolean {
   if (!existing) return false;
   if (existing.type !== snap.type) return false;
   if ((existing.view_query ?? null) !== (snap.view_query ?? null)) return false;
-  if ((existing.list_rule ?? null)   !== (snap.list_rule ?? null))   return false;
-  if ((existing.view_rule ?? null)   !== (snap.view_rule ?? null))   return false;
+  if ((existing.list_rule ?? null) !== (snap.list_rule ?? null)) return false;
+  if ((existing.view_rule ?? null) !== (snap.view_rule ?? null)) return false;
   if ((existing.create_rule ?? null) !== (snap.create_rule ?? null)) return false;
   if ((existing.update_rule ?? null) !== (snap.update_rule ?? null)) return false;
   if ((existing.delete_rule ?? null) !== (snap.delete_rule ?? null)) return false;
@@ -85,7 +85,10 @@ export function isCollectionInSync(
  * Produce a human-readable list of differences between an existing collection
  * and a snapshot entry. Returns an empty array when they are in sync.
  */
-export function describeCollectionChanges(existing: ExistingCollection, snap: CollectionSnapshot): string[] {
+export function describeCollectionChanges(
+  existing: ExistingCollection,
+  snap: CollectionSnapshot,
+): string[] {
   const changes: string[] = [];
 
   if (existing.type !== snap.type) {
@@ -96,8 +99,10 @@ export function describeCollectionChanges(existing: ExistingCollection, snap: Co
   const existingFields = parseFields(existing.fields);
   if (!fieldsEqual(existingFields, snap.fields)) {
     const existingByName = new Map(existingFields.map((f) => [f.name, f]));
-    const snapByName     = new Map(snap.fields.map((f) => [f.name, f]));
-    let added = 0, removed = 0, modified = 0;
+    const snapByName = new Map(snap.fields.map((f) => [f.name, f]));
+    let added = 0,
+      removed = 0,
+      modified = 0;
     for (const [name, sf] of snapByName) {
       const ef = existingByName.get(name);
       if (!ef) added++;
@@ -107,27 +112,31 @@ export function describeCollectionChanges(existing: ExistingCollection, snap: Co
       if (!snapByName.has(name)) removed++;
     }
     const parts: string[] = [];
-    if (added)    parts.push(`${added} added`);
-    if (removed)  parts.push(`${removed} removed`);
+    if (added) parts.push(`${added} added`);
+    if (removed) parts.push(`${removed} removed`);
     if (modified) parts.push(`${modified} modified`);
     changes.push(`fields: ${parts.length ? parts.join(", ") : "reordered"}`);
   }
 
-  if ((existing.view_query ?? null) !== (snap.view_query ?? null)) changes.push("view_query changed");
-  if ((existing.list_rule ?? null)   !== (snap.list_rule ?? null))   changes.push("list_rule changed");
-  if ((existing.view_rule ?? null)   !== (snap.view_rule ?? null))   changes.push("view_rule changed");
-  if ((existing.create_rule ?? null) !== (snap.create_rule ?? null)) changes.push("create_rule changed");
-  if ((existing.update_rule ?? null) !== (snap.update_rule ?? null)) changes.push("update_rule changed");
-  if ((existing.delete_rule ?? null) !== (snap.delete_rule ?? null)) changes.push("delete_rule changed");
+  if ((existing.view_query ?? null) !== (snap.view_query ?? null))
+    changes.push("view_query changed");
+  if ((existing.list_rule ?? null) !== (snap.list_rule ?? null)) changes.push("list_rule changed");
+  if ((existing.view_rule ?? null) !== (snap.view_rule ?? null)) changes.push("view_rule changed");
+  if ((existing.create_rule ?? null) !== (snap.create_rule ?? null))
+    changes.push("create_rule changed");
+  if ((existing.update_rule ?? null) !== (snap.update_rule ?? null))
+    changes.push("update_rule changed");
+  if ((existing.delete_rule ?? null) !== (snap.delete_rule ?? null))
+    changes.push("delete_rule changed");
 
   return changes;
 }
 
 export interface DiffResult {
-  added:     Array<{ name: string; type: string }>;
-  modified:  Array<{ name: string; type: string; changes: string[] }>;
+  added: Array<{ name: string; type: string }>;
+  modified: Array<{ name: string; type: string; changes: string[] }>;
   unchanged: Array<{ name: string }>;
-  removed:   Array<{ name: string }>;
+  removed: Array<{ name: string }>;
 }
 
 /**
@@ -193,13 +202,11 @@ export function validateSnapshotShape(snap: unknown): asserts snap is Snapshot {
     }
     if (c.type !== "base" && c.type !== "auth" && c.type !== "view") {
       throw new SnapshotShapeError(
-        `snapshot.collections["${c.name}"].type must be 'base' | 'auth' | 'view'`
+        `snapshot.collections["${c.name}"].type must be 'base' | 'auth' | 'view'`,
       );
     }
     if (!Array.isArray(c.fields)) {
-      throw new SnapshotShapeError(
-        `snapshot.collections["${c.name}"].fields must be an array`
-      );
+      throw new SnapshotShapeError(`snapshot.collections["${c.name}"].fields must be an array`);
     }
   }
 }
@@ -218,7 +225,7 @@ export function validateSnapshotShape(snap: unknown): asserts snap is Snapshot {
  */
 export async function applySnapshot(
   snapshot: unknown,
-  opts: ApplyOptions = { mode: "additive" }
+  opts: ApplyOptions = { mode: "additive" },
 ): Promise<ApplyResult> {
   validateSnapshotShape(snapshot);
   const { mode } = opts;
@@ -248,9 +255,12 @@ export async function applySnapshot(
       } catch (e) {
         result.errors.push({
           collection: c.name,
-          error: e instanceof CollectionValidationError ? e.message
-               : e instanceof Error ? e.message
-               : String(e),
+          error:
+            e instanceof CollectionValidationError
+              ? e.message
+              : e instanceof Error
+                ? e.message
+                : String(e),
         });
       }
       continue;
@@ -292,9 +302,12 @@ export async function applySnapshot(
     } catch (e) {
       result.errors.push({
         collection: c.name,
-        error: e instanceof CollectionValidationError ? e.message
-             : e instanceof Error ? e.message
-             : String(e),
+        error:
+          e instanceof CollectionValidationError
+            ? e.message
+            : e instanceof Error
+              ? e.message
+              : String(e),
       });
     }
   }

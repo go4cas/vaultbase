@@ -87,11 +87,19 @@ function inspect(p: string): PathInfo {
         for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
           const full = join(d, entry.name);
           if (entry.isDirectory()) walk(full);
-          else { try { total += fs.statSync(full).size; } catch { /* ignore */ } }
+          else {
+            try {
+              total += fs.statSync(full).size;
+            } catch {
+              /* ignore */
+            }
+          }
         }
       };
       walk(p);
-    } catch { /* ignore — best-effort sizing */ }
+    } catch {
+      /* ignore — best-effort sizing */
+    }
     return { path: p, exists: true, sizeBytes: total, kind: "directory" };
   }
   return { path: p, exists: true, sizeBytes: st.size, kind: "file" };
@@ -107,8 +115,8 @@ function fmtBytes(n: number): string {
 interface DbSummary {
   collections: number;
   admins: number;
-  users: number;        // sum across all auth collections
-  records: number;      // sum across all base collections
+  users: number; // sum across all auth collections
+  records: number; // sum across all base collections
 }
 
 function summarizeDb(dbPath: string): DbSummary | null {
@@ -116,32 +124,56 @@ function summarizeDb(dbPath: string): DbSummary | null {
   let db: Database | null = null;
   try {
     db = new Database(dbPath, { readonly: true, create: false });
-    let collections = 0, admins = 0, users = 0, records = 0;
-    try { collections = (db.prepare(`SELECT count(*) AS n FROM vaultbase_collections`).get() as { n: number }).n; } catch { /* table missing */ }
-    try { admins = (db.prepare(`SELECT count(*) AS n FROM vaultbase_admin`).get() as { n: number }).n; } catch { /* missing */ }
+    let collections = 0,
+      admins = 0,
+      users = 0,
+      records = 0;
+    try {
+      collections = (
+        db.prepare(`SELECT count(*) AS n FROM vaultbase_collections`).get() as { n: number }
+      ).n;
+    } catch {
+      /* table missing */
+    }
+    try {
+      admins = (db.prepare(`SELECT count(*) AS n FROM vaultbase_admin`).get() as { n: number }).n;
+    } catch {
+      /* missing */
+    }
 
     // Auth collections: per-table count.
     try {
-      const cols = db.prepare(`SELECT name, type FROM vaultbase_collections`).all() as Array<{ name: string; type: string }>;
+      const cols = db.prepare(`SELECT name, type FROM vaultbase_collections`).all() as Array<{
+        name: string;
+        type: string;
+      }>;
       for (const c of cols) {
         const tbl = `"vb_${c.name.replace(/"/g, '""')}"`;
         try {
           const cnt = (db.prepare(`SELECT count(*) AS n FROM ${tbl}`).get() as { n: number }).n;
           if (c.type === "auth") users += cnt;
           else records += cnt;
-        } catch { /* per-table missing — skip */ }
+        } catch {
+          /* per-table missing — skip */
+        }
       }
-    } catch { /* collections table missing */ }
+    } catch {
+      /* collections table missing */
+    }
     return { collections, admins, users, records };
   } finally {
-    try { db?.close(); } catch { /* noop */ }
+    try {
+      db?.close();
+    } catch {
+      /* noop */
+    }
   }
 }
 
 function detectProductionSignals(dataDir: string): string[] {
   const reasons: string[] = [];
-  const env = process.env["NODE_ENV"];
-  const vbEnv = process.env["VAULTBASE_ENV"];
+  const env = process.env.NODE_ENV;
+  const vbEnv = process.env.VAULTBASE_ENV;
   if (env === "production") reasons.push(`NODE_ENV=${env}`);
   if (vbEnv === "production" || vbEnv === "prod") reasons.push(`VAULTBASE_ENV=${vbEnv}`);
   // Path heuristics: system-managed dirs typical of prod deploys.
@@ -151,10 +183,12 @@ function detectProductionSignals(dataDir: string): string[] {
   if (/^\/srv\//.test(abs)) reasons.push(`dataDir under /srv/`);
   if (/^\/etc\//.test(abs)) reasons.push(`dataDir under /etc/`);
   // Container-orchestrator hints.
-  if (process.env["KUBERNETES_SERVICE_HOST"]) reasons.push(`Kubernetes pod (KUBERNETES_SERVICE_HOST set)`);
-  if (process.env["FLY_APP_NAME"]) reasons.push(`Fly.io (FLY_APP_NAME=${process.env["FLY_APP_NAME"]})`);
-  if (process.env["RENDER"]) reasons.push(`Render (RENDER=${process.env["RENDER"]})`);
-  if (process.env["RAILWAY_ENVIRONMENT"]) reasons.push(`Railway (RAILWAY_ENVIRONMENT=${process.env["RAILWAY_ENVIRONMENT"]})`);
+  if (process.env.KUBERNETES_SERVICE_HOST)
+    reasons.push(`Kubernetes pod (KUBERNETES_SERVICE_HOST set)`);
+  if (process.env.FLY_APP_NAME) reasons.push(`Fly.io (FLY_APP_NAME=${process.env.FLY_APP_NAME})`);
+  if (process.env.RENDER) reasons.push(`Render (RENDER=${process.env.RENDER})`);
+  if (process.env.RAILWAY_ENVIRONMENT)
+    reasons.push(`Railway (RAILWAY_ENVIRONMENT=${process.env.RAILWAY_ENVIRONMENT})`);
   return reasons;
 }
 
@@ -198,7 +232,9 @@ export function runWipeCli(argv: readonly string[], dataDir: string): number {
   process.stdout.write(`Will delete ${present.length} target(s):\n`);
   for (const t of targets) {
     if (!t.exists) continue;
-    process.stdout.write(`  ${t.kind === "directory" ? "📁" : "📄"} ${t.path}  (${fmtBytes(t.sizeBytes)})\n`);
+    process.stdout.write(
+      `  ${t.kind === "directory" ? "📁" : "📄"} ${t.path}  (${fmtBytes(t.sizeBytes)})\n`,
+    );
   }
   process.stdout.write("\n");
 
@@ -226,7 +262,9 @@ export function runWipeCli(argv: readonly string[], dataDir: string): number {
   }
 
   if (prodReasons.length > 0 && !flags.force) {
-    process.stdout.write(`✖ Refusing to wipe — production signals present. Pass \`--force\` to override.\n`);
+    process.stdout.write(
+      `✖ Refusing to wipe — production signals present. Pass \`--force\` to override.\n`,
+    );
     return 2;
   }
 
@@ -243,6 +281,8 @@ export function runWipeCli(argv: readonly string[], dataDir: string): number {
       process.stderr.write(`  ✖ failed to remove ${t.path}: ${msg}\n`);
     }
   }
-  process.stdout.write(`\n✓ Wipe complete — ${removed}/${present.length} target(s) removed. Restart vaultbase to enter the setup wizard.\n`);
+  process.stdout.write(
+    `\n✓ Wipe complete — ${removed}/${present.length} target(s) removed. Restart vaultbase to enter the setup wizard.\n`,
+  );
   return 0;
 }

@@ -28,21 +28,33 @@ describe("POST /api/auth/:collection/register runs validateRecord", () => {
       name: "users",
       type: "auth",
       fields: JSON.stringify([
-        { name: "email", type: "email", required: true, implicit: true, options: { unique: true, min: 8 } },
+        {
+          name: "email",
+          type: "email",
+          required: true,
+          implicit: true,
+          options: { unique: true, min: 8 },
+        },
         { name: "verified", type: "bool", implicit: true },
       ]),
     });
     const app = makeAuthPlugin(SECRET);
     // 7-char email passes the email regex but fails min=8
-    const res = await app.handle(authReq("POST", "/auth/users/register", null, {
-      email: "a@b.com",
-      password: "hunter2!!hunter2!!",
-    }));
+    const res = await app.handle(
+      authReq("POST", "/auth/users/register", null, {
+        email: "a@b.com",
+        password: "hunter2!!hunter2!!",
+      }),
+    );
     expect(res.status).toBe(422);
-    const body = await res.json() as { error: string; code: number; details: Record<string, string> };
+    const body = (await res.json()) as {
+      error: string;
+      code: number;
+      details: Record<string, string>;
+    };
     expect(body.code).toBe(422);
     expect(body.details).toHaveProperty("email");
-    expect(body.details["email"]).toMatch(/at least 8/);
+    expect(body.details.email).toMatch(/at least 8/);
   });
 
   it("rejects a custom user-defined required field that wasn't provided", async () => {
@@ -54,12 +66,14 @@ describe("POST /api/auth/:collection/register runs validateRecord", () => {
       ]),
     });
     const app = makeAuthPlugin(SECRET);
-    const res = await app.handle(authReq("POST", "/auth/users/register", null, {
-      email: "alice@test.local",
-      password: "hunter2!!hunter2!!",
-    }));
+    const res = await app.handle(
+      authReq("POST", "/auth/users/register", null, {
+        email: "alice@test.local",
+        password: "hunter2!!hunter2!!",
+      }),
+    );
     expect(res.status).toBe(422);
-    const body = await res.json() as { details: Record<string, string> };
+    const body = (await res.json()) as { details: Record<string, string> };
     expect(body.details).toHaveProperty("username");
   });
 
@@ -68,17 +82,25 @@ describe("POST /api/auth/:collection/register runs validateRecord", () => {
       name: "users",
       type: "auth",
       fields: JSON.stringify([
-        { name: "email", type: "email", required: true, implicit: true, options: { unique: true, min: 5 } },
+        {
+          name: "email",
+          type: "email",
+          required: true,
+          implicit: true,
+          options: { unique: true, min: 5 },
+        },
         { name: "verified", type: "bool", implicit: true },
       ]),
     });
     const app = makeAuthPlugin(SECRET);
-    const res = await app.handle(authReq("POST", "/auth/users/register", null, {
-      email: "alice@test.local",
-      password: "hunter2!!hunter2!!",
-    }));
+    const res = await app.handle(
+      authReq("POST", "/auth/users/register", null, {
+        email: "alice@test.local",
+        password: "hunter2!!hunter2!!",
+      }),
+    );
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: { id: string; email: string } };
+    const body = (await res.json()) as { data: { id: string; email: string } };
     expect(body.data.email).toBe("alice@test.local");
   });
 });
@@ -89,7 +111,11 @@ describe("logs.extractAuth propagates impersonated_by", () => {
     const { SignJWT } = await import("jose");
     // logs.extractAuth now enforces `iss = "vaultbase"` (matches production
     // signer) — keep the rest of the claim shape unchanged.
-    const token = await new SignJWT({ id: "u1", email: "u1@test.local", impersonated_by: "admin-42" })
+    const token = await new SignJWT({
+      id: "u1",
+      email: "u1@test.local",
+      impersonated_by: "admin-42",
+    })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuer("vaultbase")
       .setAudience("user")

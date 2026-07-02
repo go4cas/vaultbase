@@ -108,7 +108,7 @@ export function _resetBuiltinWorkers(): void {
   builtinWorkers.clear();
 }
 
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
+const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as new (
   ...args: string[]
 ) => (ctx: JobContext) => Promise<unknown>;
 
@@ -164,7 +164,7 @@ async function loadWorkers(): Promise<CompiledWorker[]> {
 export async function enqueue(
   queue: string,
   payload: unknown,
-  opts: EnqueueOpts = {}
+  opts: EnqueueOpts = {},
 ): Promise<{ jobId: string; deduped: boolean }> {
   const db = getDb();
   const now = Math.floor(Date.now() / 1000);
@@ -175,10 +175,12 @@ export async function enqueue(
     const existing = await db
       .select({ id: jobsLog.id })
       .from(jobsLog)
-      .where(and(
-        eq(jobsLog.unique_key, opts.uniqueKey),
-        or(eq(jobsLog.status, "queued"), eq(jobsLog.status, "running"))!
-      ))
+      .where(
+        and(
+          eq(jobsLog.unique_key, opts.uniqueKey),
+          or(eq(jobsLog.status, "queued"), eq(jobsLog.status, "running"))!,
+        ),
+      )
       .limit(1);
     if (existing.length > 0) return { jobId: existing[0]!.id, deduped: true };
   }
@@ -210,7 +212,9 @@ const POLL_INTERVAL_MS = 500;
  */
 export function startQueueScheduler(): void {
   if (schedulerInterval) return;
-  schedulerInterval = setInterval(() => { void tick(); }, POLL_INTERVAL_MS);
+  schedulerInterval = setInterval(() => {
+    void tick();
+  }, POLL_INTERVAL_MS);
   void tick();
 }
 
@@ -249,11 +253,13 @@ async function claimAndRun(queue: string, worker: CompiledWorker, slots: number)
   const pending = await db
     .select()
     .from(jobsLog)
-    .where(and(
-      eq(jobsLog.queue, queue),
-      eq(jobsLog.status, "queued"),
-      lt(jobsLog.scheduled_at, now + 1),
-    ))
+    .where(
+      and(
+        eq(jobsLog.queue, queue),
+        eq(jobsLog.status, "queued"),
+        lt(jobsLog.scheduled_at, now + 1),
+      ),
+    )
     .orderBy(asc(jobsLog.scheduled_at))
     .limit(slots);
 
@@ -279,7 +285,11 @@ async function runJob(worker: CompiledWorker, job: typeof jobsLog.$inferSelect):
   const db = getDb();
   const helpers = makeHookHelpers({ name: worker.name });
   let payload: unknown = null;
-  try { payload = JSON.parse(job.payload); } catch { payload = null; }
+  try {
+    payload = JSON.parse(job.payload);
+  } catch {
+    payload = null;
+  }
 
   const ctx: JobContext = {
     payload,
@@ -292,38 +302,51 @@ async function runJob(worker: CompiledWorker, job: typeof jobsLog.$inferSelect):
   const finishedAt = (): number => Math.floor(Date.now() / 1000);
   try {
     await worker.fn(ctx);
-    await db.update(jobsLog).set({
-      status: "succeeded",
-      finished_at: finishedAt(),
-      error: null,
-    }).where(eq(jobsLog.id, job.id));
+    await db
+      .update(jobsLog)
+      .set({
+        status: "succeeded",
+        finished_at: finishedAt(),
+        error: null,
+      })
+      .where(eq(jobsLog.id, job.id));
   } catch (e) {
-    const msg = e instanceof ValidationError
-      ? `ValidationError: ${e.message}`
-      : (e instanceof Error ? (e.stack ?? e.message) : String(e));
+    const msg =
+      e instanceof ValidationError
+        ? `ValidationError: ${e.message}`
+        : e instanceof Error
+          ? (e.stack ?? e.message)
+          : String(e);
     const willRetry = job.attempt < worker.retry_max;
     if (willRetry) {
-      const delayMs = worker.retry_backoff === "exponential"
-        ? worker.retry_delay_ms * Math.pow(2, job.attempt - 1)
-        : worker.retry_delay_ms;
+      const delayMs =
+        worker.retry_backoff === "exponential"
+          ? worker.retry_delay_ms * 2 ** (job.attempt - 1)
+          : worker.retry_delay_ms;
       const next = Math.floor((Date.now() + delayMs) / 1000);
       // Re-queue: bump attempt, set status back to queued with a fresh
       // schedule. Keeping the same row preserves the audit trail; a fresh
       // row would lose the retry chain.
-      await db.update(jobsLog).set({
-        status: "queued",
-        attempt: job.attempt + 1,
-        worker_id: null,
-        started_at: null,
-        scheduled_at: next,
-        error: msg,
-      }).where(eq(jobsLog.id, job.id));
+      await db
+        .update(jobsLog)
+        .set({
+          status: "queued",
+          attempt: job.attempt + 1,
+          worker_id: null,
+          started_at: null,
+          scheduled_at: next,
+          error: msg,
+        })
+        .where(eq(jobsLog.id, job.id));
     } else {
-      await db.update(jobsLog).set({
-        status: "dead",
-        finished_at: finishedAt(),
-        error: msg,
-      }).where(eq(jobsLog.id, job.id));
+      await db
+        .update(jobsLog)
+        .set({
+          status: "dead",
+          finished_at: finishedAt(),
+          error: msg,
+        })
+        .where(eq(jobsLog.id, job.id));
       console.error(`[queues] Job ${job.id} dead after ${job.attempt} attempts: ${msg}`);
     }
   }
@@ -337,7 +360,15 @@ export async function retryJob(id: string): Promise<boolean> {
   const now = Math.floor(Date.now() / 1000);
   const r = await db
     .update(jobsLog)
-    .set({ status: "queued", attempt: 1, scheduled_at: now, started_at: null, finished_at: null, error: null, worker_id: null })
+    .set({
+      status: "queued",
+      attempt: 1,
+      scheduled_at: now,
+      started_at: null,
+      finished_at: null,
+      error: null,
+      worker_id: null,
+    })
     .where(and(eq(jobsLog.id, id), inArray(jobsLog.status, ["failed", "dead", "succeeded"])))
     .returning({ id: jobsLog.id });
   return r.length > 0;
@@ -348,7 +379,12 @@ export async function discardJob(id: string): Promise<boolean> {
   const db = getDb();
   const r = await db
     .delete(jobsLog)
-    .where(and(eq(jobsLog.id, id), or(eq(jobsLog.status, "queued"), eq(jobsLog.status, "dead"), eq(jobsLog.status, "failed"))!))
+    .where(
+      and(
+        eq(jobsLog.id, id),
+        or(eq(jobsLog.status, "queued"), eq(jobsLog.status, "dead"), eq(jobsLog.status, "failed"))!,
+      ),
+    )
     .returning({ id: jobsLog.id });
   return r.length > 0;
 }
@@ -386,31 +422,45 @@ export async function listJobsLog(opts: JobsLogQuery = {}) {
  * Dashboard counts per queue. Single SELECT with COUNT(... CASE ...) so the
  * jobs page can render cards without a roundtrip per status.
  */
-export async function queueStats(): Promise<Array<{
-  queue: string;
-  queued: number;
-  running: number;
-  succeeded: number;
-  failed: number;
-  dead: number;
-}>> {
+export async function queueStats(): Promise<
+  Array<{
+    queue: string;
+    queued: number;
+    running: number;
+    succeeded: number;
+    failed: number;
+    dead: number;
+  }>
+> {
   const db = getDb();
   const all = await db.select().from(jobsLog);
-  const map = new Map<string, { queue: string; queued: number; running: number; succeeded: number; failed: number; dead: number }>();
+  const map = new Map<
+    string,
+    {
+      queue: string;
+      queued: number;
+      running: number;
+      succeeded: number;
+      failed: number;
+      dead: number;
+    }
+  >();
   for (const j of all) {
     const k = j.queue;
-    if (!map.has(k)) map.set(k, { queue: k, queued: 0, running: 0, succeeded: 0, failed: 0, dead: 0 });
+    if (!map.has(k))
+      map.set(k, { queue: k, queued: 0, running: 0, succeeded: 0, failed: 0, dead: 0 });
     const e = map.get(k)!;
-    if (j.status === "queued")    e.queued++;
-    if (j.status === "running")   e.running++;
+    if (j.status === "queued") e.queued++;
+    if (j.status === "running") e.running++;
     if (j.status === "succeeded") e.succeeded++;
-    if (j.status === "failed")    e.failed++;
-    if (j.status === "dead")      e.dead++;
+    if (j.status === "failed") e.failed++;
+    if (j.status === "dead") e.dead++;
   }
   // Workers may exist with zero jobs yet — surface their queues so admins see them.
   const all_workers = await db.select({ queue: workers.queue }).from(workers);
   for (const w of all_workers) {
-    if (!map.has(w.queue)) map.set(w.queue, { queue: w.queue, queued: 0, running: 0, succeeded: 0, failed: 0, dead: 0 });
+    if (!map.has(w.queue))
+      map.set(w.queue, { queue: w.queue, queued: 0, running: 0, succeeded: 0, failed: 0, dead: 0 });
   }
   return [...map.values()].sort((a, b) => a.queue.localeCompare(b.queue));
 }

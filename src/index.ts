@@ -38,16 +38,20 @@ export function parseCliArgs(argv: string[]): CliFlags {
     for (let i = 1; i < argv.length; i++) {
       const arg = argv[i] ?? "";
       if (arg.startsWith("--email=")) email = arg.slice("--email=".length);
-      else if (arg === "--email") { const v = argv[++i]; if (v) email = v; }
-      else if (arg.startsWith("--password=")) password = arg.slice("--password=".length);
-      else if (arg === "--password") { const v = argv[++i]; if (v) password = v; }
-      else if (arg === "--force") force = true;
+      else if (arg === "--email") {
+        const v = argv[++i];
+        if (v) email = v;
+      } else if (arg.startsWith("--password=")) password = arg.slice("--password=".length);
+      else if (arg === "--password") {
+        const v = argv[++i];
+        if (v) password = v;
+      } else if (arg === "--force") force = true;
       else if (arg === "--help" || arg === "-h") {
         process.stdout.write(
           `Usage: vaultbase setup-admin --email <e> --password <p> [--force]\n` +
-          `\n` +
-          `Bootstraps an admin account from the CLI — never exposes the web wizard.\n` +
-          `Refuses to run when an admin already exists, unless --force is passed.\n`,
+            `\n` +
+            `Bootstraps an admin account from the CLI — never exposes the web wizard.\n` +
+            `Refuses to run when an admin already exists, unless --force is passed.\n`,
         );
         process.exit(0);
       }
@@ -71,7 +75,9 @@ export function parseCliArgs(argv: string[]): CliFlags {
       const v = arg.slice("--snapshot-mode=".length);
       if (v === "additive" || v === "sync") flags.snapshotMode = v;
       else {
-        process.stderr.write(`vaultbase: --snapshot-mode must be 'additive' or 'sync' (got '${v}')\n`);
+        process.stderr.write(
+          `vaultbase: --snapshot-mode must be 'additive' or 'sync' (got '${v}')\n`,
+        );
         process.exit(1);
       }
     } else if (arg === "--snapshot-mode") {
@@ -80,7 +86,9 @@ export function parseCliArgs(argv: string[]): CliFlags {
         flags.snapshotMode = next;
         i++;
       } else {
-        process.stderr.write(`vaultbase: --snapshot-mode must be 'additive' or 'sync' (got '${String(next)}')\n`);
+        process.stderr.write(
+          `vaultbase: --snapshot-mode must be 'additive' or 'sync' (got '${String(next)}')\n`,
+        );
         process.exit(1);
       }
     }
@@ -88,7 +96,11 @@ export function parseCliArgs(argv: string[]): CliFlags {
   return flags;
 }
 
-async function setupAdminFromCli(opts: { email: string; password: string; force: boolean }): Promise<void> {
+async function setupAdminFromCli(opts: {
+  email: string;
+  password: string;
+  force: boolean;
+}): Promise<void> {
   if (!opts.email || !opts.password) {
     process.stderr.write(`vaultbase: setup-admin requires both --email and --password\n`);
     process.exit(1);
@@ -108,12 +120,16 @@ async function setupAdminFromCli(opts: { email: string; password: string; force:
   // this specific email exists so --force can UPSERT instead of failing
   // on the UNIQUE(email) constraint.
   const anyAdmin = await db.select({ id: admin.id, email: admin.email }).from(admin).limit(1);
-  const sameEmail = await db.select({ id: admin.id }).from(admin).where(eq(admin.email, opts.email)).limit(1);
+  const sameEmail = await db
+    .select({ id: admin.id })
+    .from(admin)
+    .where(eq(admin.email, opts.email))
+    .limit(1);
 
   if (anyAdmin.length > 0 && !opts.force) {
     process.stderr.write(
       `vaultbase: an admin already exists (${anyAdmin[0]?.email}). ` +
-      `Re-run with --force to add another or reset the password of an existing admin.\n`,
+        `Re-run with --force to add another or reset the password of an existing admin.\n`,
     );
     process.exit(1);
   }
@@ -124,14 +140,19 @@ async function setupAdminFromCli(opts: { email: string; password: string; force:
   if (sameEmail.length > 0) {
     // Email already taken → reset that admin's password. `password_reset_at`
     // bump invalidates any tokens minted before this update (forced logout).
-    await db.update(admin)
+    await db
+      .update(admin)
       .set({ password_hash: hash, password_reset_at: now })
       .where(eq(admin.email, opts.email));
     process.stdout.write(`vaultbase: admin '${opts.email}' password reset.\n`);
   } else {
     const id = crypto.randomUUID();
     await db.insert(admin).values({
-      id, email: opts.email, password_hash: hash, password_reset_at: 0, created_at: now,
+      id,
+      email: opts.email,
+      password_hash: hash,
+      password_reset_at: 0,
+      created_at: now,
     });
     process.stdout.write(`vaultbase: admin '${opts.email}' created.\n`);
   }
@@ -147,25 +168,31 @@ async function applySnapshotFromCli(path: string, mode: ApplyMode): Promise<void
   try {
     raw = await f.text();
   } catch (e) {
-    process.stderr.write(`vaultbase: cannot read snapshot file ${path}: ${e instanceof Error ? e.message : String(e)}\n`);
+    process.stderr.write(
+      `vaultbase: cannot read snapshot file ${path}: ${e instanceof Error ? e.message : String(e)}\n`,
+    );
     process.exit(1);
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
-    process.stderr.write(`vaultbase: snapshot file is not valid JSON: ${e instanceof Error ? e.message : String(e)}\n`);
+    process.stderr.write(
+      `vaultbase: snapshot file is not valid JSON: ${e instanceof Error ? e.message : String(e)}\n`,
+    );
     process.exit(1);
   }
   try {
     const result = await applySnapshot(parsed, { mode });
-    const created   = result.created.length;
-    const updated   = result.updated.length;
+    const created = result.created.length;
+    const updated = result.updated.length;
     const unchanged = result.unchanged.length + result.skipped.length;
     console.log(`applied snapshot: ${created} created, ${updated} updated, ${unchanged} unchanged`);
     if (result.errors.length > 0) {
       for (const err of result.errors) {
-        process.stderr.write(`vaultbase: snapshot error in collection '${err.collection}': ${err.error}\n`);
+        process.stderr.write(
+          `vaultbase: snapshot error in collection '${err.collection}': ${err.error}\n`,
+        );
       }
       process.exit(1);
     }
@@ -236,7 +263,11 @@ async function main() {
     process.stdout.write(TOP_LEVEL_HELP);
     return;
   }
-  if (process.argv[2] === "--version" || process.argv[2] === "-v" || process.argv[2] === "version") {
+  if (
+    process.argv[2] === "--version" ||
+    process.argv[2] === "-v" ||
+    process.argv[2] === "version"
+  ) {
     const { VAULTBASE_VERSION } = await import("./core/version.ts");
     process.stdout.write(`vaultbase ${VAULTBASE_VERSION}\n`);
     return;
@@ -258,7 +289,13 @@ async function main() {
     const config = await loadConfig();
     const { runMcpCli } = await import("./scripts/mcp.ts");
     try {
-      await runMcpCli(process.argv.slice(3), config.dbPath, config.jwtSecret, config.logsDir, config.uploadDir);
+      await runMcpCli(
+        process.argv.slice(3),
+        config.dbPath,
+        config.jwtSecret,
+        config.logsDir,
+        config.uploadDir,
+      );
       process.exit(0);
     } catch (e) {
       process.stderr.write(`vaultbase mcp: ${e instanceof Error ? e.message : String(e)}\n`);
@@ -355,7 +392,7 @@ async function main() {
   // `Bun.serve({ reusePort: true })` so the kernel load-balances incoming
   // connections (SO_REUSEPORT). Single-process mode behaves exactly as
   // before — no flag, no behavior change.
-  const isWorker = !!process.env["VAULTBASE_WORKER_ID"];
+  const isWorker = !!process.env.VAULTBASE_WORKER_ID;
   server.listen({ port: config.port, ...(isWorker ? { reusePort: true } : {}) });
 
   // Graceful shutdown: drain the buffered log writer so the last 50ms of
@@ -363,23 +400,32 @@ async function main() {
   // still runs) + sync on `exit` (defensive, loop is dead).
   const shutdown = async (signal: string): Promise<void> => {
     process.stderr.write(`\nvaultbase: received ${signal}, draining logs...\n`);
-    try { await drainLogBuffer(); } catch { /* ignore */ }
+    try {
+      await drainLogBuffer();
+    } catch {
+      /* ignore */
+    }
     process.exit(0);
   };
-  process.on("SIGTERM", () => { void shutdown("SIGTERM"); });
-  process.on("SIGINT",  () => { void shutdown("SIGINT");  });
-  process.on("exit", () => { drainLogBufferSync(); });
+  process.on("SIGTERM", () => {
+    void shutdown("SIGTERM");
+  });
+  process.on("SIGINT", () => {
+    void shutdown("SIGINT");
+  });
+  process.on("exit", () => {
+    drainLogBufferSync();
+  });
 
   const base = `http://localhost:${config.port}`;
 
-
   if (!adminExists) {
     console.log(
-      `\n┌─────────────────────────────────────────────┐\n│  Vaultbase is running at ${base}   │\n│  Set up your admin account:                  │\n│  ${base}/_/setup                  │\n└─────────────────────────────────────────────┘\n`
+      `\n┌─────────────────────────────────────────────┐\n│  Vaultbase is running at ${base}   │\n│  Set up your admin account:                  │\n│  ${base}/_/setup                  │\n└─────────────────────────────────────────────┘\n`,
     );
   } else {
-    const tag = process.env["VAULTBASE_WORKER_ID"]
-      ? ` [worker ${process.env["VAULTBASE_WORKER_ID"]} pid ${process.pid}]`
+    const tag = process.env.VAULTBASE_WORKER_ID
+      ? ` [worker ${process.env.VAULTBASE_WORKER_ID} pid ${process.pid}]`
       : "";
     console.log(`Vaultbase running at ${base}${tag}`);
   }

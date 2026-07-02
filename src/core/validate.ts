@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { getDb } from "../db/client.ts";
-import { type Collection } from "../db/schema.ts";
+import type { Collection } from "../db/schema.ts";
 import type { FieldDef } from "./collections.ts";
 import { getCollection, parseFields, userTableName } from "./collections.ts";
 import { sanitizeHtml } from "./html-sanitize.ts";
@@ -27,7 +27,7 @@ export async function validateRecord(
   collection: Collection,
   data: Record<string, unknown> | null | undefined,
   mode: "create" | "update",
-  existingId?: string
+  existingId?: string,
 ): Promise<void> {
   data = data ?? {};
   const schema = parseFields(collection.fields);
@@ -36,7 +36,7 @@ export async function validateRecord(
   for (const field of schema) {
     if (field.system || field.implicit || field.type === "autodate") continue;
 
-    const has = Object.prototype.hasOwnProperty.call(data, field.name);
+    const has = Object.hasOwn(data, field.name);
     const value = data[field.name];
 
     // Required check
@@ -58,7 +58,10 @@ export async function validateRecord(
     }
 
     const err = validateValue(field, value);
-    if (err) { errors[field.name] = err; continue; }
+    if (err) {
+      errors[field.name] = err;
+      continue;
+    }
 
     // Server-side HTML sanitization for `editor` fields. Defends against the
     // Quill 2.0.3 XSS class (CVE-2025-15056) by stripping <script>, <iframe>,
@@ -104,7 +107,8 @@ function validateValue(field: FieldDef, value: unknown): string | null {
       return null;
 
     case "number":
-      if (typeof value !== "number" || !isFinite(value)) return `${field.name} must be a number`;
+      if (typeof value !== "number" || !Number.isFinite(value))
+        return `${field.name} must be a number`;
       if (field.options?.min !== undefined && value < field.options.min) {
         return `${field.name} must be at least ${field.options.min}`;
       }
@@ -118,11 +122,13 @@ function validateValue(field: FieldDef, value: unknown): string | null {
       return null;
 
     case "email":
-      if (typeof value !== "string" || !EMAIL_RE.test(value)) return `${field.name} must be a valid email`;
+      if (typeof value !== "string" || !EMAIL_RE.test(value))
+        return `${field.name} must be a valid email`;
       return null;
 
     case "url":
-      if (typeof value !== "string" || !URL_RE.test(value)) return `${field.name} must be a valid URL`;
+      if (typeof value !== "string" || !URL_RE.test(value))
+        return `${field.name} must be a valid URL`;
       return null;
 
     case "select": {
@@ -135,7 +141,8 @@ function validateValue(field: FieldDef, value: unknown): string | null {
         const bad = value.find((v) => !allowed.includes(String(v)));
         if (bad !== undefined) return `${field.name} value '${bad}' not in allowed options`;
       } else {
-        if (!allowed.includes(String(value))) return `${field.name} must be one of: ${allowed.join(", ")}`;
+        if (!allowed.includes(String(value)))
+          return `${field.name} must be one of: ${allowed.join(", ")}`;
       }
       return null;
     }
@@ -147,7 +154,7 @@ function validateValue(field: FieldDef, value: unknown): string | null {
 
     case "date":
       if (typeof value === "number") return null;
-      if (typeof value === "string" && !isNaN(Date.parse(value))) return null;
+      if (typeof value === "string" && !Number.isNaN(Date.parse(value))) return null;
       return `${field.name} must be a date (ISO string or unix timestamp)`;
 
     case "json":
@@ -180,11 +187,12 @@ function validateValue(field: FieldDef, value: unknown): string | null {
     case "geoPoint": {
       if (typeof value !== "object" || value === null) return `${field.name} must be { lat, lng }`;
       const v = value as Record<string, unknown>;
-      const lat = v["lat"], lng = v["lng"];
-      if (typeof lat !== "number" || !isFinite(lat) || lat < -90 || lat > 90) {
+      const lat = v.lat,
+        lng = v.lng;
+      if (typeof lat !== "number" || !Number.isFinite(lat) || lat < -90 || lat > 90) {
         return `${field.name}.lat must be a number in [-90, 90]`;
       }
-      if (typeof lng !== "number" || !isFinite(lng) || lng < -180 || lng > 180) {
+      if (typeof lng !== "number" || !Number.isFinite(lng) || lng < -180 || lng > 180) {
         return `${field.name}.lng must be a number in [-180, 180]`;
       }
       return null;
@@ -196,7 +204,8 @@ function validateValue(field: FieldDef, value: unknown): string | null {
         return `${field.name} schema is invalid: dimensions must be an integer in [1, 4096]`;
       }
       if (!Array.isArray(value)) return `${field.name} must be a number[] of length ${dims}`;
-      if (value.length !== dims) return `${field.name} must have exactly ${dims} elements (got ${value.length})`;
+      if (value.length !== dims)
+        return `${field.name} must have exactly ${dims} elements (got ${value.length})`;
       for (let i = 0; i < value.length; i++) {
         const n = value[i];
         if (typeof n !== "number" || !Number.isFinite(n)) {
@@ -215,13 +224,11 @@ async function checkUnique(
   collection: Collection,
   fieldName: string,
   value: unknown,
-  existingId?: string
+  existingId?: string,
 ): Promise<boolean> {
   const client = (getDb() as unknown as { $client: Database }).$client;
   const tableRef = `"${userTableName(collection.name)}"`;
-  const where = existingId
-    ? `WHERE "${fieldName}" = ? AND "id" != ?`
-    : `WHERE "${fieldName}" = ?`;
+  const where = existingId ? `WHERE "${fieldName}" = ? AND "id" != ?` : `WHERE "${fieldName}" = ?`;
   type Binding = string | number | bigint | boolean | null | Uint8Array;
   const params: Binding[] = existingId ? [value as Binding, existingId] : [value as Binding];
   const row = client.prepare(`SELECT "id" FROM ${tableRef} ${where} LIMIT 1`).get(...params);

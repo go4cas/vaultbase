@@ -49,20 +49,24 @@ const PROMPTS: InternalPrompt[] = [
     description:
       "Interview the user to design a new Vaultbase collection — fields, types, rules. Ends by calling vaultbase.create_collection.",
     arguments: [
-      { name: "topic", description: "What the collection is for (e.g. 'blog posts', 'orders').", required: true },
+      {
+        name: "topic",
+        description: "What the collection is for (e.g. 'blog posts', 'orders').",
+        required: true,
+      },
     ],
     build: (args) => {
       const topic = String(args.topic ?? "<unspecified>");
       return [
         userMsg(
           `You're helping design a new Vaultbase collection for: ${topic}.\n\n` +
-          "Walk through these steps in order:\n" +
-          "1. Confirm what entities live in this collection and what each one represents.\n" +
-          "2. Propose ~5–10 fields (name, type, options) — call out unique constraints, foreign-key relations, encrypted-at-rest candidates.\n" +
-          "3. Propose API rules (list / view / create / update / delete) — who can do what.\n" +
-          "4. Decide whether to enable record history.\n" +
-          "5. Once the user approves, call `vaultbase.create_collection` with the agreed shape.\n\n" +
-          "Use `vaultbase.list_collections` first to avoid duplicating an existing one.",
+            "Walk through these steps in order:\n" +
+            "1. Confirm what entities live in this collection and what each one represents.\n" +
+            "2. Propose ~5–10 fields (name, type, options) — call out unique constraints, foreign-key relations, encrypted-at-rest candidates.\n" +
+            "3. Propose API rules (list / view / create / update / delete) — who can do what.\n" +
+            "4. Decide whether to enable record history.\n" +
+            "5. Once the user approves, call `vaultbase.create_collection` with the agreed shape.\n\n" +
+            "Use `vaultbase.list_collections` first to avoid duplicating an existing one.",
         ),
       ];
     },
@@ -73,7 +77,11 @@ const PROMPTS: InternalPrompt[] = [
       "Given a request id (`X-Request-Id`) or a path, walk the logs + audit trail and report likely root cause.",
     arguments: [
       { name: "needle", description: "Request id, path, or any log substring.", required: true },
-      { name: "date", description: "Optional YYYY-MM-DD log day. Defaults to today.", required: false },
+      {
+        name: "date",
+        description: "Optional YYYY-MM-DD log day. Defaults to today.",
+        required: false,
+      },
     ],
     build: (args) => {
       const needle = String(args.needle ?? "");
@@ -81,12 +89,12 @@ const PROMPTS: InternalPrompt[] = [
       return [
         userMsg(
           `Investigate the failure related to: \`${needle}\` (logs from ${date}).\n\n` +
-          "Steps:\n" +
-          `1. Read \`vaultbase://logs/${date}\` (or call \`vaultbase.read_logs\`) and find entries matching the needle.\n` +
-          "2. For any 4xx/5xx, note status, ip, user-agent, request id.\n" +
-          "3. Check `vaultbase.read_audit_log` for adjacent state changes.\n" +
-          "4. Synthesise: what request, who, when, what failed, likely cause.\n" +
-          "Be terse — a one-paragraph summary then a bulleted timeline.",
+            "Steps:\n" +
+            `1. Read \`vaultbase://logs/${date}\` (or call \`vaultbase.read_logs\`) and find entries matching the needle.\n` +
+            "2. For any 4xx/5xx, note status, ip, user-agent, request id.\n" +
+            "3. Check `vaultbase.read_audit_log` for adjacent state changes.\n" +
+            "4. Synthesise: what request, who, when, what failed, likely cause.\n" +
+            "Be terse — a one-paragraph summary then a bulleted timeline.",
         ),
       ];
     },
@@ -95,22 +103,20 @@ const PROMPTS: InternalPrompt[] = [
     name: "audit-rules",
     description:
       "Security review of one collection's API rules — surfaces over-permissive patterns, common pitfalls.",
-    arguments: [
-      { name: "collection", description: "Collection name to review.", required: true },
-    ],
+    arguments: [{ name: "collection", description: "Collection name to review.", required: true }],
     build: (args) => {
       const collection = String(args.collection ?? "<unspecified>");
       return [
         userMsg(
           `Review the API rules for the \`${collection}\` collection.\n\n` +
-          `Read \`vaultbase://collection/${collection}\` first. Then evaluate each of the five rules ` +
-          "(list / view / create / update / delete) against this checklist:\n\n" +
-          "- Is `''` (empty string = full public access) used by accident?\n" +
-          "- Does `update` / `delete` confine ownership via `@request.auth.id = field`?\n" +
-          "- Are auth-collection rules tight — can a user read another user's row?\n" +
-          "- Are encrypted-at-rest fields protected from list? (rules apply to filtering too).\n" +
-          "- Any rule that depends on a field the create rule doesn't enforce?\n\n" +
-          "Output: a markdown table with rule | verdict | suggested change. Be specific — quote the exact rule text in each row.",
+            `Read \`vaultbase://collection/${collection}\` first. Then evaluate each of the five rules ` +
+            "(list / view / create / update / delete) against this checklist:\n\n" +
+            "- Is `''` (empty string = full public access) used by accident?\n" +
+            "- Does `update` / `delete` confine ownership via `@request.auth.id = field`?\n" +
+            "- Are auth-collection rules tight — can a user read another user's row?\n" +
+            "- Are encrypted-at-rest fields protected from list? (rules apply to filtering too).\n" +
+            "- Any rule that depends on a field the create rule doesn't enforce?\n\n" +
+            "Output: a markdown table with rule | verdict | suggested change. Be specific — quote the exact rule text in each row.",
         ),
       ];
     },
@@ -127,14 +133,14 @@ const PROMPTS: InternalPrompt[] = [
       return [
         userMsg(
           `Plan a migration from PocketBase (data at \`${pb}\`) to this Vaultbase deployment.\n\n` +
-          "Cover:\n" +
-          "1. Schema export from PB (`pocketbase admin export ...`) → vaultbase create_collection per resource.\n" +
-          "2. Data copy strategy — direct SQL? CSV via `vaultbase csv import`?\n" +
-          "3. Auth-user migration: hash format compatibility, force password reset.\n" +
-          "4. File migration: pb_data/storage → vaultbase uploads dir / S3.\n" +
-          "5. Custom hooks: rewrite as Vaultbase JS hooks.\n" +
-          "6. Cutover: dual-write window vs. hard cutover.\n\n" +
-          "Output as numbered steps with the exact commands to run. Do NOT execute mutating tools — review first.",
+            "Cover:\n" +
+            "1. Schema export from PB (`pocketbase admin export ...`) → vaultbase create_collection per resource.\n" +
+            "2. Data copy strategy — direct SQL? CSV via `vaultbase csv import`?\n" +
+            "3. Auth-user migration: hash format compatibility, force password reset.\n" +
+            "4. File migration: pb_data/storage → vaultbase uploads dir / S3.\n" +
+            "5. Custom hooks: rewrite as Vaultbase JS hooks.\n" +
+            "6. Cutover: dual-write window vs. hard cutover.\n\n" +
+            "Output as numbered steps with the exact commands to run. Do NOT execute mutating tools — review first.",
         ),
       ];
     },
@@ -147,16 +153,16 @@ const PROMPTS: InternalPrompt[] = [
     build: () => [
       userMsg(
         "Inspect every collection in this Vaultbase and suggest optimisations.\n\n" +
-        "Method:\n" +
-        "1. Read `vaultbase://collections`.\n" +
-        "2. For each, read `vaultbase://collection/{name}` and look at field types + rules.\n" +
-        "3. Check `vaultbase.list_indexes` (if available) for current indexes.\n" +
-        "4. Suggest:\n" +
-        "   - Missing indexes for fields used in rules / common filters.\n" +
-        "   - Wide TEXT columns that should split into a child collection.\n" +
-        "   - JSON-blob columns whose hot fields should hoist into typed columns.\n" +
-        "   - Any collection without `created_at` / `updated_at` indexes (pagination cost).\n\n" +
-        "Group output by collection. For each suggestion, note expected impact (small / medium / large).",
+          "Method:\n" +
+          "1. Read `vaultbase://collections`.\n" +
+          "2. For each, read `vaultbase://collection/{name}` and look at field types + rules.\n" +
+          "3. Check `vaultbase.list_indexes` (if available) for current indexes.\n" +
+          "4. Suggest:\n" +
+          "   - Missing indexes for fields used in rules / common filters.\n" +
+          "   - Wide TEXT columns that should split into a child collection.\n" +
+          "   - JSON-blob columns whose hot fields should hoist into typed columns.\n" +
+          "   - Any collection without `created_at` / `updated_at` indexes (pagination cost).\n\n" +
+          "Group output by collection. For each suggestion, note expected impact (small / medium / large).",
       ),
     ],
   },
@@ -179,7 +185,10 @@ export function getPrompt(name: string, args: Record<string, unknown>): GetPromp
   if (!p) throw new Error(`Unknown prompt: '${name}'`);
   // Validate required args.
   for (const a of p.arguments ?? []) {
-    if (a.required && (args[a.name] === undefined || args[a.name] === null || args[a.name] === "")) {
+    if (
+      a.required &&
+      (args[a.name] === undefined || args[a.name] === null || args[a.name] === "")
+    ) {
       throw new Error(`Prompt '${name}': missing required argument '${a.name}'`);
     }
   }

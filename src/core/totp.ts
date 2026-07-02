@@ -83,7 +83,10 @@ function counterAt(unixSeconds: number): Buffer {
 }
 
 /** Generate the TOTP code for a given secret + time (defaults to now). */
-export function generateCode(secret: string, unixSeconds: number = Math.floor(Date.now() / 1000)): string {
+export function generateCode(
+  secret: string,
+  unixSeconds: number = Math.floor(Date.now() / 1000),
+): string {
   const key = base32Decode(secret);
   const hmac = createHmac("sha1", Buffer.from(key)).update(counterAt(unixSeconds)).digest();
   // Dynamic truncation per RFC 4226 §5.4
@@ -101,7 +104,11 @@ export function generateCode(secret: string, unixSeconds: number = Math.floor(Da
  * Verify a TOTP code with ±1 step drift to tolerate clock skew. Constant-time
  * comparison so timing leaks can't reveal partial matches.
  */
-export function verifyCode(secret: string, code: string, unixSeconds: number = Math.floor(Date.now() / 1000)): boolean {
+export function verifyCode(
+  secret: string,
+  code: string,
+  unixSeconds: number = Math.floor(Date.now() / 1000),
+): boolean {
   if (typeof code !== "string" || code.length !== DIGITS) return false;
   for (const offset of [0, -STEP_SECONDS, STEP_SECONDS]) {
     const candidate = generateCode(secret, unixSeconds + offset);

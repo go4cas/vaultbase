@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync } from "fs";
-import { join } from "path";
+import { existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { Image, GIF, Frame } from "imagescript";
 
 /**
@@ -67,39 +67,70 @@ export function detectFormat(bytes: Uint8Array): ThumbFormat | null {
   if (bytes.length < 8) return null;
   // PNG: 89 50 4E 47 0D 0A 1A 0A
   if (
-    bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 &&
-    bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a
-  ) return "png";
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  )
+    return "png";
   // JPEG: FF D8 FF
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "jpeg";
   // GIF: "GIF87a" or "GIF89a"
   if (
-    bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 &&
-    bytes[3] === 0x38 && (bytes[4] === 0x37 || bytes[4] === 0x39) && bytes[5] === 0x61
-  ) return "gif";
+    bytes[0] === 0x47 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x38 &&
+    (bytes[4] === 0x37 || bytes[4] === 0x39) &&
+    bytes[5] === 0x61
+  )
+    return "gif";
   // WebP and AVIF need 12 bytes for their fourcc/major brand check.
   if (bytes.length < 12) return null;
   // WebP: "RIFF" .... "WEBP"
   if (
-    bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
-    bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50
-  ) return "webp";
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  )
+    return "webp";
   // AVIF: ISO BMFF — bytes 4..7 = "ftyp", bytes 8..11 = "avif" major brand.
   if (
-    bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70 &&
-    bytes[8] === 0x61 && bytes[9] === 0x76 && bytes[10] === 0x69 && bytes[11] === 0x66
-  ) return "avif";
+    bytes[4] === 0x66 &&
+    bytes[5] === 0x74 &&
+    bytes[6] === 0x79 &&
+    bytes[7] === 0x70 &&
+    bytes[8] === 0x61 &&
+    bytes[9] === 0x76 &&
+    bytes[10] === 0x69 &&
+    bytes[11] === 0x66
+  )
+    return "avif";
   return null;
 }
 
 /** Map a ThumbFormat to its canonical Content-Type / mime string. */
 export function thumbMime(format: ThumbFormat): string {
   switch (format) {
-    case "jpeg": return "image/jpeg";
-    case "png":  return "image/png";
-    case "gif":  return "image/gif";
-    case "webp": return "image/webp";
-    case "avif": return "image/avif";
+    case "jpeg":
+      return "image/jpeg";
+    case "png":
+      return "image/png";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
+    case "avif":
+      return "image/avif";
   }
 }
 
@@ -118,7 +149,11 @@ export function thumbCachePath(uploadDir: string, filename: string, spec: ThumbS
 }
 
 /** Compute the (width, height) of a single resized frame for the given fit mode. */
-function fitDimensions(srcW: number, srcH: number, spec: ThumbSpec): {
+function fitDimensions(
+  srcW: number,
+  srcH: number,
+  spec: ThumbSpec,
+): {
   newW: number;
   newH: number;
   cropX: number;
@@ -168,7 +203,11 @@ function fitImage(img: Image, spec: ThumbSpec): Image {
 }
 
 /** Build an imagescript Image from a decoded ImageData. */
-function imageFromImageData(id: { data: Uint8ClampedArray | Uint8Array; width: number; height: number }): Image {
+function imageFromImageData(id: {
+  data: Uint8ClampedArray | Uint8Array;
+  width: number;
+  height: number;
+}): Image {
   const out = new Image(id.width, id.height);
   // imagescript's Image.bitmap is a Uint8ClampedArray of RGBA in row-major order —
   // the same layout as web ImageData, so a straight set() is correct.
@@ -213,11 +252,11 @@ function imageDataFromImage(img: Image): ImageDataLike {
 export async function generateThumbnail(
   bytes: Uint8Array,
   spec: ThumbSpec,
-  format: ThumbFormat
+  format: ThumbFormat,
 ): Promise<Uint8Array> {
   if (format === "webp") return await thumbnailWebp(bytes, spec);
   if (format === "avif") return await thumbnailAvif(bytes, spec);
-  if (format === "gif")  return await thumbnailGif(bytes, spec);
+  if (format === "gif") return await thumbnailGif(bytes, spec);
 
   // PNG / JPEG path — vanilla imagescript.
   const img = await Image.decode(bytes);
@@ -229,7 +268,10 @@ export async function generateThumbnail(
 async function thumbnailWebp(bytes: Uint8Array, spec: ThumbSpec): Promise<Uint8Array> {
   const { decode, encode } = await import("@jsquash/webp");
   // @jsquash takes ArrayBuffer; build a tight one in case `bytes` is a slice.
-  const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  const ab = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
   const decoded = await decode(ab);
   const img = imageFromImageData(decoded);
   const resized = fitImage(img, spec);
@@ -239,7 +281,10 @@ async function thumbnailWebp(bytes: Uint8Array, spec: ThumbSpec): Promise<Uint8A
 
 async function thumbnailAvif(bytes: Uint8Array, spec: ThumbSpec): Promise<Uint8Array> {
   const { decode, encode } = await import("@jsquash/avif");
-  const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  const ab = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
   const decoded = await decode(ab);
   const img = imageFromImageData(decoded);
   const resized = fitImage(img, spec);
@@ -278,7 +323,12 @@ async function thumbnailGif(bytes: Uint8Array, spec: ThumbSpec): Promise<Uint8Ar
       // `toString` — go through `unknown` to keep the runtime polymorphism.
       let working: Image = frame as unknown as Image;
       if (spec.fit === "cover" || spec.fit === "crop") {
-        working = (working.clone() as Image).crop(dims.cropX, dims.cropY, dims.cropW, dims.cropH) as Image;
+        working = (working.clone() as Image).crop(
+          dims.cropX,
+          dims.cropY,
+          dims.cropW,
+          dims.cropH,
+        ) as Image;
       }
       const resized = (working.clone() as Image).resize(dims.newW, dims.newH) as Image;
       // `Frame.from` clones the bitmap and copies metadata.

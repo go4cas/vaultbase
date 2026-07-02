@@ -24,9 +24,16 @@ import type { Collection } from "../db/schema.ts";
 
 /** Auth-system columns guaranteed to exist on every `vb_<auth-col>`. */
 export const AUTH_USER_COLUMNS = [
-  "id", "email", "password_hash", "email_verified", "totp_secret",
-  "totp_enabled", "is_anonymous", "password_reset_at",
-  "created_at", "updated_at",
+  "id",
+  "email",
+  "password_hash",
+  "email_verified",
+  "totp_secret",
+  "totp_enabled",
+  "is_anonymous",
+  "password_reset_at",
+  "created_at",
+  "updated_at",
 ] as const;
 
 /**
@@ -65,7 +72,9 @@ function quoteIdent(s: string): string {
 export function findUserById(col: Collection, id: string): AuthUserRow | null {
   const tname = quoteIdent(userTableName(col.name));
   try {
-    const row = rawClient().prepare(`SELECT * FROM ${tname} WHERE id = ?`).get(id) as AuthUserRow | undefined;
+    const row = rawClient().prepare(`SELECT * FROM ${tname} WHERE id = ?`).get(id) as
+      | AuthUserRow
+      | undefined;
     return row ?? null;
   } catch {
     return null;
@@ -76,7 +85,9 @@ export function findUserById(col: Collection, id: string): AuthUserRow | null {
 export function findUserByEmail(col: Collection, email: string): AuthUserRow | null {
   const tname = quoteIdent(userTableName(col.name));
   try {
-    const row = rawClient().prepare(`SELECT * FROM ${tname} WHERE email = ?`).get(email) as AuthUserRow | undefined;
+    const row = rawClient().prepare(`SELECT * FROM ${tname} WHERE email = ?`).get(email) as
+      | AuthUserRow
+      | undefined;
     return row ?? null;
   } catch {
     return null;
@@ -89,9 +100,9 @@ export function findUserByEmail(col: Collection, email: string): AuthUserRow | n
  * test-suite DB resets caused stale-table errors.
  */
 export function tableColumns(collectionName: string): string[] {
-  const rows = rawClient().prepare(
-    `PRAGMA table_info(${quoteIdent(userTableName(collectionName))})`,
-  ).all() as Array<{ name: string }>;
+  const rows = rawClient()
+    .prepare(`PRAGMA table_info(${quoteIdent(userTableName(collectionName))})`)
+    .all() as Array<{ name: string }>;
   return rows.map((r) => r.name);
 }
 
@@ -196,5 +207,7 @@ export function deleteUserById(col: Collection, id: string): void {
   const tname = quoteIdent(userTableName(col.name));
   try {
     rawClient().prepare(`DELETE FROM ${tname} WHERE id = ?`).run(id);
-  } catch { /* table missing or row absent */ }
+  } catch {
+    /* table missing or row absent */
+  }
 }

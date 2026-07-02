@@ -7,9 +7,9 @@
  */
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
 import Elysia from "elysia";
-import { mkdtempSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { initDb, closeDb, getDb } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
@@ -28,7 +28,11 @@ async function seedAdmin(): Promise<{ id: string; email: string }> {
   const email = "ops@test.local";
   const now = Math.floor(Date.now() / 1000);
   await getDb().insert(admin).values({
-    id, email, password_hash: "x", password_reset_at: 0, created_at: now,
+    id,
+    email,
+    password_hash: "x",
+    password_reset_at: 0,
+    created_at: now,
   });
   return { id, email };
 }
@@ -44,7 +48,9 @@ async function adminToken(adminId: string, adminEmail: string): Promise<string> 
 }
 
 function mkApp(): Elysia {
-  return new Elysia().group("/api/v1", (app) => app.use(makeMcpAdminPlugin(SECRET))) as unknown as Elysia;
+  return new Elysia().group("/api/v1", (app) =>
+    app.use(makeMcpAdminPlugin(SECRET)),
+  ) as unknown as Elysia;
 }
 
 beforeEach(async () => {
@@ -70,9 +76,11 @@ describe("GET /admin/mcp/clients", () => {
     const a = await seedAdmin();
     const tok = await adminToken(a.id, a.email);
     const app = mkApp();
-    const res = await app.handle(new Request("http://localhost/api/v1/admin/mcp/clients", {
-      headers: { Authorization: `Bearer ${tok}` },
-    }));
+    const res = await app.handle(
+      new Request("http://localhost/api/v1/admin/mcp/clients", {
+        headers: { Authorization: `Bearer ${tok}` },
+      }),
+    );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: unknown[] };
     expect(body.data).toEqual([]);
@@ -96,9 +104,11 @@ describe("GET /admin/mcp/clients", () => {
     });
 
     try {
-      const res = await app.handle(new Request("http://localhost/api/v1/admin/mcp/clients", {
-        headers: { Authorization: `Bearer ${tok}` },
-      }));
+      const res = await app.handle(
+        new Request("http://localhost/api/v1/admin/mcp/clients", {
+          headers: { Authorization: `Bearer ${tok}` },
+        }),
+      );
       const body = (await res.json()) as { data: Array<{ tokenName: string; ip: string }> };
       expect(body.data).toHaveLength(1);
       expect(body.data[0]!.tokenName).toBe("claude-desktop");
@@ -121,14 +131,17 @@ describe("GET /admin/mcp/catalog", () => {
     const tok = await adminToken(a.id, a.email);
     // Seed a collection so per-collection tools materialise.
     await createCollection({
-      name: "posts", type: "base",
+      name: "posts",
+      type: "base",
       fields: JSON.stringify([{ name: "title", type: "text", required: true }]),
       view_rule: null,
     });
     const app = mkApp();
-    const res = await app.handle(new Request("http://localhost/api/v1/admin/mcp/catalog", {
-      headers: { Authorization: `Bearer ${tok}` },
-    }));
+    const res = await app.handle(
+      new Request("http://localhost/api/v1/admin/mcp/catalog", {
+        headers: { Authorization: `Bearer ${tok}` },
+      }),
+    );
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       data: {
@@ -143,7 +156,9 @@ describe("GET /admin/mcp/catalog", () => {
     expect(toolNames).toContain("vaultbase.list_collections");
     expect(toolNames).toContain("vaultbase.list_posts");
     expect(body.data.resources.map((r) => r.uri)).toContain("vaultbase://collections");
-    expect(body.data.resourceTemplates.map((r) => r.uriTemplate)).toContain("vaultbase://collection/{name}");
+    expect(body.data.resourceTemplates.map((r) => r.uriTemplate)).toContain(
+      "vaultbase://collection/{name}",
+    );
     expect(body.data.prompts.map((p) => p.name)).toContain("design-collection");
     expect(body.data.counts.tools).toBe(toolNames.length);
     expect(body.data.counts.prompts).toBeGreaterThan(0);

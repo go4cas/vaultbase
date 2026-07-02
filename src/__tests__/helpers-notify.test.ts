@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { initDb, closeDb, getDb } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
 import { setLogsDir } from "../core/file-logger.ts";
@@ -45,8 +45,12 @@ describe("helpers.notify", () => {
     expect(result.enqueued[0]!.provider).toBe("onesignal");
     expect(result.enqueued[0]!.deduped).toBe(false);
 
-    const row = client.prepare(`SELECT * FROM vb_notifications WHERE id = ?`).get(result.inboxRowId) as {
-      title: string; user: string; type: string;
+    const row = client
+      .prepare(`SELECT * FROM vb_notifications WHERE id = ?`)
+      .get(result.inboxRowId) as {
+      title: string;
+      user: string;
+      type: string;
     };
     expect(row.title).toBe("Hi");
     expect(row.user).toBe("user-1");

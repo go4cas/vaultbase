@@ -49,7 +49,7 @@ describe("parseCidr + ipInCidr", () => {
   it("parses a v6 CIDR with embedded prefix", () => {
     const c = parseCidr("fc00::/7");
     expect(c).not.toBeNull();
-    expect(ipInCidr("fd00::1", c!)).toBe(true);    // fd00 is fc00::/7
+    expect(ipInCidr("fd00::1", c!)).toBe(true); // fd00 is fc00::/7
     expect(ipInCidr("::1", c!)).toBe(false);
   });
 
@@ -73,32 +73,45 @@ describe("parseCidr + ipInCidr", () => {
 
 describe("assertEgressAllowed (default deny)", () => {
   it("blocks the AWS / GCP metadata endpoint", async () => {
-    await expect(assertEgressAllowed("http://169.254.169.254/latest/meta-data/"))
-      .rejects.toBeInstanceOf(EgressBlockedError);
+    await expect(
+      assertEgressAllowed("http://169.254.169.254/latest/meta-data/"),
+    ).rejects.toBeInstanceOf(EgressBlockedError);
   });
 
   it("blocks RFC1918 — 192.168/16", async () => {
-    await expect(assertEgressAllowed("http://192.168.1.1/")).rejects.toBeInstanceOf(EgressBlockedError);
+    await expect(assertEgressAllowed("http://192.168.1.1/")).rejects.toBeInstanceOf(
+      EgressBlockedError,
+    );
   });
 
   it("blocks RFC1918 — 10/8", async () => {
-    await expect(assertEgressAllowed("http://10.0.0.1/")).rejects.toBeInstanceOf(EgressBlockedError);
+    await expect(assertEgressAllowed("http://10.0.0.1/")).rejects.toBeInstanceOf(
+      EgressBlockedError,
+    );
   });
 
   it("blocks RFC1918 — 172.16/12", async () => {
-    await expect(assertEgressAllowed("http://172.20.0.1/")).rejects.toBeInstanceOf(EgressBlockedError);
+    await expect(assertEgressAllowed("http://172.20.0.1/")).rejects.toBeInstanceOf(
+      EgressBlockedError,
+    );
   });
 
   it("blocks loopback 127/8", async () => {
-    await expect(assertEgressAllowed("http://127.0.0.1:9999/")).rejects.toBeInstanceOf(EgressBlockedError);
+    await expect(assertEgressAllowed("http://127.0.0.1:9999/")).rejects.toBeInstanceOf(
+      EgressBlockedError,
+    );
   });
 
   it("blocks IPv6 loopback (::1)", async () => {
-    await expect(assertEgressAllowed("http://[::1]:9999/")).rejects.toBeInstanceOf(EgressBlockedError);
+    await expect(assertEgressAllowed("http://[::1]:9999/")).rejects.toBeInstanceOf(
+      EgressBlockedError,
+    );
   });
 
   it("blocks IPv6 ULA (fc00::/7)", async () => {
-    await expect(assertEgressAllowed("http://[fd12:3456:789a::1]/")).rejects.toBeInstanceOf(EgressBlockedError);
+    await expect(assertEgressAllowed("http://[fd12:3456:789a::1]/")).rejects.toBeInstanceOf(
+      EgressBlockedError,
+    );
   });
 
   it("does NOT block a public IP literal", async () => {
@@ -128,8 +141,14 @@ describe("operator overrides via settings", () => {
     const { sql } = await import("drizzle-orm");
     // The settings table is created lazily by the settings plugin; touch it
     // via raw SQL so this test doesn't depend on importing the plugin.
-    await getDb().run(sql`CREATE TABLE IF NOT EXISTS vaultbase_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL DEFAULT (unixepoch()))`);
-    await getDb().run(sql.raw(`INSERT INTO vaultbase_settings (key, value) VALUES ('${key}', '${value.replace(/'/g, "''")}') ON CONFLICT(key) DO UPDATE SET value = excluded.value`));
+    await getDb().run(
+      sql`CREATE TABLE IF NOT EXISTS vaultbase_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL DEFAULT (unixepoch()))`,
+    );
+    await getDb().run(
+      sql.raw(
+        `INSERT INTO vaultbase_settings (key, value) VALUES ('${key}', '${value.replace(/'/g, "''")}') ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      ),
+    );
     invalidateEgressCache();
   }
 
@@ -143,7 +162,9 @@ describe("operator overrides via settings", () => {
     // Custom list: only block 10/8. Public IPs and even 169.254/16 pass.
     await setSetting("hooks.http.deny", "10.0.0.0/8");
     expect(await assertEgressAllowed("http://169.254.169.254/")).not.toBeNull();
-    await expect(assertEgressAllowed("http://10.0.0.1/")).rejects.toBeInstanceOf(EgressBlockedError);
+    await expect(assertEgressAllowed("http://10.0.0.1/")).rejects.toBeInstanceOf(
+      EgressBlockedError,
+    );
   });
 
   it("hooks.http.allow punches a hole in the default deny", async () => {
@@ -151,7 +172,9 @@ describe("operator overrides via settings", () => {
     await setSetting("hooks.http.allow", "127.0.0.1/32");
     const r = await assertEgressAllowed("http://127.0.0.1:8091/");
     expect(r).not.toBeNull();
-    await expect(assertEgressAllowed("http://127.0.0.2/")).rejects.toBeInstanceOf(EgressBlockedError);
+    await expect(assertEgressAllowed("http://127.0.0.2/")).rejects.toBeInstanceOf(
+      EgressBlockedError,
+    );
   });
 });
 

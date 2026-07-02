@@ -37,7 +37,11 @@ export type AnyCmpOp = CmpOp | ArrayCmpOp;
 
 export type FieldModifier = "isset" | "changed" | "length" | "each" | "lower";
 export const FIELD_MODIFIERS: ReadonlySet<FieldModifier> = new Set([
-  "isset", "changed", "length", "each", "lower",
+  "isset",
+  "changed",
+  "length",
+  "each",
+  "lower",
 ]);
 
 export type AuthProp = "id" | "email" | "type";
@@ -48,15 +52,32 @@ export type Operand =
   | { kind: "literal"; value: string | number | boolean | null }
   | { kind: "auth"; prop: AuthProp; modifier?: FieldModifier | undefined }
   | { kind: "request"; prop: RequestProp; modifier?: FieldModifier | undefined }
-  | { kind: "requestMap"; mapKind: RequestMapKind; key: string; modifier?: FieldModifier | undefined }
-  | { kind: "collection"; collection: string; alias?: string | undefined; path: string[]; modifier?: FieldModifier | undefined }
+  | {
+      kind: "requestMap";
+      mapKind: RequestMapKind;
+      key: string;
+      modifier?: FieldModifier | undefined;
+    }
+  | {
+      kind: "collection";
+      collection: string;
+      alias?: string | undefined;
+      path: string[];
+      modifier?: FieldModifier | undefined;
+    }
   | { kind: "field"; name: string; path: string[]; modifier?: FieldModifier | undefined }
   /**
    * Back-relation: `<targetCollection>_via_<refField>` — references the
    * collection that has a relation field pointing back at this collection.
    * Compiles to a subquery joining vb_<targetCollection> on `<refField> = <self>.id`.
    */
-  | { kind: "viaRelation"; targetCollection: string; refField: string; path: string[]; modifier?: FieldModifier | undefined }
+  | {
+      kind: "viaRelation";
+      targetCollection: string;
+      refField: string;
+      path: string[];
+      modifier?: FieldModifier | undefined;
+    }
   | { kind: "macro"; name: string }
   | { kind: "func"; name: string; args: Operand[] };
 
@@ -68,22 +89,45 @@ export type Expr =
 /** Two-character operators must be tried before their one-char prefixes. */
 const OPERATORS: AnyCmpOp[] = [
   // array-prefix two-char first
-  "?!=", "?>=", "?<=", "?!~", "?=", "?>", "?<", "?~",
+  "?!=",
+  "?>=",
+  "?<=",
+  "?!~",
+  "?=",
+  "?>",
+  "?<",
+  "?~",
   // scalar two-char
-  "!=", ">=", "<=", "!~",
+  "!=",
+  ">=",
+  "<=",
+  "!~",
   // single-char
-  ">", "<", "~", "=",
+  ">",
+  "<",
+  "~",
+  "=",
 ];
 
 const ALLOWED_FUNCS: ReadonlySet<string> = new Set(["geoDistance", "strftime"]);
 
 const ALLOWED_MACROS: ReadonlySet<string> = new Set([
-  "now", "yesterday", "tomorrow",
-  "todayStart", "todayEnd",
-  "monthStart", "monthEnd",
-  "yearStart", "yearEnd",
-  "second", "minute", "hour",
-  "day", "weekday", "month", "year",
+  "now",
+  "yesterday",
+  "tomorrow",
+  "todayStart",
+  "todayEnd",
+  "monthStart",
+  "monthEnd",
+  "yearStart",
+  "yearEnd",
+  "second",
+  "minute",
+  "hour",
+  "day",
+  "weekday",
+  "month",
+  "year",
 ]);
 
 class TokenStream {
@@ -105,7 +149,10 @@ class TokenStream {
 
   consume(s: string): boolean {
     this.skipWs();
-    if (this.src.startsWith(s, this.pos)) { this.pos += s.length; return true; }
+    if (this.src.startsWith(s, this.pos)) {
+      this.pos += s.length;
+      return true;
+    }
     return false;
   }
 
@@ -130,7 +177,8 @@ class TokenStream {
     let s = "";
     while (this.pos < this.src.length && this.src[this.pos] !== quote) {
       if (this.src[this.pos] === "\\" && this.src[this.pos + 1] === quote) {
-        s += quote; this.pos += 2;
+        s += quote;
+        this.pos += 2;
       } else {
         s += this.src[this.pos++];
       }
@@ -142,7 +190,10 @@ class TokenStream {
   readOperator(): AnyCmpOp {
     this.skipWs();
     for (const op of OPERATORS) {
-      if (this.src.startsWith(op, this.pos)) { this.pos += op.length; return op; }
+      if (this.src.startsWith(op, this.pos)) {
+        this.pos += op.length;
+        return op;
+      }
     }
     throw new Error(`Unknown operator at ${this.pos}`);
   }
@@ -172,7 +223,9 @@ function pushDepth(ts: TokenStream): void {
   ts.depth++;
   if (ts.depth > MAX_DEPTH) throw new Error("expression too deeply nested");
 }
-function popDepth(ts: TokenStream): void { ts.depth--; }
+function popDepth(ts: TokenStream): void {
+  ts.depth--;
+}
 
 function parseOr(ts: TokenStream): Expr {
   pushDepth(ts);
@@ -257,9 +310,9 @@ function readOperand(ts: TokenStream): Operand {
   // Single-token literals
   if (w.length === 1) {
     const t = w[0]!;
-    if (t === "true")  return { kind: "literal", value: true };
+    if (t === "true") return { kind: "literal", value: true };
     if (t === "false") return { kind: "literal", value: false };
-    if (t === "null")  return { kind: "literal", value: null };
+    if (t === "null") return { kind: "literal", value: null };
     if (/^-?\d+(\.\d+)?$/.test(t)) return { kind: "literal", value: Number(t) };
   }
 
@@ -383,12 +436,12 @@ function readAtRef(ts: TokenStream): Operand {
     if (fieldParts.length === 0) throw new Error("@collection.* requires a field");
     const modifier = readOptionalModifier(ts);
     return alias
-      ? (modifier
-          ? { kind: "collection", collection, alias, path: fieldParts, modifier }
-          : { kind: "collection", collection, alias, path: fieldParts })
-      : (modifier
-          ? { kind: "collection", collection, path: fieldParts, modifier }
-          : { kind: "collection", collection, path: fieldParts });
+      ? modifier
+        ? { kind: "collection", collection, alias, path: fieldParts, modifier }
+        : { kind: "collection", collection, alias, path: fieldParts }
+      : modifier
+        ? { kind: "collection", collection, path: fieldParts, modifier }
+        : { kind: "collection", collection, path: fieldParts };
   }
   // Datetime macros
   if (ts.consume("@")) {

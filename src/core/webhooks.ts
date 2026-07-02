@@ -70,7 +70,7 @@ export interface DispatchOpts {
  */
 export async function dispatchEvent(opts: DispatchOpts): Promise<{ enqueued: number }> {
   const db = getDb();
-  const rows = await db.select().from(webhooks).where(eq(webhooks.enabled, 1)) as WebhookRow[];
+  const rows = (await db.select().from(webhooks).where(eq(webhooks.enabled, 1))) as WebhookRow[];
   const now = Math.floor(Date.now() / 1000);
   let enqueued = 0;
   for (const w of rows) {
@@ -83,9 +83,14 @@ export async function dispatchEvent(opts: DispatchOpts): Promise<{ enqueued: num
       data: opts.data ?? null,
     });
     await db.insert(webhookDeliveries).values({
-      id, webhook_id: w.id, event: opts.event, payload,
-      attempt: 1, status: "pending",
-      scheduled_at: now, created_at: now,
+      id,
+      webhook_id: w.id,
+      event: opts.event,
+      payload,
+      attempt: 1,
+      status: "pending",
+      scheduled_at: now,
+      created_at: now,
     });
     enqueued++;
   }
@@ -97,12 +102,14 @@ function eventMatches(eventsJson: string, event: string): boolean {
   try {
     const parsed = JSON.parse(eventsJson) as unknown;
     if (Array.isArray(parsed)) patterns = parsed.filter((x): x is string => typeof x === "string");
-  } catch { /* empty */ }
+  } catch {
+    /* empty */
+  }
   if (patterns.length === 0) return false;
   for (const p of patterns) {
     if (p === "*") return true;
     if (p === event) return true;
-    if (p.endsWith(".*") && event.startsWith(p.slice(0, -1))) return true;  // "posts.*" matches "posts.create"
+    if (p.endsWith(".*") && event.startsWith(p.slice(0, -1))) return true; // "posts.*" matches "posts.create"
   }
   return false;
 }
@@ -111,21 +118,28 @@ function eventMatches(eventsJson: string, event: string): boolean {
 
 export function startWebhookDispatcher(): void {
   if (tickHandle) return;
-  tickHandle = setInterval(() => { void tick().catch(() => { /* swallow */ }); }, TICK_INTERVAL_MS);
+  tickHandle = setInterval(() => {
+    void tick().catch(() => {
+      /* swallow */
+    });
+  }, TICK_INTERVAL_MS);
 }
 
 export function stopWebhookDispatcher(): void {
-  if (tickHandle) { clearInterval(tickHandle); tickHandle = null; }
+  if (tickHandle) {
+    clearInterval(tickHandle);
+    tickHandle = null;
+  }
 }
 
 async function tick(): Promise<void> {
   const db = getDb();
   const now = Math.floor(Date.now() / 1000);
-  const due = await db
+  const due = (await db
     .select()
     .from(webhookDeliveries)
     .where(and(eq(webhookDeliveries.status, "pending"), lte(webhookDeliveries.scheduled_at, now)))
-    .limit(CLAIM_LIMIT) as DeliveryRow[];
+    .limit(CLAIM_LIMIT)) as DeliveryRow[];
   for (const d of due) {
     void deliverOne(d);
   }
@@ -133,21 +147,35 @@ async function tick(): Promise<void> {
 
 async function deliverOne(d: DeliveryRow): Promise<void> {
   const db = getDb();
-  const wRows = await db.select().from(webhooks).where(eq(webhooks.id, d.webhook_id)) as WebhookRow[];
+  const wRows = (await db
+    .select()
+    .from(webhooks)
+    .where(eq(webhooks.id, d.webhook_id))) as WebhookRow[];
   const w = wRows[0];
-  if (!w || w.enabled !== 1) {
-    await db.update(webhookDeliveries)
-      .set({ status: "dead", error: w ? "webhook disabled" : "webhook deleted", delivered_at: Math.floor(Date.now() / 1000) })
+  if (w?.enabled !== 1) {
+    await db
+      .update(webhookDeliveries)
+      .set({
+        status: "dead",
+        error: w ? "webhook disabled" : "webhook deleted",
+        delivered_at: Math.floor(Date.now() / 1000),
+      })
       .where(eq(webhookDeliveries.id, d.id));
     return;
   }
 
   // Egress filter — same envelope as helpers.http.
-  try { await assertEgressAllowed(w.url); }
-  catch (e) {
+  try {
+    await assertEgressAllowed(w.url);
+  } catch (e) {
     if (e instanceof EgressBlockedError) {
-      await db.update(webhookDeliveries)
-        .set({ status: "dead", error: `egress blocked: ${e.message}`, delivered_at: Math.floor(Date.now() / 1000) })
+      await db
+        .update(webhookDeliveries)
+        .set({
+          status: "dead",
+          error: `egress blocked: ${e.message}`,
+          delivered_at: Math.floor(Date.now() / 1000),
+        })
         .where(eq(webhookDeliveries.id, d.id));
       return;
     }
@@ -161,11 +189,20 @@ async function deliverOne(d: DeliveryRow): Promise<void> {
   // the integrity headers, the SSRF-defining Host, or transport metadata.
   // The match is case-insensitive — header names are normalized below.
   const RESERVED_HEADERS = new Set([
-    "host", "content-length", "content-type", "user-agent",
-    "x-vaultbase-event", "x-vaultbase-delivery", "x-vaultbase-timestamp", "x-vaultbase-signature",
-    "authorization", "cookie", "set-cookie", "transfer-encoding",
+    "host",
+    "content-length",
+    "content-type",
+    "user-agent",
+    "x-vaultbase-event",
+    "x-vaultbase-delivery",
+    "x-vaultbase-timestamp",
+    "x-vaultbase-signature",
+    "authorization",
+    "cookie",
+    "set-cookie",
+    "transfer-encoding",
   ]);
-  let extraHeaders: Record<string, string> = {};
+  const extraHeaders: Record<string, string> = {};
   try {
     const parsed = JSON.parse(w.custom_headers) as unknown;
     if (parsed && typeof parsed === "object") {
@@ -175,7 +212,9 @@ async function deliverOne(d: DeliveryRow): Promise<void> {
         extraHeaders[k] = v;
       }
     }
-  } catch { /* empty */ }
+  } catch {
+    /* empty */
+  }
 
   const headers: Record<string, string> = {
     "content-type": "application/json",
@@ -211,15 +250,22 @@ async function deliverOne(d: DeliveryRow): Promise<void> {
 
   // Treat 3xx as failure — see redirect: "manual" comment above.
   if (res && res.status >= 300 && res.status < 400) {
-    err = new Error(`refusing redirect: ${res.status} -> ${res.headers.get("location") ?? "(no Location)"}`);
+    err = new Error(
+      `refusing redirect: ${res.status} -> ${res.headers.get("location") ?? "(no Location)"}`,
+    );
     res = null;
   }
 
   const finishedAt = Math.floor(Date.now() / 1000);
-  if (res && res.ok) {
+  if (res?.ok) {
     let body = "";
-    try { body = (await res.text()).slice(0, 2048); } catch { /* ignore */ }
-    await db.update(webhookDeliveries)
+    try {
+      body = (await res.text()).slice(0, 2048);
+    } catch {
+      /* ignore */
+    }
+    await db
+      .update(webhookDeliveries)
       .set({
         status: "succeeded",
         response_status: res.status,
@@ -232,10 +278,17 @@ async function deliverOne(d: DeliveryRow): Promise<void> {
 
   // Failure — retry or mark dead.
   let respBody = "";
-  if (res) { try { respBody = (await res.text()).slice(0, 2048); } catch { /* ignore */ } }
+  if (res) {
+    try {
+      respBody = (await res.text()).slice(0, 2048);
+    } catch {
+      /* ignore */
+    }
+  }
   const errorMsg = err ? err.message : `${res?.status ?? "no response"}`;
   if (d.attempt >= w.retry_max) {
-    await db.update(webhookDeliveries)
+    await db
+      .update(webhookDeliveries)
       .set({
         status: "dead",
         response_status: res?.status ?? null,
@@ -251,11 +304,13 @@ async function deliverOne(d: DeliveryRow): Promise<void> {
   // pathological retry_delay_ms × 2^attempt combinations don't park
   // deliveries in the queue for years.
   const MAX_BACKOFF_MS = 24 * 60 * 60 * 1000;
-  const delayMs = w.retry_backoff === "exponential"
-    ? Math.min(w.retry_delay_ms * 2 ** (d.attempt - 1), MAX_BACKOFF_MS)
-    : w.retry_delay_ms;
+  const delayMs =
+    w.retry_backoff === "exponential"
+      ? Math.min(w.retry_delay_ms * 2 ** (d.attempt - 1), MAX_BACKOFF_MS)
+      : w.retry_delay_ms;
   const nextAttempt = d.attempt + 1;
-  await db.update(webhookDeliveries)
+  await db
+    .update(webhookDeliveries)
     .set({
       attempt: nextAttempt,
       status: "pending",
@@ -270,7 +325,11 @@ async function deliverOne(d: DeliveryRow): Promise<void> {
 async function hmacSign(secret: string, data: string): Promise<string> {
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey(
-    "raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
   );
   const sig = await crypto.subtle.sign("HMAC", key, enc.encode(data));
   return Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, "0")).join("");
@@ -284,6 +343,8 @@ export interface WebhookDispatchHelper {
 
 export function makeWebhookHelper(): WebhookDispatchHelper {
   return {
-    dispatch(event, data) { return dispatchEvent({ event, data }); },
+    dispatch(event, data) {
+      return dispatchEvent({ event, data });
+    },
   };
 }

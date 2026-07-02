@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { evaluateRule } from "../core/rules.ts";
 import { parseFilter } from "../core/filter.ts";
 
-const NO_AUTH = null;
+const _NO_AUTH = null;
 const USER = { id: "u1", type: "user" as const, email: "u1@test.local" };
 
 describe("Phase 1 — !~ NOT LIKE operator", () => {
@@ -20,7 +20,9 @@ describe("Phase 1 — !~ NOT LIKE operator", () => {
 
 describe("Phase 1 — array-prefix operators", () => {
   it("?= matches when ANY array element equals", () => {
-    expect(evaluateRule(`tags ?= "urgent"`, USER, { tags: ["draft", "urgent", "pinned"] })).toBe(true);
+    expect(evaluateRule(`tags ?= "urgent"`, USER, { tags: ["draft", "urgent", "pinned"] })).toBe(
+      true,
+    );
     expect(evaluateRule(`tags ?= "urgent"`, USER, { tags: ["draft", "pinned"] })).toBe(false);
   });
 
@@ -71,91 +73,66 @@ describe("Phase 1 — field modifiers", () => {
 
 describe("Phase 1 — @request.* expansions", () => {
   it("@request.method matches the method", () => {
-    expect(evaluateRule(
-      `@request.method = "POST"`,
-      USER,
-      {},
-      { method: "POST" },
-    )).toBe(true);
-    expect(evaluateRule(
-      `@request.method = "POST"`,
-      USER,
-      {},
-      { method: "GET" },
-    )).toBe(false);
+    expect(evaluateRule(`@request.method = "POST"`, USER, {}, { method: "POST" })).toBe(true);
+    expect(evaluateRule(`@request.method = "POST"`, USER, {}, { method: "GET" })).toBe(false);
   });
 
   it("@request.context discriminates on flow", () => {
-    expect(evaluateRule(
-      `@request.context = "realtime"`,
-      USER,
-      {},
-      { context: "realtime" },
-    )).toBe(true);
-    expect(evaluateRule(
-      `@request.context = "realtime"`,
-      USER,
-      {},
-      { context: "default" },
-    )).toBe(false);
+    expect(evaluateRule(`@request.context = "realtime"`, USER, {}, { context: "realtime" })).toBe(
+      true,
+    );
+    expect(evaluateRule(`@request.context = "realtime"`, USER, {}, { context: "default" })).toBe(
+      false,
+    );
   });
 
   it("@request.headers.x reads a header", () => {
-    expect(evaluateRule(
-      `@request.headers.x_org = "vaultbase"`,
-      USER,
-      {},
-      { headers: { x_org: "vaultbase" } },
-    )).toBe(true);
+    expect(
+      evaluateRule(
+        `@request.headers.x_org = "vaultbase"`,
+        USER,
+        {},
+        { headers: { x_org: "vaultbase" } },
+      ),
+    ).toBe(true);
   });
 
   it("@request.body.field reads submitted body", () => {
-    expect(evaluateRule(
-      `@request.body.title = "hello"`,
-      USER,
-      {},
-      { body: { title: "hello" } },
-    )).toBe(true);
+    expect(
+      evaluateRule(`@request.body.title = "hello"`, USER, {}, { body: { title: "hello" } }),
+    ).toBe(true);
   });
 
   it(":isset on @request.body checks key presence", () => {
-    expect(evaluateRule(
-      `@request.body.title:isset = true`,
-      USER,
-      {},
-      { body: { title: "x" } },
-    )).toBe(true);
-    expect(evaluateRule(
-      `@request.body.title:isset = true`,
-      USER,
-      {},
-      { body: {} },
-    )).toBe(false);
+    expect(
+      evaluateRule(`@request.body.title:isset = true`, USER, {}, { body: { title: "x" } }),
+    ).toBe(true);
+    expect(evaluateRule(`@request.body.title:isset = true`, USER, {}, { body: {} })).toBe(false);
   });
 
   it(":changed on @request.body diffs against existing", () => {
-    expect(evaluateRule(
-      `@request.body.title:changed = true`,
-      USER,
-      {},
-      { body: { title: "new" }, existing: { title: "old" } },
-    )).toBe(true);
-    expect(evaluateRule(
-      `@request.body.title:changed = true`,
-      USER,
-      {},
-      { body: { title: "same" }, existing: { title: "same" } },
-    )).toBe(false);
+    expect(
+      evaluateRule(
+        `@request.body.title:changed = true`,
+        USER,
+        {},
+        { body: { title: "new" }, existing: { title: "old" } },
+      ),
+    ).toBe(true);
+    expect(
+      evaluateRule(
+        `@request.body.title:changed = true`,
+        USER,
+        {},
+        { body: { title: "same" }, existing: { title: "same" } },
+      ),
+    ).toBe(false);
   });
 });
 
 describe("Phase 1 — datetime macros", () => {
   it("@now resolves to a current ISO-8601 datetime", () => {
-    expect(evaluateRule(
-      `@now > "2000-01-01"`,
-      USER,
-      {},
-    )).toBe(true);
+    expect(evaluateRule(`@now > "2000-01-01"`, USER, {})).toBe(true);
   });
 
   it("@year compiles into the SQL filter", () => {

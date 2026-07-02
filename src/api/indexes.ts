@@ -59,80 +59,91 @@ function indexName(collectionName: string, field: string, unique: boolean): stri
 }
 
 export function makeIndexesPlugin(jwtSecret: string) {
-  return new Elysia({ name: "indexes" })
-    // List indexes for a collection
-    .get("/admin/collections/:name/indexes", async ({ request, params, set }) => {
-      if (!(await isAdmin(request, jwtSecret))) {
-        set.status = 401; return { error: "Unauthorized", code: 401 };
-      }
-      const col = await getCollection(params.name);
-      if (!col) { set.status = 404; return { error: "Collection not found", code: 404 }; }
-      try {
-        const indexes = listIndexes(userTableName(col.name));
-        return { data: indexes };
-      } catch (e) {
-        set.status = 500;
-        return { error: e instanceof Error ? e.message : String(e), code: 500 };
-      }
-    })
-
-    // Create index
-    .post(
-      "/admin/collections/:name/indexes",
-      async ({ request, params, body, set }) => {
+  return (
+    new Elysia({ name: "indexes" })
+      // List indexes for a collection
+      .get("/admin/collections/:name/indexes", async ({ request, params, set }) => {
         if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401; return { error: "Unauthorized", code: 401 };
+          set.status = 401;
+          return { error: "Unauthorized", code: 401 };
         }
         const col = await getCollection(params.name);
-        if (!col) { set.status = 404; return { error: "Collection not found", code: 404 }; }
-
-        const fields = parseFields(col.fields);
-        const fieldName = body.field;
-        if (!/^[a-z0-9_]+$/.test(fieldName)) {
-          set.status = 422;
-          return { error: "Field name must match [a-z0-9_]+", code: 422 };
+        if (!col) {
+          set.status = 404;
+          return { error: "Collection not found", code: 404 };
         }
-        const builtIn = ["id", "created_at", "updated_at"];
-        const existsInSchema =
-          builtIn.includes(fieldName) ||
-          fields.some((f) => f.name === fieldName && !f.system && f.type !== "autodate");
-        if (!existsInSchema) {
-          set.status = 422;
-          return { error: `Field '${fieldName}' not found on '${col.name}'`, code: 422 };
-        }
-
-        const isUnique = !!body.unique;
-        const name = indexName(col.name, fieldName, isUnique);
-        const tableRef = `"${userTableName(col.name)}"`;
-        const sql = `CREATE ${isUnique ? "UNIQUE " : ""}INDEX IF NOT EXISTS "${name}" ON ${tableRef} ("${fieldName}")`;
         try {
-          rawClient().exec(sql);
-          return { data: { name, field: fieldName, unique: isUnique } };
+          const indexes = listIndexes(userTableName(col.name));
+          return { data: indexes };
         } catch (e) {
-          set.status = 422;
-          return { error: e instanceof Error ? e.message : String(e), code: 422 };
+          set.status = 500;
+          return { error: e instanceof Error ? e.message : String(e), code: 500 };
         }
-      },
-      { body: t.Object({ field: t.String(), unique: t.Optional(t.Boolean()) }) }
-    )
+      })
 
-    // Drop index
-    .delete("/admin/collections/:name/indexes/:indexName", async ({ request, params, set }) => {
-      if (!(await isAdmin(request, jwtSecret))) {
-        set.status = 401; return { error: "Unauthorized", code: 401 };
-      }
-      const idxName = params.indexName;
-      // Sanity check: only allow our prefixes
-      if (!idxName.startsWith("idx_") && !idxName.startsWith("uniq_")) {
-        set.status = 422;
-        return { error: "Refusing to drop index outside vaultbase prefix", code: 422 };
-      }
-      try {
-        rawClient().exec(`DROP INDEX IF EXISTS "${idxName}"`);
-        return { data: null };
-      } catch (e) {
-        set.status = 500;
-        return { error: e instanceof Error ? e.message : String(e), code: 500 };
-      }
-    });
+      // Create index
+      .post(
+        "/admin/collections/:name/indexes",
+        async ({ request, params, body, set }) => {
+          if (!(await isAdmin(request, jwtSecret))) {
+            set.status = 401;
+            return { error: "Unauthorized", code: 401 };
+          }
+          const col = await getCollection(params.name);
+          if (!col) {
+            set.status = 404;
+            return { error: "Collection not found", code: 404 };
+          }
+
+          const fields = parseFields(col.fields);
+          const fieldName = body.field;
+          if (!/^[a-z0-9_]+$/.test(fieldName)) {
+            set.status = 422;
+            return { error: "Field name must match [a-z0-9_]+", code: 422 };
+          }
+          const builtIn = ["id", "created_at", "updated_at"];
+          const existsInSchema =
+            builtIn.includes(fieldName) ||
+            fields.some((f) => f.name === fieldName && !f.system && f.type !== "autodate");
+          if (!existsInSchema) {
+            set.status = 422;
+            return { error: `Field '${fieldName}' not found on '${col.name}'`, code: 422 };
+          }
+
+          const isUnique = !!body.unique;
+          const name = indexName(col.name, fieldName, isUnique);
+          const tableRef = `"${userTableName(col.name)}"`;
+          const sql = `CREATE ${isUnique ? "UNIQUE " : ""}INDEX IF NOT EXISTS "${name}" ON ${tableRef} ("${fieldName}")`;
+          try {
+            rawClient().exec(sql);
+            return { data: { name, field: fieldName, unique: isUnique } };
+          } catch (e) {
+            set.status = 422;
+            return { error: e instanceof Error ? e.message : String(e), code: 422 };
+          }
+        },
+        { body: t.Object({ field: t.String(), unique: t.Optional(t.Boolean()) }) },
+      )
+
+      // Drop index
+      .delete("/admin/collections/:name/indexes/:indexName", async ({ request, params, set }) => {
+        if (!(await isAdmin(request, jwtSecret))) {
+          set.status = 401;
+          return { error: "Unauthorized", code: 401 };
+        }
+        const idxName = params.indexName;
+        // Sanity check: only allow our prefixes
+        if (!idxName.startsWith("idx_") && !idxName.startsWith("uniq_")) {
+          set.status = 422;
+          return { error: "Refusing to drop index outside vaultbase prefix", code: 422 };
+        }
+        try {
+          rawClient().exec(`DROP INDEX IF EXISTS "${idxName}"`);
+          return { data: null };
+        } catch (e) {
+          set.status = 500;
+          return { error: e instanceof Error ? e.message : String(e), code: 500 };
+        }
+      })
+  );
 }

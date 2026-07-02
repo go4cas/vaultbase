@@ -9,9 +9,9 @@
  * vaultbase install.
  */
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { runWipeCli } from "../scripts/wipe.ts";
 
@@ -25,11 +25,18 @@ let origStdoutWrite: typeof process.stdout.write;
 let origStderrWrite: typeof process.stderr.write;
 
 function captureStdio(): void {
-  stdout = []; stderr = [];
+  stdout = [];
+  stderr = [];
   origStdoutWrite = process.stdout.write.bind(process.stdout);
   origStderrWrite = process.stderr.write.bind(process.stderr);
-  process.stdout.write = ((chunk: string) => { stdout.push(typeof chunk === "string" ? chunk : String(chunk)); return true; }) as typeof process.stdout.write;
-  process.stderr.write = ((chunk: string) => { stderr.push(typeof chunk === "string" ? chunk : String(chunk)); return true; }) as typeof process.stderr.write;
+  process.stdout.write = ((chunk: string) => {
+    stdout.push(typeof chunk === "string" ? chunk : String(chunk));
+    return true;
+  }) as typeof process.stdout.write;
+  process.stderr.write = ((chunk: string) => {
+    stderr.push(typeof chunk === "string" ? chunk : String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
 }
 
 function restoreStdio(): void {
@@ -51,23 +58,27 @@ function seedDataDir(): void {
 
 beforeEach(() => {
   dataDir = mkdtempSync(join(tmpdir(), "vaultbase-wipe-test-"));
-  origNodeEnv = process.env["NODE_ENV"];
-  origVbEnv = process.env["VAULTBASE_ENV"];
-  origK8s = process.env["KUBERNETES_SERVICE_HOST"];
-  delete process.env["NODE_ENV"];
-  delete process.env["VAULTBASE_ENV"];
-  delete process.env["KUBERNETES_SERVICE_HOST"];
+  origNodeEnv = process.env.NODE_ENV;
+  origVbEnv = process.env.VAULTBASE_ENV;
+  origK8s = process.env.KUBERNETES_SERVICE_HOST;
+  delete process.env.NODE_ENV;
+  delete process.env.VAULTBASE_ENV;
+  delete process.env.KUBERNETES_SERVICE_HOST;
 });
 
 afterEach(() => {
   restoreStdio();
-  if (origNodeEnv === undefined) delete process.env["NODE_ENV"];
-  else process.env["NODE_ENV"] = origNodeEnv;
-  if (origVbEnv === undefined) delete process.env["VAULTBASE_ENV"];
-  else process.env["VAULTBASE_ENV"] = origVbEnv;
-  if (origK8s === undefined) delete process.env["KUBERNETES_SERVICE_HOST"];
-  else process.env["KUBERNETES_SERVICE_HOST"] = origK8s;
-  try { rmSync(dataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }); } catch { /* swallow */ }
+  if (origNodeEnv === undefined) delete process.env.NODE_ENV;
+  else process.env.NODE_ENV = origNodeEnv;
+  if (origVbEnv === undefined) delete process.env.VAULTBASE_ENV;
+  else process.env.VAULTBASE_ENV = origVbEnv;
+  if (origK8s === undefined) delete process.env.KUBERNETES_SERVICE_HOST;
+  else process.env.KUBERNETES_SERVICE_HOST = origK8s;
+  try {
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  } catch {
+    /* swallow */
+  }
 });
 
 describe("vaultbase wipe", () => {
@@ -97,7 +108,7 @@ describe("vaultbase wipe", () => {
 
   it("refuses --yes when NODE_ENV=production (no --force)", () => {
     seedDataDir();
-    process.env["NODE_ENV"] = "production";
+    process.env.NODE_ENV = "production";
     captureStdio();
     const code = runWipeCli(["--yes"], dataDir);
     restoreStdio();
@@ -110,7 +121,7 @@ describe("vaultbase wipe", () => {
 
   it("refuses --yes when VAULTBASE_ENV=prod (no --force)", () => {
     seedDataDir();
-    process.env["VAULTBASE_ENV"] = "prod";
+    process.env.VAULTBASE_ENV = "prod";
     captureStdio();
     const code = runWipeCli(["--yes"], dataDir);
     restoreStdio();
@@ -120,7 +131,7 @@ describe("vaultbase wipe", () => {
 
   it("refuses --yes inside a Kubernetes pod (no --force)", () => {
     seedDataDir();
-    process.env["KUBERNETES_SERVICE_HOST"] = "10.0.0.1";
+    process.env.KUBERNETES_SERVICE_HOST = "10.0.0.1";
     captureStdio();
     const code = runWipeCli(["--yes"], dataDir);
     restoreStdio();
@@ -130,7 +141,7 @@ describe("vaultbase wipe", () => {
 
   it("--yes --force wipes even when production signals present", () => {
     seedDataDir();
-    process.env["NODE_ENV"] = "production";
+    process.env.NODE_ENV = "production";
     captureStdio();
     const code = runWipeCli(["--yes", "--force"], dataDir);
     restoreStdio();

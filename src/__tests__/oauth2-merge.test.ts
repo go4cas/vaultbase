@@ -45,25 +45,27 @@ async function seedUser(_collectionId: string, email: string, password: string):
 async function stagePendingMerge(
   userId: string,
   collectionId: string,
-  email: string
+  email: string,
 ): Promise<string> {
   const tokenId = crypto.randomUUID();
   const now = Math.floor(Date.now() / 1000);
-  await getDb().insert(authTokens).values({
-    id: tokenId,
-    user_id: userId,
-    collection_id: collectionId,
-    purpose: "oauth2_merge",
-    code: JSON.stringify({
-      provider: PROVIDER,
-      provider_user_id: PROVIDER_USER_ID,
-      email,
-      name: null,
-    }),
-    expires_at: now + 900,
-    used_at: null,
-    created_at: now,
-  });
+  await getDb()
+    .insert(authTokens)
+    .values({
+      id: tokenId,
+      user_id: userId,
+      collection_id: collectionId,
+      purpose: "oauth2_merge",
+      code: JSON.stringify({
+        provider: PROVIDER,
+        provider_user_id: PROVIDER_USER_ID,
+        email,
+        name: null,
+      }),
+      expires_at: now + 900,
+      used_at: null,
+      created_at: now,
+    });
   return tokenId;
 }
 
@@ -92,19 +94,21 @@ describe("oauth2 merge-confirm", () => {
     const mergeToken = await stagePendingMerge(userId, col.id, "alice@example.test");
 
     const app = makeAuthPlugin(JWT_SECRET);
-    const res = await app.handle(confirmReq(null, {
-      merge_token: mergeToken,
-      password: "correct-horse-battery-staple",
-    }));
+    const res = await app.handle(
+      confirmReq(null, {
+        merge_token: mergeToken,
+        password: "correct-horse-battery-staple",
+      }),
+    );
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: { token: string; linked_provider: string } };
+    const body = (await res.json()) as { data: { token: string; linked_provider: string } };
     expect(body.data.linked_provider).toBe(PROVIDER);
     expect(body.data.token.length).toBeGreaterThan(20);
 
-    const links = await getDb().select().from(oauthLinks).where(and(
-      eq(oauthLinks.user_id, userId),
-      eq(oauthLinks.provider, PROVIDER),
-    ));
+    const links = await getDb()
+      .select()
+      .from(oauthLinks)
+      .where(and(eq(oauthLinks.user_id, userId), eq(oauthLinks.provider, PROVIDER)));
     expect(links).toHaveLength(1);
     expect(links[0]!.provider_user_id).toBe(PROVIDER_USER_ID);
 
@@ -122,7 +126,7 @@ describe("oauth2 merge-confirm", () => {
     const app = makeAuthPlugin(JWT_SECRET);
     const res = await app.handle(confirmReq(userJwt, { merge_token: mergeToken }));
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: { linked_provider: string } };
+    const body = (await res.json()) as { data: { linked_provider: string } };
     expect(body.data.linked_provider).toBe(PROVIDER);
   });
 
@@ -132,10 +136,12 @@ describe("oauth2 merge-confirm", () => {
     const mergeToken = await stagePendingMerge(userId, col.id, "carol@example.test");
 
     const app = makeAuthPlugin(JWT_SECRET);
-    const res = await app.handle(confirmReq(null, {
-      merge_token: mergeToken,
-      password: "wrong",
-    }));
+    const res = await app.handle(
+      confirmReq(null, {
+        merge_token: mergeToken,
+        password: "wrong",
+      }),
+    );
     expect(res.status).toBe(401);
 
     const links = await getDb().select().from(oauthLinks).where(eq(oauthLinks.user_id, userId));
@@ -158,22 +164,31 @@ describe("oauth2 merge-confirm", () => {
     const col = await authCol();
     const userId = await seedUser(col.id, "frank@example.test", "pw");
     const mergeToken = crypto.randomUUID();
-    await getDb().insert(authTokens).values({
-      id: mergeToken,
-      user_id: userId,
-      collection_id: col.id,
-      purpose: "oauth2_merge",
-      code: JSON.stringify({ provider: PROVIDER, provider_user_id: PROVIDER_USER_ID, email: "frank@example.test", name: null }),
-      expires_at: Math.floor(Date.now() / 1000) - 60, // expired 1 min ago
-      used_at: null,
-      created_at: Math.floor(Date.now() / 1000) - 1000,
-    });
+    await getDb()
+      .insert(authTokens)
+      .values({
+        id: mergeToken,
+        user_id: userId,
+        collection_id: col.id,
+        purpose: "oauth2_merge",
+        code: JSON.stringify({
+          provider: PROVIDER,
+          provider_user_id: PROVIDER_USER_ID,
+          email: "frank@example.test",
+          name: null,
+        }),
+        expires_at: Math.floor(Date.now() / 1000) - 60, // expired 1 min ago
+        used_at: null,
+        created_at: Math.floor(Date.now() / 1000) - 1000,
+      });
 
     const app = makeAuthPlugin(JWT_SECRET);
-    const res = await app.handle(confirmReq(null, {
-      merge_token: mergeToken,
-      password: "pw",
-    }));
+    const res = await app.handle(
+      confirmReq(null, {
+        merge_token: mergeToken,
+        password: "pw",
+      }),
+    );
     expect(res.status).toBe(401);
   });
 
@@ -207,10 +222,10 @@ describe("oauth2 merge-confirm", () => {
     const res = await app.handle(confirmReq(null, { merge_token: mergeToken, password: "pw" }));
     expect(res.status).toBe(200);
 
-    const links = await getDb().select().from(oauthLinks).where(and(
-      eq(oauthLinks.user_id, userId),
-      eq(oauthLinks.provider, PROVIDER),
-    ));
+    const links = await getDb()
+      .select()
+      .from(oauthLinks)
+      .where(and(eq(oauthLinks.user_id, userId), eq(oauthLinks.provider, PROVIDER)));
     expect(links).toHaveLength(1); // not duplicated
   });
 });

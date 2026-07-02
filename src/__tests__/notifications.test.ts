@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import * as jose from "jose";
 import { initDb, closeDb, getDb } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
@@ -66,7 +66,10 @@ describe("loadProviderConfigs / getEnabledProviders", () => {
     setSetting("notifications.providers.onesignal.app_id", "a");
     setSetting("notifications.providers.onesignal.api_key", "k");
     setSetting("notifications.providers.fcm.enabled", "1");
-    setSetting("notifications.providers.fcm.service_account", '{"type":"x","project_id":"p","private_key":"x","client_email":"e"}');
+    setSetting(
+      "notifications.providers.fcm.service_account",
+      '{"type":"x","project_id":"p","private_key":"x","client_email":"e"}',
+    );
     expect(getEnabledProviders()).toEqual(["onesignal", "fcm"]);
   });
 });
@@ -78,10 +81,10 @@ describe("sendOneSignal", () => {
     let captured: { url: string; init: RequestInit | undefined } | null = null;
     globalThis.fetch = (async (url: unknown, init: RequestInit | undefined) => {
       captured = { url: String(url), init };
-      return new Response(
-        JSON.stringify({ id: "n-123", recipients: 3 }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ id: "n-123", recipients: 3 }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     }) as unknown as typeof fetch;
 
     const res = await sendOneSignal(
@@ -105,15 +108,15 @@ describe("sendOneSignal", () => {
 
   it("flags recipients=0 as a misconfiguration hint (still ok=true to avoid retry)", async () => {
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ id: "n-empty", recipients: 0 }),
-        { status: 200, headers: { "content-type": "application/json" } })
-    ) as unknown as typeof fetch;
+      new Response(JSON.stringify({ id: "n-empty", recipients: 0 }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })) as unknown as typeof fetch;
 
-    const res = await sendOneSignal(
-      { enabled: true, app_id: "a", api_key: "k" },
-      "ghost-user",
-      { title: "x", body: "y" },
-    );
+    const res = await sendOneSignal({ enabled: true, app_id: "a", api_key: "k" }, "ghost-user", {
+      title: "x",
+      body: "y",
+    });
     expect(res.ok).toBe(true);
     expect(res.delivered).toBe(0);
     expect(res.message).toContain("recipients=0");
@@ -122,14 +125,12 @@ describe("sendOneSignal", () => {
 
   it("treats 401 as permanent (ok=true so queue won't retry)", async () => {
     globalThis.fetch = (async () =>
-      new Response("invalid app_id or REST API key", { status: 401 })
-    ) as unknown as typeof fetch;
+      new Response("invalid app_id or REST API key", { status: 401 })) as unknown as typeof fetch;
 
-    const res = await sendOneSignal(
-      { enabled: true, app_id: "a", api_key: "k" },
-      "u1",
-      { title: "x", body: "y" },
-    );
+    const res = await sendOneSignal({ enabled: true, app_id: "a", api_key: "k" }, "u1", {
+      title: "x",
+      body: "y",
+    });
     expect(res.ok).toBe(true);
     expect(res.delivered).toBe(0);
     expect(res.message).toContain("401");
@@ -137,14 +138,12 @@ describe("sendOneSignal", () => {
 
   it("treats 503 as transient (ok=false so queue retries)", async () => {
     globalThis.fetch = (async () =>
-      new Response("upstream down", { status: 503 })
-    ) as unknown as typeof fetch;
+      new Response("upstream down", { status: 503 })) as unknown as typeof fetch;
 
-    const res = await sendOneSignal(
-      { enabled: true, app_id: "a", api_key: "k" },
-      "u1",
-      { title: "x", body: "y" },
-    );
+    const res = await sendOneSignal({ enabled: true, app_id: "a", api_key: "k" }, "u1", {
+      title: "x",
+      body: "y",
+    });
     expect(res.ok).toBe(false);
     expect(res.message).toContain("transient");
     expect(res.message).toContain("503");
@@ -153,7 +152,11 @@ describe("sendOneSignal", () => {
 
 // ── FCM driver ───────────────────────────────────────────────────────────────
 
-async function makeServiceAccountJson(): Promise<{ json: string; clientEmail: string; projectId: string }> {
+async function makeServiceAccountJson(): Promise<{
+  json: string;
+  clientEmail: string;
+  projectId: string;
+}> {
   const { privateKey } = await jose.generateKeyPair("RS256", { extractable: true });
   const pkcs8 = await jose.exportPKCS8(privateKey);
   const projectId = "test-project-123";
@@ -172,7 +175,10 @@ async function makeServiceAccountJson(): Promise<{ json: string; clientEmail: st
 describe("sendFcm", () => {
   it("returns no-devices message when token list is empty without calling network", async () => {
     let calls = 0;
-    globalThis.fetch = (async () => { calls++; return new Response("", { status: 200 }); }) as unknown as typeof fetch;
+    globalThis.fetch = (async () => {
+      calls++;
+      return new Response("", { status: 200 });
+    }) as unknown as typeof fetch;
     const sa = await makeServiceAccountJson();
     const res = await sendFcm(
       { enabled: true, project_id: sa.projectId, service_account: sa.json },
@@ -193,12 +199,18 @@ describe("sendFcm", () => {
       calls.push(u);
       if (u === "https://oauth2.googleapis.com/token") {
         return new Response(
-          JSON.stringify({ access_token: "ya29.fake-access-token", expires_in: 3600, token_type: "Bearer" }),
+          JSON.stringify({
+            access_token: "ya29.fake-access-token",
+            expires_in: 3600,
+            token_type: "Bearer",
+          }),
           { status: 200, headers: { "content-type": "application/json" } },
         );
       }
-      return new Response(JSON.stringify({ name: "projects/p/messages/abc" }),
-        { status: 200, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ name: "projects/p/messages/abc" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     }) as unknown as typeof fetch;
 
     const tokens: FcmDeviceToken[] = [
@@ -226,10 +238,10 @@ describe("sendFcm", () => {
       const u = String(url);
       if (u === "https://oauth2.googleapis.com/token") {
         oauthMints++;
-        return new Response(
-          JSON.stringify({ access_token: "cached-token", expires_in: 3600 }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ access_token: "cached-token", expires_in: 3600 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
       }
       sends++;
       return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
@@ -249,14 +261,18 @@ describe("sendFcm", () => {
     globalThis.fetch = (async (url: unknown, init: RequestInit | undefined) => {
       const u = String(url);
       if (u === "https://oauth2.googleapis.com/token") {
-        return new Response(JSON.stringify({ access_token: "x", expires_in: 3600 }),
-          { status: 200, headers: { "content-type": "application/json" } });
+        return new Response(JSON.stringify({ access_token: "x", expires_in: 3600 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
       }
       sendCount++;
       const body = JSON.parse(String(init?.body));
       if (body.message.token === "dead-token") {
         return new Response(
-          JSON.stringify({ error: { status: "NOT_FOUND", details: [{ errorCode: "UNREGISTERED" }] } }),
+          JSON.stringify({
+            error: { status: "NOT_FOUND", details: [{ errorCode: "UNREGISTERED" }] },
+          }),
           { status: 404, headers: { "content-type": "application/json" } },
         );
       }
@@ -282,8 +298,10 @@ describe("sendFcm", () => {
     globalThis.fetch = (async (url: unknown) => {
       const u = String(url);
       if (u === "https://oauth2.googleapis.com/token") {
-        return new Response(JSON.stringify({ access_token: "x", expires_in: 3600 }),
-          { status: 200, headers: { "content-type": "application/json" } });
+        return new Response(JSON.stringify({ access_token: "x", expires_in: 3600 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
       }
       return new Response("upstream", { status: 503 });
     }) as unknown as typeof fetch;
@@ -300,24 +318,27 @@ describe("sendFcm", () => {
 
 describe("sendFcm error propagation", () => {
   it("throws on malformed service account JSON", async () => {
-    await expect(sendFcm(
-      { enabled: true, project_id: "p", service_account: "not json" },
-      [{ id: "r1", token: "t1" }],
-      { title: "x", body: "y" },
-    )).rejects.toThrow(/Invalid FCM service account JSON/);
+    await expect(
+      sendFcm(
+        { enabled: true, project_id: "p", service_account: "not json" },
+        [{ id: "r1", token: "t1" }],
+        { title: "x", body: "y" },
+      ),
+    ).rejects.toThrow(/Invalid FCM service account JSON/);
   });
 
   it("throws when OAuth token mint fails", async () => {
     const sa = await makeServiceAccountJson();
     globalThis.fetch = (async () =>
-      new Response('{"error":"invalid_grant"}', { status: 400 })
-    ) as unknown as typeof fetch;
+      new Response('{"error":"invalid_grant"}', { status: 400 })) as unknown as typeof fetch;
 
-    await expect(sendFcm(
-      { enabled: true, project_id: sa.projectId, service_account: sa.json },
-      [{ id: "r1", token: "t1" }],
-      { title: "x", body: "y" },
-    )).rejects.toThrow(/FCM OAuth token mint failed/);
+    await expect(
+      sendFcm(
+        { enabled: true, project_id: sa.projectId, service_account: sa.json },
+        [{ id: "r1", token: "t1" }],
+        { title: "x", body: "y" },
+      ),
+    ).rejects.toThrow(/FCM OAuth token mint failed/);
   });
 });
 
@@ -331,7 +352,11 @@ describe("dispatchNotification", () => {
   });
 
   it("skips inbox when vb_notifications doesn't exist (still enqueues push)", async () => {
-    const res = await dispatchNotification("user-1", { title: "T", body: "B", data: { type: "test" } });
+    const res = await dispatchNotification("user-1", {
+      title: "T",
+      body: "B",
+      data: { type: "test" },
+    });
     expect(res.inboxRowId).toBeNull();
     expect(res.enqueued).toHaveLength(1);
     expect(res.enqueued[0]!.provider).toBe("onesignal");
@@ -345,7 +370,11 @@ describe("dispatchNotification", () => {
         data TEXT, created_at INTEGER NOT NULL DEFAULT (unixepoch())
       )`);
 
-    const res = await dispatchNotification("user-1", { title: "T", body: "B", data: { type: "msg" } });
+    const res = await dispatchNotification("user-1", {
+      title: "T",
+      body: "B",
+      data: { type: "msg" },
+    });
     expect(res.inboxRowId).not.toBeNull();
     const row = client
       .prepare(`SELECT * FROM vb_notifications WHERE id = ?`)
@@ -381,7 +410,11 @@ describe("dispatchNotification", () => {
     const all = await dispatchNotification("u1", { title: "T", body: "B" });
     expect(all.enqueued.map((j) => j.provider).sort()).toEqual(["fcm", "onesignal"]);
 
-    const onlyFcm = await dispatchNotification("u1", { title: "T", body: "B" }, { providers: ["fcm"] });
+    const onlyFcm = await dispatchNotification(
+      "u1",
+      { title: "T", body: "B" },
+      { providers: ["fcm"] },
+    );
     expect(onlyFcm.enqueued.map((j) => j.provider)).toEqual(["fcm"]);
   });
 });
@@ -390,12 +423,17 @@ describe("dispatchNotification", () => {
 
 describe("testOneSignalConnection", () => {
   it("ok on 200", async () => {
-    globalThis.fetch = (async () => new Response('{"name":"My App"}', { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch;
+    globalThis.fetch = (async () =>
+      new Response('{"name":"My App"}', {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })) as unknown as typeof fetch;
     const res = await testOneSignalConnection({ enabled: true, app_id: "abc", api_key: "k" });
     expect(res.ok).toBe(true);
   });
   it("not ok on 401", async () => {
-    globalThis.fetch = (async () => new Response("invalid key", { status: 401 })) as unknown as typeof fetch;
+    globalThis.fetch = (async () =>
+      new Response("invalid key", { status: 401 })) as unknown as typeof fetch;
     const res = await testOneSignalConnection({ enabled: true, app_id: "abc", api_key: "wrong" });
     expect(res.ok).toBe(false);
     expect(res.detail).toContain("401");
@@ -410,15 +448,24 @@ describe("testFcmConnection", () => {
   it("ok when token mint succeeds", async () => {
     const sa = await makeServiceAccountJson();
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ access_token: "ya29.x", expires_in: 3600 }),
-        { status: 200, headers: { "content-type": "application/json" } })
-    ) as unknown as typeof fetch;
-    const res = await testFcmConnection({ enabled: true, project_id: sa.projectId, service_account: sa.json });
+      new Response(JSON.stringify({ access_token: "ya29.x", expires_in: 3600 }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })) as unknown as typeof fetch;
+    const res = await testFcmConnection({
+      enabled: true,
+      project_id: sa.projectId,
+      service_account: sa.json,
+    });
     expect(res.ok).toBe(true);
     expect(res.detail).toContain("test-project-123");
   });
   it("fails on bad service account JSON", async () => {
-    const res = await testFcmConnection({ enabled: true, project_id: "p", service_account: "not json" });
+    const res = await testFcmConnection({
+      enabled: true,
+      project_id: "p",
+      service_account: "not json",
+    });
     expect(res.ok).toBe(false);
     expect(res.detail).toContain("Invalid FCM service account JSON");
   });

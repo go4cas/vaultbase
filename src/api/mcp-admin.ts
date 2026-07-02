@@ -17,7 +17,10 @@ import { buildRegistry } from "../mcp/server.ts";
 import { listResources, listResourceTemplates } from "../mcp/resources.ts";
 import { listPrompts } from "../mcp/prompts.ts";
 
-interface AdminCtx { id: string; email: string }
+interface AdminCtx {
+  id: string;
+  email: string;
+}
 
 async function getAdmin(request: Request, jwtSecret: string): Promise<AdminCtx | null> {
   const token = extractBearer(request);
@@ -31,12 +34,18 @@ export function makeMcpAdminPlugin(jwtSecret: string) {
   return new Elysia({ name: "mcp-admin" })
     .get("/admin/mcp/clients", async ({ request, set }) => {
       const me = await getAdmin(request, jwtSecret);
-      if (!me) { set.status = 401; return { error: "Unauthorized", code: 401 }; }
+      if (!me) {
+        set.status = 401;
+        return { error: "Unauthorized", code: 401 };
+      }
       return { data: listMcpEventClients() };
     })
     .get("/admin/mcp/catalog", async ({ request, set }) => {
       const me = await getAdmin(request, jwtSecret);
-      if (!me) { set.status = 401; return { error: "Unauthorized", code: 401 }; }
+      if (!me) {
+        set.status = 401;
+        return { error: "Unauthorized", code: 401 };
+      }
       const reg = await buildRegistry(false);
       const tools = reg.list();
       const resources = listResources();

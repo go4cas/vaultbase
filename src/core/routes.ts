@@ -17,10 +17,10 @@ async function extractAuth(request: Request, jwtSecret: string): Promise<AuthCon
     const aud = Array.isArray(payload.aud) ? payload.aud[0] : payload.aud;
     if (aud !== "user" && aud !== "admin") return null;
     const ctx: AuthContext = {
-      id: payload["id"] as string,
+      id: payload.id as string,
       type: aud as "user" | "admin",
     };
-    if (typeof payload["email"] === "string") ctx.email = payload["email"];
+    if (typeof payload.email === "string") ctx.email = payload.email;
     return ctx;
   } catch {
     return null;
@@ -33,7 +33,7 @@ async function extractAuth(request: Request, jwtSecret: string): Promise<AuthCon
  */
 
 export const ROUTE_METHODS = ["GET", "POST", "PATCH", "PUT", "DELETE"] as const;
-export type RouteMethod = typeof ROUTE_METHODS[number];
+export type RouteMethod = (typeof ROUTE_METHODS)[number];
 
 export interface RouteContext {
   req: Request;
@@ -66,7 +66,7 @@ interface CompiledRoute {
   fn: (ctx: RouteContext) => Promise<unknown>;
 }
 
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
+const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as new (
   ...args: string[]
 ) => (ctx: RouteContext) => Promise<unknown>;
 
@@ -75,7 +75,7 @@ let cacheLoaded = false;
 
 function compilePath(path: string): { regex: RegExp; params: string[] } {
   // Normalize: ensure leading slash
-  const norm = path.startsWith("/") ? path : "/" + path;
+  const norm = path.startsWith("/") ? path : `/${path}`;
   const params: string[] = [];
   const segments = norm.split("/").map((seg) => {
     if (seg.startsWith(":")) {
@@ -85,7 +85,7 @@ function compilePath(path: string): { regex: RegExp; params: string[] } {
     if (seg === "*") return ".*";
     return seg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   });
-  return { regex: new RegExp("^" + segments.join("/") + "/?$"), params };
+  return { regex: new RegExp(`^${segments.join("/")}/?$`), params };
 }
 
 function compile(row: RouteRow): CompiledRoute | null {
@@ -149,22 +149,30 @@ export async function findRoute(method: string, path: string): Promise<RouteMatc
 export async function dispatchCustomRoute(
   request: Request,
   innerPath: string,
-  jwtSecret: string
+  jwtSecret: string,
 ): Promise<{ status: number; headers: Record<string, string>; body: unknown } | null> {
   const match = await findRoute(request.method, innerPath);
   if (!match) return null;
 
   const url = new URL(request.url);
   const query: Record<string, string> = {};
-  url.searchParams.forEach((v, k) => { query[k] = v; });
+  url.searchParams.forEach((v, k) => {
+    query[k] = v;
+  });
 
   let body: unknown = null;
   if (request.method !== "GET" && request.method !== "DELETE") {
     const ct = request.headers.get("content-type") ?? "";
     if (ct.includes("application/json")) {
-      body = await request.clone().json().catch(() => null);
+      body = await request
+        .clone()
+        .json()
+        .catch(() => null);
     } else if (ct.includes("text/")) {
-      body = await request.clone().text().catch(() => null);
+      body = await request
+        .clone()
+        .text()
+        .catch(() => null);
     }
   }
 
@@ -188,11 +196,17 @@ export async function dispatchCustomRoute(
 
   const started = Date.now();
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
-  const fullPath = "/api/v1/custom" + innerPath;
+  const fullPath = `/api/v1/custom${innerPath}`;
   try {
     const result = await match.route.fn(ctx);
-    void insertLog(request.method, fullPath, set.status, Date.now() - started, ip,
-      auth ? { id: auth.id, type: auth.type, ...(auth.email ? { email: auth.email } : {}) } : null);
+    void insertLog(
+      request.method,
+      fullPath,
+      set.status,
+      Date.now() - started,
+      ip,
+      auth ? { id: auth.id, type: auth.type, ...(auth.email ? { email: auth.email } : {}) } : null,
+    );
     appendHookLog({
       name: match.route.name,
       message: `route ${match.route.method} ${match.route.path} → ${set.status}`,
@@ -209,8 +223,14 @@ export async function dispatchCustomRoute(
       console.error(`[routes] route ${match.route.id} threw:`, e);
       body = { error: msg, code: 500 };
     }
-    void insertLog(request.method, fullPath, status, Date.now() - started, ip,
-      auth ? { id: auth.id, type: auth.type, ...(auth.email ? { email: auth.email } : {}) } : null);
+    void insertLog(
+      request.method,
+      fullPath,
+      status,
+      Date.now() - started,
+      ip,
+      auth ? { id: auth.id, type: auth.type, ...(auth.email ? { email: auth.email } : {}) } : null,
+    );
     return { status, headers: {}, body };
   }
 }

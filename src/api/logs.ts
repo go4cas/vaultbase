@@ -34,7 +34,7 @@ export async function insertLog(
   duration_ms: number,
   ip: string | null,
   auth: AuthLogContext | null,
-  rules?: LogRuleEval[]
+  rules?: LogRuleEval[],
 ): Promise<void> {
   const tsSec = Math.floor(Date.now() / 1000);
   const entry: LogEntry = {
@@ -84,7 +84,7 @@ function matches(e: LogEntry, opts: ListLogsOptions): boolean {
   if (opts.method !== "all" && e.method !== opts.method) return false;
   if (opts.status === "2xx" && !(e.status >= 200 && e.status < 300)) return false;
   if (opts.status === "4xx" && !(e.status >= 400 && e.status < 500)) return false;
-  if (opts.status === "5xx" && !(e.status >= 500))                   return false;
+  if (opts.status === "5xx" && !(e.status >= 500)) return false;
   if (opts.search) {
     const q = opts.search.toLowerCase();
     const haystack = [
@@ -93,10 +93,17 @@ function matches(e: LogEntry, opts: ListLogsOptions): boolean {
       e.hook_name ?? "",
       e.hook_event ?? "",
       e.hook_collection ?? "",
-    ].join(" ").toLowerCase();
+    ]
+      .join(" ")
+      .toLowerCase();
     if (!haystack.includes(q)) return false;
   }
-  if (typeof opts.minDuration === "number" && opts.minDuration > 0 && e.duration_ms < opts.minDuration) return false;
+  if (
+    typeof opts.minDuration === "number" &&
+    opts.minDuration > 0 &&
+    e.duration_ms < opts.minDuration
+  )
+    return false;
   if (opts.ruleOutcome && opts.ruleOutcome !== "all") {
     const rules = e.rules ?? [];
     if (rules.length === 0) return false;
@@ -124,7 +131,10 @@ export async function listLogs(opts: ListLogsOptions) {
   };
 }
 
-export async function extractAuth(request: Request, secret: Uint8Array): Promise<AuthLogContext | null> {
+export async function extractAuth(
+  request: Request,
+  secret: Uint8Array,
+): Promise<AuthLogContext | null> {
   const token = request.headers.get("authorization")?.replace("Bearer ", "");
   if (!token) return null;
   try {
@@ -136,11 +146,11 @@ export async function extractAuth(request: Request, secret: Uint8Array): Promise
     const aud = Array.isArray(payload.aud) ? payload.aud[0] : payload.aud;
     if (aud !== "user" && aud !== "admin") return null;
     const ctx: AuthLogContext = {
-      id: payload["id"] as string,
+      id: payload.id as string,
       type: aud as "user" | "admin",
     };
-    if (typeof payload["email"] === "string") ctx.email = payload["email"];
-    if (typeof payload["impersonated_by"] === "string") ctx.impersonated_by = payload["impersonated_by"];
+    if (typeof payload.email === "string") ctx.email = payload.email;
+    if (typeof payload.impersonated_by === "string") ctx.impersonated_by = payload.impersonated_by;
     return ctx;
   } catch {
     return null;
@@ -165,7 +175,9 @@ export function makeLogsPlugin(jwtSecret: string) {
       const auth = await extractAuth(request, secret);
       const rules = getRuleEvals(request);
       clearRequestContext(request);
-      void timeFor(request, "log_write", () => insertLog(request.method, path, Number(set.status ?? 200), ms, ip, auth, rules));
+      void timeFor(request, "log_write", () =>
+        insertLog(request.method, path, Number(set.status ?? 200), ms, ip, auth, rules),
+      );
     })
     .onError({ as: "global" }, async ({ request, error }) => {
       const path = new URL(request.url).pathname;
@@ -178,22 +190,27 @@ export function makeLogsPlugin(jwtSecret: string) {
       const auth = await extractAuth(request, secret);
       const rules = getRuleEvals(request);
       clearRequestContext(request);
-      void timeFor(request, "log_write", () => insertLog(request.method, path, status, ms, ip, auth, rules));
+      void timeFor(request, "log_write", () =>
+        insertLog(request.method, path, status, ms, ip, auth, rules),
+      );
     })
     .get(
       "/admin/logs",
       async ({ request, query, set }) => {
         const token = request.headers.get("authorization")?.replace("Bearer ", "");
-        if (!token) { set.status = 401; return { error: "Unauthorized", code: 401 }; }
+        if (!token) {
+          set.status = 401;
+          return { error: "Unauthorized", code: 401 };
+        }
         // Centralized verifier — fixes N-1 admin-token-bypass.
         const ctx = await verifyAuthToken(token, jwtSecret, { audience: "admin" });
         if (!ctx) {
           set.status = 401;
           return { error: "Unauthorized", code: 401 };
         }
-        const page = Math.max(1, parseInt(query.page ?? "1") || 1);
-        const perPage = Math.min(200, Math.max(1, parseInt(query.perPage ?? "50") || 50));
-        const minDuration = query.minDuration ? parseInt(query.minDuration) || 0 : 0;
+        const page = Math.max(1, parseInt(query.page ?? "1", 10) || 1);
+        const perPage = Math.min(200, Math.max(1, parseInt(query.perPage ?? "50", 10) || 50));
+        const minDuration = query.minDuration ? parseInt(query.minDuration, 10) || 0 : 0;
         const opts: ListLogsOptions = {
           page,
           perPage,
@@ -203,7 +220,10 @@ export function makeLogsPlugin(jwtSecret: string) {
           minDuration,
         };
         if (query.search) opts.search = query.search;
-        if (query.ruleOutcome && ["all", "any", "allow", "deny", "filter"].includes(query.ruleOutcome)) {
+        if (
+          query.ruleOutcome &&
+          ["all", "any", "allow", "deny", "filter"].includes(query.ruleOutcome)
+        ) {
           opts.ruleOutcome = query.ruleOutcome as RuleOutcomeFilter;
         }
         return listLogs(opts);
@@ -219,31 +239,45 @@ export function makeLogsPlugin(jwtSecret: string) {
           minDuration: t.Optional(t.String()),
           ruleOutcome: t.Optional(t.String()),
         }),
-      }
+      },
     )
     .get("/admin/logs/files", async ({ request, set }) => {
       const token = request.headers.get("authorization")?.replace("Bearer ", "");
-      if (!token) { set.status = 401; return { error: "Unauthorized", code: 401 }; }
+      if (!token) {
+        set.status = 401;
+        return { error: "Unauthorized", code: 401 };
+      }
       // Centralized verifier — fixes N-1 admin-token-bypass.
       const ctx = await verifyAuthToken(token, jwtSecret, { audience: "admin" });
-      if (!ctx) { set.status = 401; return { error: "Unauthorized", code: 401 }; }
+      if (!ctx) {
+        set.status = 401;
+        return { error: "Unauthorized", code: 401 };
+      }
       return { data: listLogDates() };
     })
     .post(
       "/admin/logs/search",
       async ({ request, body, set }) => {
         const token = request.headers.get("authorization")?.replace("Bearer ", "");
-        if (!token) { set.status = 401; return { error: "Unauthorized", code: 401 }; }
+        if (!token) {
+          set.status = 401;
+          return { error: "Unauthorized", code: 401 };
+        }
         // Centralized verifier — fixes N-1 admin-token-bypass.
         const ctx = await verifyAuthToken(token, jwtSecret, { audience: "admin" });
-        if (!ctx) { set.status = 401; return { error: "Unauthorized", code: 401 }; }
+        if (!ctx) {
+          set.status = 401;
+          return { error: "Unauthorized", code: 401 };
+        }
         if (!body.jsonpath || typeof body.jsonpath !== "string") {
-          set.status = 422; return { error: "jsonpath required", code: 422 };
+          set.status = 422;
+          return { error: "jsonpath required", code: 422 };
         }
         const opts: { from?: string; to?: string; limit?: number } = {};
         if (body.from) opts.from = body.from;
         if (body.to) opts.to = body.to;
-        if (typeof body.limit === "number" && body.limit > 0) opts.limit = Math.min(5000, body.limit);
+        if (typeof body.limit === "number" && body.limit > 0)
+          opts.limit = Math.min(5000, body.limit);
         const result = await searchLogs(body.jsonpath, opts);
         return { data: result };
       },
@@ -254,6 +288,6 @@ export function makeLogsPlugin(jwtSecret: string) {
           to: t.Optional(t.String()),
           limit: t.Optional(t.Number()),
         }),
-      }
+      },
     );
 }

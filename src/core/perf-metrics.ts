@@ -60,11 +60,11 @@ function bucketIndex(us: number): number {
 }
 
 function bucketLowerBoundUs(idx: number): number {
-  return Math.pow(2, idx / SUBBUCKETS_PER_POW2);
+  return 2 ** (idx / SUBBUCKETS_PER_POW2);
 }
 
 function bucketUpperBoundUs(idx: number): number {
-  return Math.pow(2, (idx + 1) / SUBBUCKETS_PER_POW2);
+  return 2 ** ((idx + 1) / SUBBUCKETS_PER_POW2);
 }
 
 export class Histogram {
@@ -103,9 +103,15 @@ export class Histogram {
     return Math.round(this._maxUs);
   }
 
-  count(): number { return this._count; }
-  maxUs(): number { return Math.round(this._maxUs); }
-  meanUs(): number { return this._count === 0 ? 0 : Math.round(this._sumUs / this._count); }
+  count(): number {
+    return this._count;
+  }
+  maxUs(): number {
+    return Math.round(this._maxUs);
+  }
+  meanUs(): number {
+    return this._count === 0 ? 0 : Math.round(this._sumUs / this._count);
+  }
 
   reset(): void {
     this.counts.fill(0);
@@ -116,18 +122,23 @@ export class Histogram {
 
   snapshot(): {
     count: number;
-    p50_us: number; p90_us: number; p99_us: number; p99_9_us: number; p99_99_us: number;
-    max_us: number; mean_us: number;
+    p50_us: number;
+    p90_us: number;
+    p99_us: number;
+    p99_9_us: number;
+    p99_99_us: number;
+    max_us: number;
+    mean_us: number;
   } {
     return {
       count: this._count,
-      p50_us:    this.quantile(0.5),
-      p90_us:    this.quantile(0.9),
-      p99_us:    this.quantile(0.99),
-      p99_9_us:  this.quantile(0.999),
+      p50_us: this.quantile(0.5),
+      p90_us: this.quantile(0.9),
+      p99_us: this.quantile(0.99),
+      p99_9_us: this.quantile(0.999),
       p99_99_us: this.quantile(0.9999),
-      max_us:    this.maxUs(),
-      mean_us:   this.meanUs(),
+      max_us: this.maxUs(),
+      mean_us: this.meanUs(),
     };
   }
 }
@@ -270,8 +281,14 @@ export function timeFor<T>(request: Request | undefined, step: Step, fn: () => T
   const result = fn();
   if (result && typeof (result as { then?: unknown }).then === "function") {
     return (result as unknown as Promise<unknown>).then(
-      (v) => { timer.add(step, (performance.now() - t0) * 1000); return v; },
-      (e) => { timer.add(step, (performance.now() - t0) * 1000); throw e; },
+      (v) => {
+        timer.add(step, (performance.now() - t0) * 1000);
+        return v;
+      },
+      (e) => {
+        timer.add(step, (performance.now() - t0) * 1000);
+        throw e;
+      },
     ) as unknown as T;
   }
   timer.add(step, (performance.now() - t0) * 1000);

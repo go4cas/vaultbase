@@ -1,11 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
 import { initDb, closeDb } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
-import {
-  _resetCollectionCache,
-  createCollection,
-  type FieldDef,
-} from "../core/collections.ts";
+import { _resetCollectionCache, createCollection, type FieldDef } from "../core/collections.ts";
 import { computeSnapshotDiff } from "../api/migrations.ts";
 
 beforeEach(async () => {
@@ -39,8 +35,14 @@ function snap(collections: CollectionSnapshot[]): Snapshot {
 
 describe("computeSnapshotDiff", () => {
   it("flags every local collection as removed when snapshot is empty", async () => {
-    await createCollection({ name: "posts", fields: JSON.stringify([{ name: "title", type: "text" }]) });
-    await createCollection({ name: "tags",  fields: JSON.stringify([{ name: "label", type: "text" }]) });
+    await createCollection({
+      name: "posts",
+      fields: JSON.stringify([{ name: "title", type: "text" }]),
+    });
+    await createCollection({
+      name: "tags",
+      fields: JSON.stringify([{ name: "label", type: "text" }]),
+    });
 
     const diff = await computeSnapshotDiff(snap([]));
 
@@ -51,11 +53,14 @@ describe("computeSnapshotDiff", () => {
   });
 
   it("flags every collection as unchanged for an identical snapshot", async () => {
-    await createCollection({ name: "posts", fields: JSON.stringify([{ name: "title", type: "text" }]) });
+    await createCollection({
+      name: "posts",
+      fields: JSON.stringify([{ name: "title", type: "text" }]),
+    });
 
-    const diff = await computeSnapshotDiff(snap([
-      { name: "posts", type: "base", fields: [{ name: "title", type: "text" }] },
-    ]));
+    const diff = await computeSnapshotDiff(
+      snap([{ name: "posts", type: "base", fields: [{ name: "title", type: "text" }] }]),
+    );
 
     expect(diff.added).toEqual([]);
     expect(diff.modified).toEqual([]);
@@ -64,12 +69,17 @@ describe("computeSnapshotDiff", () => {
   });
 
   it("reports a brand new collection as added", async () => {
-    await createCollection({ name: "posts", fields: JSON.stringify([{ name: "title", type: "text" }]) });
+    await createCollection({
+      name: "posts",
+      fields: JSON.stringify([{ name: "title", type: "text" }]),
+    });
 
-    const diff = await computeSnapshotDiff(snap([
-      { name: "posts", type: "base", fields: [{ name: "title", type: "text" }] },
-      { name: "comments", type: "base", fields: [{ name: "body", type: "text" }] },
-    ]));
+    const diff = await computeSnapshotDiff(
+      snap([
+        { name: "posts", type: "base", fields: [{ name: "title", type: "text" }] },
+        { name: "comments", type: "base", fields: [{ name: "body", type: "text" }] },
+      ]),
+    );
 
     expect(diff.added).toEqual([{ name: "comments", type: "base" }]);
     expect(diff.unchanged.map((u) => u.name)).toEqual(["posts"]);
@@ -78,18 +88,23 @@ describe("computeSnapshotDiff", () => {
   });
 
   it("flags a new field as modified with a fields-mentioning change entry", async () => {
-    await createCollection({ name: "posts", fields: JSON.stringify([{ name: "title", type: "text" }]) });
+    await createCollection({
+      name: "posts",
+      fields: JSON.stringify([{ name: "title", type: "text" }]),
+    });
 
-    const diff = await computeSnapshotDiff(snap([
-      {
-        name: "posts",
-        type: "base",
-        fields: [
-          { name: "title", type: "text" },
-          { name: "body",  type: "text" },
-        ],
-      },
-    ]));
+    const diff = await computeSnapshotDiff(
+      snap([
+        {
+          name: "posts",
+          type: "base",
+          fields: [
+            { name: "title", type: "text" },
+            { name: "body", type: "text" },
+          ],
+        },
+      ]),
+    );
 
     expect(diff.modified.length).toBe(1);
     expect(diff.modified[0]!.name).toBe("posts");
@@ -101,16 +116,21 @@ describe("computeSnapshotDiff", () => {
   });
 
   it("flags a list_rule change as modified mentioning list_rule", async () => {
-    await createCollection({ name: "posts", fields: JSON.stringify([{ name: "title", type: "text" }]) });
+    await createCollection({
+      name: "posts",
+      fields: JSON.stringify([{ name: "title", type: "text" }]),
+    });
 
-    const diff = await computeSnapshotDiff(snap([
-      {
-        name: "posts",
-        type: "base",
-        fields: [{ name: "title", type: "text" }],
-        list_rule: '@request.auth.id != ""',
-      },
-    ]));
+    const diff = await computeSnapshotDiff(
+      snap([
+        {
+          name: "posts",
+          type: "base",
+          fields: [{ name: "title", type: "text" }],
+          list_rule: '@request.auth.id != ""',
+        },
+      ]),
+    );
 
     expect(diff.modified.length).toBe(1);
     expect(diff.modified[0]!.name).toBe("posts");

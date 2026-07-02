@@ -25,7 +25,9 @@ function decodeKey(raw: string): Uint8Array {
   try {
     const buf = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0));
     if (buf.length === 32) return buf;
-  } catch { /* not base64 */ }
+  } catch {
+    /* not base64 */
+  }
   // Try hex
   if (/^[0-9a-fA-F]{64}$/.test(raw)) {
     const buf = new Uint8Array(32);
@@ -35,21 +37,30 @@ function decodeKey(raw: string): Uint8Array {
   // Fall back to raw UTF-8 — must be exactly 32 chars
   const utf8 = new TextEncoder().encode(raw);
   if (utf8.length === 32) return utf8;
-  throw new Error("VAULTBASE_ENCRYPTION_KEY must decode to 32 bytes (base64, hex, or 32-char string)");
+  throw new Error(
+    "VAULTBASE_ENCRYPTION_KEY must decode to 32 bytes (base64, hex, or 32-char string)",
+  );
 }
 
 async function getKey(): Promise<CryptoKey> {
-  const raw = process.env["VAULTBASE_ENCRYPTION_KEY"] ?? "";
-  if (!raw) throw new Error("VAULTBASE_ENCRYPTION_KEY env var not set — required for encrypted fields");
+  const raw = process.env.VAULTBASE_ENCRYPTION_KEY ?? "";
+  if (!raw)
+    throw new Error("VAULTBASE_ENCRYPTION_KEY env var not set — required for encrypted fields");
   if (cachedKey && cachedRawKey === raw) return cachedKey;
   const bytes = decodeKey(raw);
-  cachedKey = await crypto.subtle.importKey("raw", bytes as unknown as ArrayBuffer, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+  cachedKey = await crypto.subtle.importKey(
+    "raw",
+    bytes as unknown as ArrayBuffer,
+    { name: "AES-GCM" },
+    false,
+    ["encrypt", "decrypt"],
+  );
   cachedRawKey = raw;
   return cachedKey;
 }
 
 export function isEncryptionAvailable(): boolean {
-  return !!process.env["VAULTBASE_ENCRYPTION_KEY"];
+  return !!process.env.VAULTBASE_ENCRYPTION_KEY;
 }
 
 function toBase64(bytes: Uint8Array): string {
@@ -69,10 +80,10 @@ export async function encryptValue(plaintext: string): Promise<string> {
     await crypto.subtle.encrypt(
       { name: "AES-GCM", iv: iv as unknown as ArrayBuffer },
       key,
-      new TextEncoder().encode(plaintext) as unknown as ArrayBuffer
-    )
+      new TextEncoder().encode(plaintext) as unknown as ArrayBuffer,
+    ),
   );
-  return PREFIX + toBase64(iv) + ":" + toBase64(ct);
+  return `${PREFIX + toBase64(iv)}:${toBase64(ct)}`;
 }
 
 export function isEncrypted(s: unknown): boolean {
@@ -90,7 +101,7 @@ export async function decryptValue(stored: string): Promise<string> {
   const pt = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: iv as unknown as ArrayBuffer },
     key,
-    ct as unknown as ArrayBuffer
+    ct as unknown as ArrayBuffer,
   );
   return new TextDecoder().decode(pt);
 }
@@ -105,7 +116,7 @@ export async function decryptValue(stored: string): Promise<string> {
  * restores stay symmetric and you can mix sync/async at will.
  */
 function getRawKeyBytes(): Uint8Array {
-  const raw = process.env["VAULTBASE_ENCRYPTION_KEY"] ?? "";
+  const raw = process.env.VAULTBASE_ENCRYPTION_KEY ?? "";
   if (!raw) throw new Error("VAULTBASE_ENCRYPTION_KEY env var not set — required for encryption");
   if (cachedRawBytes && cachedRawForBytes === raw) return cachedRawBytes;
   cachedRawBytes = decodeKey(raw);
@@ -120,7 +131,7 @@ export function encryptValueSync(plaintext: string): string {
   const ct = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   const ctTag = Buffer.concat([ct, tag]);
-  return PREFIX + toBase64(new Uint8Array(iv)) + ":" + toBase64(new Uint8Array(ctTag));
+  return `${PREFIX + toBase64(new Uint8Array(iv))}:${toBase64(new Uint8Array(ctTag))}`;
 }
 
 export function decryptValueSync(stored: string): string {

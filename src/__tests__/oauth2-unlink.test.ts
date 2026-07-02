@@ -44,18 +44,24 @@ async function insertUser(opts: {
 }
 
 async function insertLink(userId: string, collectionId: string, provider: string): Promise<void> {
-  await getDb().insert(oauthLinks).values({
-    id: crypto.randomUUID(),
-    user_id: userId,
-    collection_id: collectionId,
-    provider,
-    provider_user_id: `${provider}-${userId}`,
-    provider_email: `${provider}@example.test`,
-  });
+  await getDb()
+    .insert(oauthLinks)
+    .values({
+      id: crypto.randomUUID(),
+      user_id: userId,
+      collection_id: collectionId,
+      provider,
+      provider_user_id: `${provider}-${userId}`,
+      provider_email: `${provider}@example.test`,
+    });
 }
 
 async function userJwt(userId: string, collectionName: string): Promise<string> {
-  return new jose.SignJWT({ id: userId, email: `${userId}@example.test`, collection: collectionName })
+  return new jose.SignJWT({
+    id: userId,
+    email: `${userId}@example.test`,
+    collection: collectionName,
+  })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuer("vaultbase")
     .setAudience("user")
@@ -65,10 +71,10 @@ async function userJwt(userId: string, collectionName: string): Promise<string> 
 }
 
 function unlinkRequest(token: string, collectionName: string, provider: string): Request {
-  return new Request(
-    `http://localhost/auth/${collectionName}/oauth2/${provider}/unlink`,
-    { method: "DELETE", headers: { authorization: `Bearer ${token}` } }
-  );
+  return new Request(`http://localhost/auth/${collectionName}/oauth2/${provider}/unlink`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${token}` },
+  });
 }
 
 describe("DELETE /api/auth/:collection/oauth2/:provider/unlink", () => {

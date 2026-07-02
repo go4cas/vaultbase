@@ -18,25 +18,19 @@ import { getSetting } from "../api/settings.ts";
  *     brainstorm for revocation lists).
  */
 
-export type TokenKind =
-  | "admin"
-  | "user"
-  | "anonymous"
-  | "impersonate"
-  | "refresh"
-  | "file";
+export type TokenKind = "admin" | "user" | "anonymous" | "impersonate" | "refresh" | "file";
 
-const MIN_SECONDS = 60;                       // 1 minute
-const MAX_SECONDS = 365 * 24 * 60 * 60;       // 365 days
+const MIN_SECONDS = 60; // 1 minute
+const MAX_SECONDS = 365 * 24 * 60 * 60; // 365 days
 
 /** Default lifetime per kind, in seconds. */
 export const DEFAULT_WINDOWS: Record<TokenKind, number> = {
-  admin:       7 * 24 * 60 * 60,    // 7d
-  user:        7 * 24 * 60 * 60,    // 7d
-  anonymous:  30 * 24 * 60 * 60,    // 30d
-  impersonate:     60 * 60,         // 1h
-  refresh:     7 * 24 * 60 * 60,    // 7d
-  file:            60 * 60,         // 1h
+  admin: 7 * 24 * 60 * 60, // 7d
+  user: 7 * 24 * 60 * 60, // 7d
+  anonymous: 30 * 24 * 60 * 60, // 30d
+  impersonate: 60 * 60, // 1h
+  refresh: 7 * 24 * 60 * 60, // 7d
+  file: 60 * 60, // 1h
 };
 
 function settingsKey(kind: TokenKind): string {

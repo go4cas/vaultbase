@@ -8,19 +8,15 @@
  */
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdtempSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { initDb, closeDb, getDb } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
 import { setLogsDir } from "../core/file-logger.ts";
 import { admin } from "../db/schema.ts";
-import {
-  detectMutation,
-  runSql,
-  MAX_SQL_RESULT_ROWS,
-} from "../core/sql-runner.ts";
+import { detectMutation, runSql, MAX_SQL_RESULT_ROWS } from "../core/sql-runner.ts";
 import {
   setSandboxDir,
   resetSandbox,
@@ -45,7 +41,11 @@ async function seedAdmin(id = "a1"): Promise<{ id: string; email: string }> {
   const email = `${id}@test.local`;
   const now = Math.floor(Date.now() / 1000);
   await getDb().insert(admin).values({
-    id, email, password_hash: "x", password_reset_at: 0, created_at: now,
+    id,
+    email,
+    password_hash: "x",
+    password_reset_at: 0,
+    created_at: now,
   });
   return { id, email };
 }
@@ -64,8 +64,11 @@ afterEach(() => {
   closeDb();
   // Windows occasionally holds a brief lock on the sqlite file just after
   // close; tolerate flaky rm here. Tests should not fail on cleanup.
-  try { rmSync(tmpDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }); }
-  catch { /* leave it for OS tmp cleanup */ }
+  try {
+    rmSync(tmpDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  } catch {
+    /* leave it for OS tmp cleanup */
+  }
 });
 
 // ── detectMutation ───────────────────────────────────────────────────────
@@ -263,12 +266,16 @@ describe("saved queries — CRUD", () => {
     const a2 = await seedAdmin("a2");
 
     await createSavedQuery({
-      name: "all admins", sql: "SELECT * FROM vaultbase_admin",
-      ownerAdminId: a1.id, ownerAdminEmail: a1.email,
+      name: "all admins",
+      sql: "SELECT * FROM vaultbase_admin",
+      ownerAdminId: a1.id,
+      ownerAdminEmail: a1.email,
     });
     await createSavedQuery({
-      name: "a2 only", sql: "SELECT 2",
-      ownerAdminId: a2.id, ownerAdminEmail: a2.email,
+      name: "a2 only",
+      sql: "SELECT 2",
+      ownerAdminId: a2.id,
+      ownerAdminEmail: a2.email,
     });
 
     const a1List = await listSavedQueries(a1.id);
@@ -284,8 +291,10 @@ describe("saved queries — CRUD", () => {
     const a1 = await seedAdmin("a1");
     const a2 = await seedAdmin("a2");
     const q = await createSavedQuery({
-      name: "private", sql: "SELECT 1",
-      ownerAdminId: a1.id, ownerAdminEmail: a1.email,
+      name: "private",
+      sql: "SELECT 1",
+      ownerAdminId: a1.id,
+      ownerAdminEmail: a1.email,
     });
     expect(await getSavedQuery(q.id, a1.id)).not.toBeNull();
     expect(await getSavedQuery(q.id, a2.id)).toBeNull();
@@ -294,8 +303,10 @@ describe("saved queries — CRUD", () => {
   it("update changes name + sql + bumps updated_at", async () => {
     const a1 = await seedAdmin("a1");
     const q = await createSavedQuery({
-      name: "v1", sql: "SELECT 1",
-      ownerAdminId: a1.id, ownerAdminEmail: a1.email,
+      name: "v1",
+      sql: "SELECT 1",
+      ownerAdminId: a1.id,
+      ownerAdminEmail: a1.email,
     });
     const original = q.updated_at;
     // Bun's clock is high-res but second-grain on disk; pause briefly.
@@ -310,19 +321,23 @@ describe("saved queries — CRUD", () => {
     const a1 = await seedAdmin("a1");
     const a2 = await seedAdmin("a2");
     const q = await createSavedQuery({
-      name: "x", sql: "SELECT 1",
-      ownerAdminId: a1.id, ownerAdminEmail: a1.email,
+      name: "x",
+      sql: "SELECT 1",
+      ownerAdminId: a1.id,
+      ownerAdminEmail: a1.email,
     });
-    expect(await deleteSavedQuery(q.id, a2.id)).toBe(false);   // wrong owner
+    expect(await deleteSavedQuery(q.id, a2.id)).toBe(false); // wrong owner
     expect(await deleteSavedQuery(q.id, a1.id)).toBe(true);
-    expect(await deleteSavedQuery(q.id, a1.id)).toBe(false);   // already gone
+    expect(await deleteSavedQuery(q.id, a1.id)).toBe(false); // already gone
   });
 
   it("recordSavedQueryRun populates last_*", async () => {
     const a1 = await seedAdmin("a1");
     const q = await createSavedQuery({
-      name: "x", sql: "SELECT 1",
-      ownerAdminId: a1.id, ownerAdminEmail: a1.email,
+      name: "x",
+      sql: "SELECT 1",
+      ownerAdminId: a1.id,
+      ownerAdminEmail: a1.email,
     });
     await recordSavedQueryRun(q.id, a1.id, { ok: true, durationMs: 12, rowCount: 3 });
     const after = await getSavedQuery(q.id, a1.id);
@@ -330,7 +345,12 @@ describe("saved queries — CRUD", () => {
     expect(after?.last_row_count).toBe(3);
     expect(after?.last_error).toBeNull();
 
-    await recordSavedQueryRun(q.id, a1.id, { ok: false, durationMs: 5, rowCount: 0, error: "boom" });
+    await recordSavedQueryRun(q.id, a1.id, {
+      ok: false,
+      durationMs: 5,
+      rowCount: 0,
+      error: "boom",
+    });
     const after2 = await getSavedQuery(q.id, a1.id);
     expect(after2?.last_error).toBe("boom");
     expect(after2?.last_row_count).toBeNull();
@@ -345,8 +365,9 @@ import { makeSqlPlugin } from "../api/sql.ts";
 
 describe("/admin/sql/schema endpoint", () => {
   function mkApp(): Elysia {
-    return new Elysia()
-      .group("/api/v1", (app) => app.use(makeSqlPlugin("test-secret-sql-schema", dbPath))) as unknown as Elysia;
+    return new Elysia().group("/api/v1", (app) =>
+      app.use(makeSqlPlugin("test-secret-sql-schema", dbPath)),
+    ) as unknown as Elysia;
   }
 
   async function adminToken(adminId: string, email: string): Promise<string> {
@@ -370,19 +391,39 @@ describe("/admin/sql/schema endpoint", () => {
     const tok = await adminToken(me.id, me.email);
 
     // Seed a small user table so we get back something predictable.
-    getDb().run(`CREATE TABLE _test_widgets (
+    getDb().run(
+      `CREATE TABLE _test_widgets (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       owner TEXT REFERENCES vaultbase_admin(id)
-    )` as never);
+    )` as never,
+    );
     getDb().run("CREATE INDEX idx_widgets_name ON _test_widgets(name)" as never);
 
     const app = mkApp();
-    const res = await app.handle(new Request("http://localhost/api/v1/admin/sql/schema", {
-      headers: { Authorization: `Bearer ${tok}` },
-    }));
+    const res = await app.handle(
+      new Request("http://localhost/api/v1/admin/sql/schema", {
+        headers: { Authorization: `Bearer ${tok}` },
+      }),
+    );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { data: { tables: Array<{ name: string; columns: Array<{ name: string; type: string; notnull: boolean; pk: boolean; indexed: boolean }>; indexes: Array<{ name: string; cols: string[] }>; foreignKeys: Array<{ col: string; refTable: string; refCol: string }>; kind: string }> } };
+    const body = (await res.json()) as {
+      data: {
+        tables: Array<{
+          name: string;
+          columns: Array<{
+            name: string;
+            type: string;
+            notnull: boolean;
+            pk: boolean;
+            indexed: boolean;
+          }>;
+          indexes: Array<{ name: string; cols: string[] }>;
+          foreignKeys: Array<{ col: string; refTable: string; refCol: string }>;
+          kind: string;
+        }>;
+      };
+    };
     const widgets = body.data.tables.find((t) => t.name === "_test_widgets");
     expect(widgets).toBeTruthy();
     expect(widgets!.kind).toBe("user");
@@ -393,7 +434,9 @@ describe("/admin/sql/schema endpoint", () => {
     expect(nameCol?.notnull).toBe(true);
     expect(nameCol?.indexed).toBe(true);
     expect(widgets!.indexes.some((i) => i.name === "idx_widgets_name")).toBe(true);
-    expect(widgets!.foreignKeys.some((f) => f.col === "owner" && f.refTable === "vaultbase_admin")).toBe(true);
+    expect(
+      widgets!.foreignKeys.some((f) => f.col === "owner" && f.refTable === "vaultbase_admin"),
+    ).toBe(true);
 
     const adminTable = body.data.tables.find((t) => t.name === "vaultbase_admin");
     expect(adminTable?.kind).toBe("system");

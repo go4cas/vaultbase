@@ -39,7 +39,7 @@ interface JobRow {
   next_run_at: number | null;
 }
 
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
+const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as new (
   ...args: string[]
 ) => (ctx: JobContext) => Promise<unknown>;
 
@@ -70,8 +70,12 @@ export function nextRunFromCron(cronExpr: string, fromSec?: number): number {
 }
 
 export function validateCron(cronExpr: string): string | null {
-  try { CronExpressionParser.parse(cronExpr, { tz: "UTC" }); return null; }
-  catch (e) { return e instanceof Error ? e.message : "Invalid cron expression"; }
+  try {
+    CronExpressionParser.parse(cronExpr, { tz: "UTC" });
+    return null;
+  } catch (e) {
+    return e instanceof Error ? e.message : "Invalid cron expression";
+  }
 }
 
 export async function runJob(jobId: string): Promise<{ ok: boolean; error?: string }> {
@@ -81,8 +85,11 @@ export async function runJob(jobId: string): Promise<{ ok: boolean; error?: stri
   if (!row) return { ok: false, error: "Job not found" };
   const now = Math.floor(Date.now() / 1000);
   let nextRun: number | null = null;
-  try { nextRun = nextRunFromCron(row.cron, now); }
-  catch { nextRun = null; }
+  try {
+    nextRun = nextRunFromCron(row.cron, now);
+  } catch {
+    nextRun = null;
+  }
 
   // Worker-mode: cron tick enqueues onto the named queue and returns. The
   // worker handles execution async — the job's `code` is treated as the
@@ -92,19 +99,31 @@ export async function runJob(jobId: string): Promise<{ ok: boolean; error?: stri
     const queue = workerMatch[1]!.trim();
     if (!queue) {
       const msg = `Invalid mode "${row.mode}" — expected "worker:<queue>"`;
-      await db.update(jobs).set({
-        last_run_at: now, last_status: "error", last_error: msg,
-        next_run_at: nextRun, updated_at: now,
-      }).where(eq(jobs.id, jobId));
+      await db
+        .update(jobs)
+        .set({
+          last_run_at: now,
+          last_status: "error",
+          last_error: msg,
+          next_run_at: nextRun,
+          updated_at: now,
+        })
+        .where(eq(jobs.id, jobId));
       return { ok: false, error: msg };
     }
     try {
       const { enqueue } = await import("./queues.ts");
       const r = await enqueue(queue, { jobId, jobName: row.name, scheduledAt: now });
-      await db.update(jobs).set({
-        last_run_at: now, last_status: "ok", last_error: null,
-        next_run_at: nextRun, updated_at: now,
-      }).where(eq(jobs.id, jobId));
+      await db
+        .update(jobs)
+        .set({
+          last_run_at: now,
+          last_status: "ok",
+          last_error: null,
+          next_run_at: nextRun,
+          updated_at: now,
+        })
+        .where(eq(jobs.id, jobId));
       appendHookLog({
         name: row.name,
         message: `cron job "${row.name || row.id.slice(0, 8)}" enqueued onto ${queue} (job=${r.jobId}${r.deduped ? " · deduped" : ""})`,
@@ -112,10 +131,16 @@ export async function runJob(jobId: string): Promise<{ ok: boolean; error?: stri
       return { ok: true };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      await db.update(jobs).set({
-        last_run_at: now, last_status: "error", last_error: msg,
-        next_run_at: nextRun, updated_at: now,
-      }).where(eq(jobs.id, jobId));
+      await db
+        .update(jobs)
+        .set({
+          last_run_at: now,
+          last_status: "error",
+          last_error: msg,
+          next_run_at: nextRun,
+          updated_at: now,
+        })
+        .where(eq(jobs.id, jobId));
       return { ok: false, error: msg };
     }
   }
@@ -128,27 +153,34 @@ export async function runJob(jobId: string): Promise<{ ok: boolean; error?: stri
 
   try {
     await fn(ctx);
-    await db.update(jobs).set({
-      last_run_at: now,
-      last_status: "ok",
-      last_error: null,
-      next_run_at: nextRun,
-      updated_at: now,
-    }).where(eq(jobs.id, jobId));
+    await db
+      .update(jobs)
+      .set({
+        last_run_at: now,
+        last_status: "ok",
+        last_error: null,
+        next_run_at: nextRun,
+        updated_at: now,
+      })
+      .where(eq(jobs.id, jobId));
     appendHookLog({
       name: row.name,
       message: `cron job "${row.name || row.id.slice(0, 8)}" ran successfully`,
     });
     return { ok: true };
   } catch (e) {
-    const msg = e instanceof ValidationError ? e.message : (e instanceof Error ? e.message : String(e));
-    await db.update(jobs).set({
-      last_run_at: now,
-      last_status: "error",
-      last_error: msg,
-      next_run_at: nextRun,
-      updated_at: now,
-    }).where(eq(jobs.id, jobId));
+    const msg =
+      e instanceof ValidationError ? e.message : e instanceof Error ? e.message : String(e);
+    await db
+      .update(jobs)
+      .set({
+        last_run_at: now,
+        last_status: "error",
+        last_error: msg,
+        next_run_at: nextRun,
+        updated_at: now,
+      })
+      .where(eq(jobs.id, jobId));
     appendHookLog({
       name: row.name,
       message: `cron job "${row.name || row.id.slice(0, 8)}" failed: ${msg}`,
@@ -171,7 +203,9 @@ async function scheduleTick(): Promise<void> {
       try {
         const next = nextRunFromCron(r.cron, now);
         await db.update(jobs).set({ next_run_at: next, updated_at: now }).where(eq(jobs.id, r.id));
-      } catch { /* invalid cron — skip */ }
+      } catch {
+        /* invalid cron — skip */
+      }
     }
   }
 }
@@ -180,7 +214,9 @@ export function startScheduler(): void {
   if (schedulerInterval) return;
   // Run once at startup, then every 30s
   void scheduleTick();
-  schedulerInterval = setInterval(() => { void scheduleTick(); }, 30_000);
+  schedulerInterval = setInterval(() => {
+    void scheduleTick();
+  }, 30_000);
 }
 
 export function stopScheduler(): void {

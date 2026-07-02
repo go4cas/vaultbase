@@ -13,12 +13,7 @@ import { eq } from "drizzle-orm";
 import { initDb, getDb, closeDb } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
 import { admin } from "../db/schema.ts";
-import {
-  KNOWN_SCOPES,
-  listApiTokens,
-  mintApiToken,
-  revokeApiToken,
-} from "../core/api-tokens.ts";
+import { KNOWN_SCOPES, listApiTokens, mintApiToken, revokeApiToken } from "../core/api-tokens.ts";
 
 interface ParsedArgs {
   name?: string;
@@ -34,11 +29,8 @@ function parseTtl(s: string): number | null {
   const n = parseInt(m[1] ?? "0", 10);
   if (!Number.isFinite(n) || n <= 0) return null;
   const unit = (m[2] ?? "d").toLowerCase();
-  const mult = unit === "s" ? 1
-    : unit === "m" ? 60
-    : unit === "h" ? 3600
-    : unit === "y" ? 365 * 86400
-    : 86400;
+  const mult =
+    unit === "s" ? 1 : unit === "m" ? 60 : unit === "h" ? 3600 : unit === "y" ? 365 * 86400 : 86400;
   return n * mult;
 }
 
@@ -110,7 +102,12 @@ async function resolveAdmin(asEmail?: string): Promise<{ id: string; email: stri
     ? await db.select().from(admin).where(eq(admin.email, asEmail)).limit(1)
     : await db.select().from(admin).limit(1);
   const row = rows[0];
-  if (!row) throw new Error(asEmail ? `admin '${asEmail}' not found` : "no admin exists yet — create one via /_/setup or `vaultbase setup-admin` first");
+  if (!row)
+    throw new Error(
+      asEmail
+        ? `admin '${asEmail}' not found`
+        : "no admin exists yet — create one via /_/setup or `vaultbase setup-admin` first",
+    );
   return { id: row.id, email: row.email };
 }
 
@@ -118,20 +115,25 @@ async function cmdMint(args: ParsedArgs, jwtSecret: string): Promise<void> {
   if (!args.name) throw new Error("--name is required for mint");
   if (args.scopes.length === 0) throw new Error("at least one --scope is required");
   const minter = await resolveAdmin(args.asEmail);
-  const result = await mintApiToken({
-    name: args.name,
-    scopes: args.scopes,
-    ...(args.ttlSeconds !== undefined ? { ttlSeconds: args.ttlSeconds } : {}),
-    createdBy: minter.id,
-    createdByEmail: minter.email,
-  }, jwtSecret);
+  const result = await mintApiToken(
+    {
+      name: args.name,
+      scopes: args.scopes,
+      ...(args.ttlSeconds !== undefined ? { ttlSeconds: args.ttlSeconds } : {}),
+      createdBy: minter.id,
+      createdByEmail: minter.email,
+    },
+    jwtSecret,
+  );
   if (args.json) {
-    process.stdout.write(JSON.stringify(result) + "\n");
+    process.stdout.write(`${JSON.stringify(result)}\n`);
   } else {
     const expDate = new Date(result.expires_at * 1000).toISOString();
     process.stdout.write(`✓ minted as ${minter.email}\n`);
     process.stdout.write(`  id:      ${result.id}\n`);
-    process.stdout.write(`  expires: ${expDate} (${Math.round((result.expires_at - Math.floor(Date.now() / 1000)) / 86400)} days)\n`);
+    process.stdout.write(
+      `  expires: ${expDate} (${Math.round((result.expires_at - Math.floor(Date.now() / 1000)) / 86400)} days)\n`,
+    );
     process.stdout.write(`  scopes:  ${args.scopes.join(", ")}\n\n`);
     process.stdout.write(`  TOKEN — save this, it will NEVER be shown again:\n\n`);
     process.stdout.write(`    ${result.token}\n\n`);
@@ -141,7 +143,7 @@ async function cmdMint(args: ParsedArgs, jwtSecret: string): Promise<void> {
 async function cmdList(args: ParsedArgs): Promise<void> {
   const rows = await listApiTokens();
   if (args.json) {
-    process.stdout.write(JSON.stringify(rows, null, 2) + "\n");
+    process.stdout.write(`${JSON.stringify(rows, null, 2)}\n`);
     return;
   }
   if (rows.length === 0) {
@@ -149,15 +151,20 @@ async function cmdList(args: ParsedArgs): Promise<void> {
     return;
   }
   const now = Math.floor(Date.now() / 1000);
-  process.stdout.write(`name                            scopes                  status      last used         id\n`);
-  process.stdout.write(`──────────────────────────────  ──────────────────────  ──────────  ────────────────  ──────────────────────────────────────\n`);
+  process.stdout.write(
+    `name                            scopes                  status      last used         id\n`,
+  );
+  process.stdout.write(
+    `──────────────────────────────  ──────────────────────  ──────────  ────────────────  ──────────────────────────────────────\n`,
+  );
   for (const r of rows) {
-    const status = r.revoked_at ? "revoked"
-      : r.expires_at < now ? "expired"
-      : "active";
+    const status = r.revoked_at ? "revoked" : r.expires_at < now ? "expired" : "active";
     const last = r.last_used_at ? new Date(r.last_used_at * 1000).toISOString().slice(0, 16) : "—";
-    const name = r.name.length > 30 ? r.name.slice(0, 27) + "…" : r.name.padEnd(30);
-    const scopes = r.scopes.join(",").length > 22 ? r.scopes.join(",").slice(0, 19) + "…" : r.scopes.join(",").padEnd(22);
+    const name = r.name.length > 30 ? `${r.name.slice(0, 27)}…` : r.name.padEnd(30);
+    const scopes =
+      r.scopes.join(",").length > 22
+        ? `${r.scopes.join(",").slice(0, 19)}…`
+        : r.scopes.join(",").padEnd(22);
     process.stdout.write(`${name}  ${scopes}  ${status.padEnd(10)}  ${last.padEnd(16)}  ${r.id}\n`);
   }
 }
@@ -166,11 +173,15 @@ async function cmdRevoke(id: string, args: ParsedArgs): Promise<void> {
   if (!id) throw new Error("token id required: `vaultbase token revoke <id>`");
   const r = await revokeApiToken(id);
   if (!r.revoked) throw new Error(`token '${id}' not found`);
-  if (args.json) process.stdout.write(JSON.stringify({ revoked: true, id }) + "\n");
+  if (args.json) process.stdout.write(`${JSON.stringify({ revoked: true, id })}\n`);
   else process.stdout.write(`✓ revoked ${id}\n`);
 }
 
-export async function runTokenCli(argv: string[], dbPath: string, jwtSecret: string): Promise<void> {
+export async function runTokenCli(
+  argv: string[],
+  dbPath: string,
+  jwtSecret: string,
+): Promise<void> {
   const sub = argv[0] ?? "";
   if (!sub || sub === "help" || sub === "-h" || sub === "--help") {
     printHelp();

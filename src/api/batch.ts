@@ -2,7 +2,15 @@ import type { Database } from "bun:sqlite";
 import Elysia, { t } from "elysia";
 import { getDb } from "../db/client.ts";
 import { getCollection } from "../core/collections.ts";
-import { createRecord, deleteRecord, getRecord, listRecords, ReadOnlyCollectionError, RestrictError, updateRecord } from "../core/records.ts";
+import {
+  createRecord,
+  deleteRecord,
+  getRecord,
+  listRecords,
+  ReadOnlyCollectionError,
+  RestrictError,
+  updateRecord,
+} from "../core/records.ts";
 import { ValidationError } from "../core/validate.ts";
 import { checkRuleOrThrow, recordListRule, RuleDeniedError } from "./_rules.ts";
 import type { AuthContext } from "../core/rules.ts";
@@ -53,18 +61,21 @@ function parseOp(method: string, urlStr: string): ParsedOp | { error: string } {
   const m = path.match(/^\/api\/([^/]+)(?:\/([^/]+))?\/?$/);
   if (!m) return { error: `Unsupported url: ${urlStr}` };
   const [, collection, id] = m;
-  if (!collection || ["admin", "auth", "files", "collections", "health", "batch", "custom"].includes(collection)) {
+  if (
+    !collection ||
+    ["admin", "auth", "files", "collections", "health", "batch", "custom"].includes(collection)
+  ) {
     return { error: `Unsupported collection in batch: ${collection}` };
   }
   const M = method.toUpperCase();
   if (!id) {
     if (M === "POST") return { kind: "create", collection, query: url.searchParams };
-    if (M === "GET")  return { kind: "list",   collection, query: url.searchParams };
+    if (M === "GET") return { kind: "list", collection, query: url.searchParams };
     return { error: `Unsupported method ${M} for ${urlStr}` };
   }
-  if (M === "GET")    return { kind: "get",    collection, id, query: url.searchParams };
-  if (M === "PATCH")  return { kind: "update", collection, id };
-  if (M === "PUT")    return { kind: "update", collection, id };
+  if (M === "GET") return { kind: "get", collection, id, query: url.searchParams };
+  if (M === "PATCH") return { kind: "update", collection, id };
+  if (M === "PUT") return { kind: "update", collection, id };
   if (M === "DELETE") return { kind: "delete", collection, id };
   return { error: `Unsupported method ${M} for ${urlStr}` };
 }
@@ -73,15 +84,23 @@ async function dispatchOp(
   request: Request,
   op: ParsedOp,
   body: unknown,
-  auth: AuthContext | null
+  auth: AuthContext | null,
 ): Promise<BatchResult> {
   // Per-op rule enforcement — same checks the records HTTP layer runs.
   const col = await getCollection(op.collection);
-  if (!col) return { status: 404, body: { error: `Collection '${op.collection}' not found`, code: 404 } };
+  if (!col)
+    return { status: 404, body: { error: `Collection '${op.collection}' not found`, code: 404 } };
 
   switch (op.kind) {
     case "create": {
-      checkRuleOrThrow(request, "create_rule", col.name, col.create_rule, auth, (body ?? {}) as Record<string, unknown>);
+      checkRuleOrThrow(
+        request,
+        "create_rule",
+        col.name,
+        col.create_rule,
+        auth,
+        (body ?? {}) as Record<string, unknown>,
+      );
       const rec = await createRecord(op.collection, body as Record<string, unknown>, auth);
       return { status: 201, body: rec };
     }
@@ -90,12 +109,12 @@ async function dispatchOp(
       if (!allowed) throw new RuleDeniedError("list_rule");
       const q = op.query ?? new URLSearchParams();
       const opts: Parameters<typeof listRecords>[1] = {};
-      if (q.get("page"))    opts.page = parseInt(q.get("page")!) || 1;
-      if (q.get("perPage")) opts.perPage = parseInt(q.get("perPage")!) || 30;
-      if (q.get("filter"))  opts.filter = q.get("filter")!;
-      if (q.get("sort"))    opts.sort = q.get("sort")!;
-      if (q.get("expand"))  opts.expand = q.get("expand")!;
-      if (q.get("fields"))  opts.fields = q.get("fields")!;
+      if (q.get("page")) opts.page = parseInt(q.get("page")!, 10) || 1;
+      if (q.get("perPage")) opts.perPage = parseInt(q.get("perPage")!, 10) || 30;
+      if (q.get("filter")) opts.filter = q.get("filter")!;
+      if (q.get("sort")) opts.sort = q.get("sort")!;
+      if (q.get("expand")) opts.expand = q.get("expand")!;
+      if (q.get("fields")) opts.fields = q.get("fields")!;
       if (q.get("skipTotal") === "1") opts.skipTotal = true;
       opts.auth = auth;
       // Apply expression rule as access filter (admins bypass)
@@ -108,20 +127,41 @@ async function dispatchOp(
     case "get": {
       const rec = await getRecord(op.collection, op.id!);
       if (!rec) return { status: 404, body: { error: "Record not found", code: 404 } };
-      checkRuleOrThrow(request, "view_rule", col.name, col.view_rule, auth, rec as unknown as Record<string, unknown>);
+      checkRuleOrThrow(
+        request,
+        "view_rule",
+        col.name,
+        col.view_rule,
+        auth,
+        rec as unknown as Record<string, unknown>,
+      );
       return { status: 200, body: rec };
     }
     case "update": {
       const existing = await getRecord(op.collection, op.id!);
       if (!existing) return { status: 404, body: { error: "Record not found", code: 404 } };
-      checkRuleOrThrow(request, "update_rule", col.name, col.update_rule, auth, existing as unknown as Record<string, unknown>);
+      checkRuleOrThrow(
+        request,
+        "update_rule",
+        col.name,
+        col.update_rule,
+        auth,
+        existing as unknown as Record<string, unknown>,
+      );
       const rec = await updateRecord(op.collection, op.id!, body as Record<string, unknown>, auth);
       return { status: 200, body: rec };
     }
     case "delete": {
       const existing = await getRecord(op.collection, op.id!);
       if (!existing) return { status: 404, body: { error: "Record not found", code: 404 } };
-      checkRuleOrThrow(request, "delete_rule", col.name, col.delete_rule, auth, existing as unknown as Record<string, unknown>);
+      checkRuleOrThrow(
+        request,
+        "delete_rule",
+        col.name,
+        col.delete_rule,
+        auth,
+        existing as unknown as Record<string, unknown>,
+      );
       await deleteRecord(op.collection, op.id!, auth);
       return { status: 204, body: null };
     }
@@ -135,10 +175,12 @@ export function makeBatchPlugin(jwtSecret: string) {
       const auth = await extractAuth(request, jwtSecret);
       const requests = body.requests;
       if (!Array.isArray(requests) || requests.length === 0) {
-        set.status = 422; return { error: "requests array required", code: 422 };
+        set.status = 422;
+        return { error: "requests array required", code: 422 };
       }
       if (requests.length > MAX_BATCH) {
-        set.status = 422; return { error: `Max ${MAX_BATCH} requests per batch`, code: 422 };
+        set.status = 422;
+        return { error: `Max ${MAX_BATCH} requests per batch`, code: 422 };
       }
 
       // Pre-parse to fail fast on invalid URLs/methods
@@ -147,7 +189,8 @@ export function makeBatchPlugin(jwtSecret: string) {
         const r = requests[i] as BatchRequest;
         const p = parseOp(r.method ?? "", r.url ?? "");
         if ("error" in p) {
-          set.status = 422; return { error: `Request ${i}: ${p.error}`, code: 422 };
+          set.status = 422;
+          return { error: `Request ${i}: ${p.error}`, code: 422 };
         }
         parsed.push(p);
       }
@@ -167,15 +210,26 @@ export function makeBatchPlugin(jwtSecret: string) {
         client.exec("ROLLBACK");
         if (e instanceof RuleDeniedError) {
           set.status = 403;
-          return { error: `Batch failed at request ${results.length}: forbidden by ${e.ruleName}`, code: 403 };
+          return {
+            error: `Batch failed at request ${results.length}: forbidden by ${e.ruleName}`,
+            code: 403,
+          };
         }
         if (e instanceof ValidationError) {
           set.status = 422;
-          return { error: `Batch failed at request ${results.length}: ${e.message}`, code: 422, details: e.details };
+          return {
+            error: `Batch failed at request ${results.length}: ${e.message}`,
+            code: 422,
+            details: e.details,
+          };
         }
         if (e instanceof RestrictError) {
           set.status = 409;
-          return { error: `Batch failed at request ${results.length}: ${e.message}`, code: 409, details: e.details };
+          return {
+            error: `Batch failed at request ${results.length}: ${e.message}`,
+            code: 409,
+            details: e.details,
+          };
         }
         if (e instanceof ReadOnlyCollectionError) {
           set.status = 405;
@@ -193,9 +247,9 @@ export function makeBatchPlugin(jwtSecret: string) {
             method: t.String(),
             url: t.String(),
             body: t.Optional(t.Any()),
-          })
+          }),
         ),
       }),
-    }
+    },
   );
 }

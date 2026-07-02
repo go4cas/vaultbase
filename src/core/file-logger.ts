@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readdirSync, statSync, appendFileSync } from "fs";
-import { appendFile as appendFileAsync } from "fs/promises";
-import { join } from "path";
+import { existsSync, mkdirSync, readdirSync, statSync, appendFileSync } from "node:fs";
+import { appendFile as appendFileAsync } from "node:fs/promises";
+import { join } from "node:path";
 import { JSONPath } from "jsonpath-plus";
 
 /**
@@ -19,8 +19,8 @@ export interface LogRuleEval {
 
 export interface LogEntry {
   id: string;
-  ts: string;            // ISO timestamp
-  created_at: number;    // unix seconds (convenience for UI)
+  ts: string; // ISO timestamp
+  created_at: number; // unix seconds (convenience for UI)
   method: string;
   path: string;
   status: number;
@@ -52,7 +52,7 @@ function logsDir(): string | null {
   return configuredDir;
 }
 
-function utcDate(d: Date = new Date()): string {
+function _utcDate(d: Date = new Date()): string {
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
   const day = String(d.getUTCDate()).padStart(2, "0");
@@ -86,7 +86,10 @@ class BufferedLogWriter {
 
   enqueue(file: string, line: string): void {
     let arr = this.buffers.get(file);
-    if (!arr) { arr = []; this.buffers.set(file, arr); }
+    if (!arr) {
+      arr = [];
+      this.buffers.set(file, arr);
+    }
     arr.push(line);
     this.bufferBytes += line.length;
 
@@ -95,15 +98,23 @@ class BufferedLogWriter {
       return;
     }
     if (!this.flushTimer) {
-      this.flushTimer = setTimeout(() => { void this.flushNow(); }, this.flushIntervalMs);
+      this.flushTimer = setTimeout(() => {
+        void this.flushNow();
+      }, this.flushIntervalMs);
     }
   }
 
   /** Flush all pending buffers. Safe to call from drain(). */
   async flushNow(): Promise<void> {
-    if (this.flushTimer) { clearTimeout(this.flushTimer); this.flushTimer = null; }
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
     // Coalesce concurrent flushes — flush latest snapshot once.
-    if (this.flushInFlight) { await this.flushInFlight; return; }
+    if (this.flushInFlight) {
+      await this.flushInFlight;
+      return;
+    }
 
     if (this.buffers.size === 0) return;
     // Move buffers out — we cleared the LIVE Map below, so we have to take a
@@ -118,22 +129,35 @@ class BufferedLogWriter {
       for (const [file, lines] of snapshot) {
         const data = lines.join("");
         writes.push(
-          appendFileAsync(file, data, { encoding: "utf8" }).catch(() => { /* swallow */ }),
+          appendFileAsync(file, data, { encoding: "utf8" }).catch(() => {
+            /* swallow */
+          }),
         );
       }
       await Promise.all(writes);
     })();
-    try { await this.flushInFlight; } finally { this.flushInFlight = null; }
+    try {
+      await this.flushInFlight;
+    } finally {
+      this.flushInFlight = null;
+    }
   }
 
   /** Synchronous fallback used during shutdown when the loop may not run. */
   flushSync(): void {
-    if (this.flushTimer) { clearTimeout(this.flushTimer); this.flushTimer = null; }
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
     const snapshot = new Map(this.buffers);
     this.buffers.clear();
     this.bufferBytes = 0;
     for (const [file, lines] of snapshot) {
-      try { appendFileSync(file, lines.join(""), { encoding: "utf8" }); } catch { /* ignore */ }
+      try {
+        appendFileSync(file, lines.join(""), { encoding: "utf8" });
+      } catch {
+        /* ignore */
+      }
     }
   }
 }
@@ -158,7 +182,7 @@ export function appendLogEntry(entry: LogEntry): void {
   if (!dir) return;
   const date = entry.ts.slice(0, 10); // ISO YYYY-MM-DD
   const file = join(dir, `${date}.jsonl`);
-  writer.enqueue(file, JSON.stringify(entry) + "\n");
+  writer.enqueue(file, `${JSON.stringify(entry)}\n`);
 }
 
 export interface HookLogInput {
@@ -210,7 +234,9 @@ export function listLogDates(): Array<{ date: string; size: number; lines: numbe
     try {
       const s = statSync(full);
       out.push({ date, size: s.size, lines: null });
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
   out.sort((a, b) => (a.date < b.date ? 1 : -1));
   return out;
@@ -242,7 +268,9 @@ export async function readLogs(opts: ReadOptions = {}): Promise<LogEntry[]> {
   const out: LogEntry[] = [];
   for (const date of dates) {
     const file = join(dir, `${date}.jsonl`);
-    const text = await Bun.file(file).text().catch(() => "");
+    const text = await Bun.file(file)
+      .text()
+      .catch(() => "");
     if (!text) continue;
     const lines = text.split("\n");
     // Iterate newest-first within the file
@@ -252,7 +280,9 @@ export async function readLogs(opts: ReadOptions = {}): Promise<LogEntry[]> {
       try {
         out.push(JSON.parse(ln) as LogEntry);
         if (out.length >= limit) return out;
-      } catch { /* skip malformed line */ }
+      } catch {
+        /* skip malformed line */
+      }
     }
   }
   return out;
@@ -268,10 +298,7 @@ export interface SearchResult {
  * Run a JSONPath expression against entries in the requested date range.
  * Each entry is the haystack; matches are returned per-entry.
  */
-export async function searchLogs(
-  jsonpath: string,
-  opts: ReadOptions = {}
-): Promise<SearchResult> {
+export async function searchLogs(jsonpath: string, opts: ReadOptions = {}): Promise<SearchResult> {
   const entries = await readLogs({ ...opts, limit: opts.limit ?? 100_000 });
   const results: unknown[] = [];
   let matched = 0;

@@ -25,7 +25,7 @@
 import { eq, isNull } from "drizzle-orm";
 import { sql } from "drizzle-orm/sql";
 import { getDb } from "../db/client.ts";
-import { apiTokens, tokenRevocations } from "../db/schema.ts";
+import { apiTokens } from "../db/schema.ts";
 import { signAuthToken, revokeToken } from "../core/sec.ts";
 
 /** Stable token-prefix so leaks are grep-able. */
@@ -43,13 +43,13 @@ export const DEFAULT_API_TOKEN_TTL_SEC = 90 * 24 * 60 * 60;
  * RBAC sprint — the wire format here already supports them.
  */
 export const KNOWN_SCOPES = [
-  "admin",        // full admin equivalent
-  "read",         // any GET on records / files / logs
-  "write",        // POST/PATCH/DELETE on records (rules still apply)
-  "mcp:read",     // MCP server: read-only tools
-  "mcp:write",    // MCP server: mutating tools (records, hooks, settings)
-  "mcp:admin",    // MCP server: full admin
-  "mcp:sql",      // MCP server: raw SQL tool
+  "admin", // full admin equivalent
+  "read", // any GET on records / files / logs
+  "write", // POST/PATCH/DELETE on records (rules still apply)
+  "mcp:read", // MCP server: read-only tools
+  "mcp:write", // MCP server: mutating tools (records, hooks, settings)
+  "mcp:admin", // MCP server: full admin
+  "mcp:sql", // MCP server: raw SQL tool
 ] as const;
 export type Scope = (typeof KNOWN_SCOPES)[number] | string;
 
@@ -75,9 +75,11 @@ export interface MintResult {
 export async function mintApiToken(input: MintInput, jwtSecret: string): Promise<MintResult> {
   if (!input.name || input.name.length === 0) throw new Error("name is required");
   if (input.name.length > 100) throw new Error("name must be 100 characters or fewer");
-  if (!Array.isArray(input.scopes) || input.scopes.length === 0) throw new Error("at least one scope required");
+  if (!Array.isArray(input.scopes) || input.scopes.length === 0)
+    throw new Error("at least one scope required");
   for (const s of input.scopes) {
-    if (typeof s !== "string" || s.length === 0 || s.length > 64) throw new Error(`invalid scope: ${s}`);
+    if (typeof s !== "string" || s.length === 0 || s.length > 64)
+      throw new Error(`invalid scope: ${s}`);
   }
 
   const ttlSeconds = Math.min(
@@ -94,16 +96,18 @@ export async function mintApiToken(input: MintInput, jwtSecret: string): Promise
     jwtSecret,
   });
 
-  await getDb().insert(apiTokens).values({
-    id: jti,
-    name: input.name,
-    scopes: JSON.stringify(input.scopes),
-    created_by: input.createdBy,
-    created_by_email: input.createdByEmail,
-    created_at: now,
-    expires_at,
-    use_count: 0,
-  });
+  await getDb()
+    .insert(apiTokens)
+    .values({
+      id: jti,
+      name: input.name,
+      scopes: JSON.stringify(input.scopes),
+      created_by: input.createdBy,
+      created_by_email: input.createdByEmail,
+      created_at: now,
+      expires_at,
+      use_count: 0,
+    });
 
   return { token: API_TOKEN_PREFIX + rawJwt, id: jti, expires_at };
 }
@@ -128,7 +132,9 @@ function parseRow(r: typeof apiTokens.$inferSelect): ApiTokenRow {
   try {
     const p = JSON.parse(r.scopes);
     if (Array.isArray(p)) scopes = p.filter((s): s is string => typeof s === "string");
-  } catch { /* malformed row — treat as no-scope */ }
+  } catch {
+    /* malformed row — treat as no-scope */
+  }
   return {
     id: r.id,
     name: r.name,
@@ -228,12 +234,17 @@ export function recordApiTokenUsage(jti: string, ip: string | null, ua: string |
     return;
   }
   if (!usageTimer) {
-    usageTimer = setTimeout(() => { void flushApiTokenUsage(); }, USAGE_FLUSH_MS);
+    usageTimer = setTimeout(() => {
+      void flushApiTokenUsage();
+    }, USAGE_FLUSH_MS);
   }
 }
 
 export async function flushApiTokenUsage(): Promise<void> {
-  if (usageTimer) { clearTimeout(usageTimer); usageTimer = null; }
+  if (usageTimer) {
+    clearTimeout(usageTimer);
+    usageTimer = null;
+  }
   if (pendingUsage.size === 0) return;
   const snapshot = new Map(pendingUsage);
   pendingUsage.clear();
@@ -241,20 +252,27 @@ export async function flushApiTokenUsage(): Promise<void> {
   const db = getDb();
   for (const [jti, e] of snapshot) {
     try {
-      await db.update(apiTokens).set({
-        last_used_at: e.lastAt,
-        last_used_ip: e.lastIp || null,
-        last_used_ua: e.lastUa || null,
-        use_count: sql`${apiTokens.use_count} + ${e.count}`,
-      }).where(eq(apiTokens.id, jti));
-    } catch { /* ignore — observability data, never break a request */ }
+      await db
+        .update(apiTokens)
+        .set({
+          last_used_at: e.lastAt,
+          last_used_ip: e.lastIp || null,
+          last_used_ua: e.lastUa || null,
+          use_count: sql`${apiTokens.use_count} + ${e.count}`,
+        })
+        .where(eq(apiTokens.id, jti));
+    } catch {
+      /* ignore — observability data, never break a request */
+    }
   }
 }
 
 /** Called from server.ts boot. Flushes pending usage once a minute as a
  *  safety net beyond the natural per-request triggers. */
 export function startApiTokenUsageFlusher(): void {
-  setInterval(() => { void flushApiTokenUsage(); }, 60_000).unref?.();
+  setInterval(() => {
+    void flushApiTokenUsage();
+  }, 60_000).unref?.();
 }
 
 // ── Token format helpers ─────────────────────────────────────────────────────
@@ -283,9 +301,11 @@ export async function pruneExpiredApiTokens(): Promise<number> {
   const cutoff = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
   // Keep the row for 30 d after expiry/revoke so the admin UI can still
   // show "expired/revoked recently" entries before they vanish.
-  const res = await getDb().delete(apiTokens).where(
-    sql`(${apiTokens.expires_at} < ${cutoff}) OR (${apiTokens.revoked_at} IS NOT NULL AND ${apiTokens.revoked_at} < ${cutoff})`,
-  );
+  const res = await getDb()
+    .delete(apiTokens)
+    .where(
+      sql`(${apiTokens.expires_at} < ${cutoff}) OR (${apiTokens.revoked_at} IS NOT NULL AND ${apiTokens.revoked_at} < ${cutoff})`,
+    );
   return (res as unknown as { changes?: number }).changes ?? 0;
 }
 

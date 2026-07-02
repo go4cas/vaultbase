@@ -52,26 +52,27 @@ export function parseBackupArgs(argv: string[]): BackupOpts {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i] ?? "";
     if (a.startsWith("--to=")) out.to = a.slice("--to=".length);
-    else if (a === "--to") { const v = argv[++i]; if (v) out.to = v; }
-    else if (a === "--gzip") out.gzip = true;
+    else if (a === "--to") {
+      const v = argv[++i];
+      if (v) out.to = v;
+    } else if (a === "--gzip") out.gzip = true;
     else if (a === "--quiet" || a === "-q") out.quiet = true;
     else if (a === "--help" || a === "-h") {
       process.stdout.write(
         `Usage: vaultbase backup --to <dest> [--gzip] [--quiet]\n\n` +
-        `Destinations:\n` +
-        `  /path/file.db              local file\n` +
-        `  file:///path/file.db       local file\n` +
-        `  s3://bucket/key            S3 (creds via AWS_* env)\n` +
-        `  r2://bucket/key            Cloudflare R2 (creds + AWS_ENDPOINT_URL via env)\n` +
-        `  b2://bucket/key            Backblaze B2 (creds + AWS_ENDPOINT_URL via env)\n\n` +
-        `Examples:\n` +
-        `  vaultbase backup --to /var/backups/snap-$(date +%F).db\n` +
-        `  AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \\\n` +
-        `    vaultbase backup --to s3://my-bucket/vb/snap.db --gzip\n`,
+          `Destinations:\n` +
+          `  /path/file.db              local file\n` +
+          `  file:///path/file.db       local file\n` +
+          `  s3://bucket/key            S3 (creds via AWS_* env)\n` +
+          `  r2://bucket/key            Cloudflare R2 (creds + AWS_ENDPOINT_URL via env)\n` +
+          `  b2://bucket/key            Backblaze B2 (creds + AWS_ENDPOINT_URL via env)\n\n` +
+          `Examples:\n` +
+          `  vaultbase backup --to /var/backups/snap-$(date +%F).db\n` +
+          `  AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \\\n` +
+          `    vaultbase backup --to s3://my-bucket/vb/snap.db --gzip\n`,
       );
       process.exit(0);
-    }
-    else die(`unknown flag: ${a}`);
+    } else die(`unknown flag: ${a}`);
   }
   if (!out.to) die("missing --to <dest>");
   return out;
@@ -89,7 +90,12 @@ interface DestSpec {
 function parseDestination(to: string): DestSpec {
   // Local: bare path or file://
   if (to.startsWith("file://")) {
-    return { kind: "file", bucket: resolve(to.slice("file://".length)), key: "", endpointEnvHint: null };
+    return {
+      kind: "file",
+      bucket: resolve(to.slice("file://".length)),
+      key: "",
+      endpointEnvHint: null,
+    };
   }
   if (!/^[a-z0-9]+:\/\//i.test(to)) {
     return { kind: "file", bucket: resolve(to), key: "", endpointEnvHint: null };
@@ -102,9 +108,7 @@ function parseDestination(to: string): DestSpec {
   const bucket = m[2]!;
   const key = m[3]!;
   const endpointHint =
-    proto === "r2" ? "R2_ENDPOINT" :
-    proto === "b2" ? "B2_ENDPOINT" :
-    "AWS_ENDPOINT_URL";
+    proto === "r2" ? "R2_ENDPOINT" : proto === "b2" ? "B2_ENDPOINT" : "AWS_ENDPOINT_URL";
   return { kind: "s3", bucket, key, endpointEnvHint: endpointHint };
 }
 
@@ -149,24 +153,39 @@ async function pushLocal(snapPath: string, destAbs: string, opts: BackupOpts): P
 }
 
 async function pushS3(snapPath: string, dest: DestSpec, opts: BackupOpts): Promise<void> {
-  const accessKeyId = process.env["AWS_ACCESS_KEY_ID"] ?? "";
-  const secretAccessKey = process.env["AWS_SECRET_ACCESS_KEY"] ?? "";
+  const accessKeyId = process.env.AWS_ACCESS_KEY_ID ?? "";
+  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY ?? "";
   if (!accessKeyId || !secretAccessKey) {
     die("S3-compatible destination requires AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY env vars");
   }
   const endpoint =
-    process.env["AWS_ENDPOINT_URL"] ??
+    process.env.AWS_ENDPOINT_URL ??
     (dest.endpointEnvHint ? process.env[dest.endpointEnvHint] : undefined) ??
     "";
-  if ((dest.endpointEnvHint === "R2_ENDPOINT" || dest.endpointEnvHint === "B2_ENDPOINT") && !endpoint) {
+  if (
+    (dest.endpointEnvHint === "R2_ENDPOINT" || dest.endpointEnvHint === "B2_ENDPOINT") &&
+    !endpoint
+  ) {
     die(`${dest.endpointEnvHint} is required for r2:// / b2:// destinations`);
   }
-  const region = process.env["AWS_REGION"] ?? "auto";
+  const region = process.env.AWS_REGION ?? "auto";
 
   // Bun.S3Client (1.x). Falls back to constructing per-request if cached
   // shape changes.
-  type S3Opts = { accessKeyId: string; secretAccessKey: string; bucket: string; region?: string; endpoint?: string };
-  const ctor = (Bun as unknown as { S3Client: new (o: S3Opts) => { write(key: string, data: Uint8Array, opts?: { type?: string }): Promise<unknown> } }).S3Client;
+  type S3Opts = {
+    accessKeyId: string;
+    secretAccessKey: string;
+    bucket: string;
+    region?: string;
+    endpoint?: string;
+  };
+  const ctor = (
+    Bun as unknown as {
+      S3Client: new (
+        o: S3Opts,
+      ) => { write(key: string, data: Uint8Array, opts?: { type?: string }): Promise<unknown> };
+    }
+  ).S3Client;
   if (!ctor) die("Bun.S3Client unavailable — upgrade Bun (≥ 1.1.0)");
   const s3opts: S3Opts = { accessKeyId, secretAccessKey, bucket: dest.bucket };
   if (region) s3opts.region = region;
@@ -182,7 +201,10 @@ async function pushS3(snapPath: string, dest: DestSpec, opts: BackupOpts): Promi
     if (!key.endsWith(".gz")) key = `${key}.gz`;
     contentType = "application/gzip";
   }
-  log(opts, `uploading to ${dest.bucket}/${key} (${body.byteLength.toLocaleString()} bytes${opts.gzip ? ", gzipped" : ""})...`);
+  log(
+    opts,
+    `uploading to ${dest.bucket}/${key} (${body.byteLength.toLocaleString()} bytes${opts.gzip ? ", gzipped" : ""})...`,
+  );
   await client.write(key, body, { type: contentType });
   log(opts, `done → ${dest.bucket}/${key}`);
 }
@@ -200,7 +222,11 @@ export async function runBackup(dbPath: string, argv: string[]): Promise<void> {
       await pushS3(snap, dest, opts);
     }
   } finally {
-    try { unlinkSync(snap); } catch { /* best-effort cleanup */ }
+    try {
+      unlinkSync(snap);
+    } catch {
+      /* best-effort cleanup */
+    }
   }
 }
 

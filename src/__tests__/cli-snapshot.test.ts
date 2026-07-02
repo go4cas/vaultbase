@@ -34,38 +34,40 @@ describe("applySnapshot — shape validation", () => {
 
   it("throws on missing/wrong version", async () => {
     await expect(applySnapshot({ collections: [] })).rejects.toBeInstanceOf(SnapshotShapeError);
-    await expect(applySnapshot({ version: 2, collections: [] })).rejects.toBeInstanceOf(SnapshotShapeError);
+    await expect(applySnapshot({ version: 2, collections: [] })).rejects.toBeInstanceOf(
+      SnapshotShapeError,
+    );
   });
 
   it("throws when collections is not an array", async () => {
     await expect(
-      applySnapshot({ generated_at: "x", version: 1, collections: "no" })
+      applySnapshot({ generated_at: "x", version: 1, collections: "no" }),
     ).rejects.toBeInstanceOf(SnapshotShapeError);
   });
 
   it("throws on a collection entry missing name/type/fields", async () => {
     await expect(
-      applySnapshot({ generated_at: "x", version: 1, collections: [{}] })
+      applySnapshot({ generated_at: "x", version: 1, collections: [{}] }),
     ).rejects.toBeInstanceOf(SnapshotShapeError);
     await expect(
       applySnapshot({
         generated_at: "x",
         version: 1,
         collections: [{ name: "x", type: "weird", fields: [] }],
-      })
+      }),
     ).rejects.toBeInstanceOf(SnapshotShapeError);
     await expect(
       applySnapshot({
         generated_at: "x",
         version: 1,
         collections: [{ name: "x", type: "base", fields: "no" }],
-      })
+      }),
     ).rejects.toBeInstanceOf(SnapshotShapeError);
   });
 
   it("rejects unknown mode values", async () => {
     await expect(
-      applySnapshot(snap([]), { mode: "weird" as unknown as "additive" })
+      applySnapshot(snap([]), { mode: "weird" as unknown as "additive" }),
     ).rejects.toBeInstanceOf(SnapshotShapeError);
   });
 });
@@ -83,9 +85,7 @@ describe("applySnapshot — empty cases", () => {
 
 describe("applySnapshot — additive mode (default)", () => {
   it("creates a missing collection (created: 1), and is idempotent on re-apply", async () => {
-    const s = snap([
-      { name: "posts", type: "base", fields: [{ name: "title", type: "text" }] },
-    ]);
+    const s = snap([{ name: "posts", type: "base", fields: [{ name: "title", type: "text" }] }]);
 
     const first = await applySnapshot(s);
     expect(first.created).toEqual(["posts"]);
@@ -154,7 +154,9 @@ describe("applySnapshot — sync mode", () => {
     expect(r.errors).toEqual([]);
 
     const after = await getCollection("posts");
-    const fieldNames = parseFields(after!.fields).map((f) => f.name).sort();
+    const fieldNames = parseFields(after!.fields)
+      .map((f) => f.name)
+      .sort();
     expect(fieldNames).toEqual(["body", "title"]);
   });
 
@@ -163,9 +165,7 @@ describe("applySnapshot — sync mode", () => {
       name: "posts",
       fields: JSON.stringify([{ name: "title", type: "text" }]),
     });
-    const s = snap([
-      { name: "posts", type: "base", fields: [{ name: "title", type: "text" }] },
-    ]);
+    const s = snap([{ name: "posts", type: "base", fields: [{ name: "title", type: "text" }] }]);
 
     const r = await applySnapshot(s, { mode: "sync" });
     expect(r.unchanged).toEqual(["posts"]);

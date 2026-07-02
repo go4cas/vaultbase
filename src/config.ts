@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, chmodSync } from "fs";
-import { join } from "path";
+import { existsSync, mkdirSync, chmodSync } from "node:fs";
+import { join } from "node:path";
 
 export interface Config {
   port: number;
@@ -28,12 +28,16 @@ async function loadJwtSecret(dataDir: string): Promise<string> {
   crypto.getRandomValues(bytes);
   const secret = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
   await Bun.write(secretPath, secret);
-  try { chmodSync(secretPath, 0o600); } catch { /* Windows or non-POSIX: best-effort */ }
+  try {
+    chmodSync(secretPath, 0o600);
+  } catch {
+    /* Windows or non-POSIX: best-effort */
+  }
   return secret;
 }
 
 export async function loadConfig(): Promise<Config> {
-  const dataDir = process.env["VAULTBASE_DATA_DIR"] ?? "./vaultbase_data";
+  const dataDir = process.env.VAULTBASE_DATA_DIR ?? "./vaultbase_data";
   if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
 
   const uploadDir = join(dataDir, "uploads");
@@ -42,16 +46,15 @@ export async function loadConfig(): Promise<Config> {
   const logsDir = join(dataDir, "logs");
   if (!existsSync(logsDir)) mkdirSync(logsDir, { recursive: true });
 
-  const jwtSecret =
-    process.env["VAULTBASE_JWT_SECRET"] ?? (await loadJwtSecret(dataDir));
+  const jwtSecret = process.env.VAULTBASE_JWT_SECRET ?? (await loadJwtSecret(dataDir));
 
   return {
-    port: parseInt(process.env["VAULTBASE_PORT"] ?? "8091"),
+    port: parseInt(process.env.VAULTBASE_PORT ?? "8091", 10),
     dataDir,
     dbPath: join(dataDir, "data.db"),
     uploadDir,
     logsDir,
     jwtSecret,
-    encryptionKey: process.env["VAULTBASE_ENCRYPTION_KEY"],
+    encryptionKey: process.env.VAULTBASE_ENCRYPTION_KEY,
   };
 }

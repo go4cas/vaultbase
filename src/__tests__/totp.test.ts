@@ -46,11 +46,11 @@ describe("generateCode (RFC 6238 reference vectors)", () => {
   // Base32 of that ASCII string is "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".
   const SECRET = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
   it.each([
-    [59,           "94287082"],
-    [1111111109,   "07081804"],
-    [1111111111,   "14050471"],
-    [1234567890,   "89005924"],
-    [2000000000,   "69279037"],
+    [59, "94287082"],
+    [1111111109, "07081804"],
+    [1111111111, "14050471"],
+    [1234567890, "89005924"],
+    [2000000000, "69279037"],
   ])("at unix %i produces a code ending with %s", (time, expected) => {
     // Our implementation emits 6 digits; the RFC vectors are 8. Compare last 6.
     const code = generateCode(SECRET, time);
@@ -87,8 +87,8 @@ describe("verifyCode", () => {
 
   it("rejects a malformed code", () => {
     const now = Math.floor(Date.now() / 1000);
-    expect(verifyCode(secret, "12345", now)).toBe(false);    // too short
-    expect(verifyCode(secret, "abcdef", now)).toBe(false);   // non-numeric
+    expect(verifyCode(secret, "12345", now)).toBe(false); // too short
+    expect(verifyCode(secret, "abcdef", now)).toBe(false); // non-numeric
     expect(verifyCode(secret, "", now)).toBe(false);
   });
 });

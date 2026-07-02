@@ -79,7 +79,7 @@ interface VerifyOpts {
 export async function verifyAuthToken(
   token: string,
   jwtSecret: string,
-  opts: VerifyOpts = {}
+  opts: VerifyOpts = {},
 ): Promise<VerifiedAuth | null> {
   const recheck = opts.recheckPrincipal ?? true;
   try {
@@ -98,14 +98,20 @@ export async function verifyAuthToken(
       // from the DB row so a token's effective permissions can be tightened
       // post-mint without re-issuing — the JWT's claims are advisory.
       if (typeof payload.jti !== "string") return null;
-      const rows = await getDb().select().from(apiTokens).where(eq(apiTokens.id, payload.jti)).limit(1);
+      const rows = await getDb()
+        .select()
+        .from(apiTokens)
+        .where(eq(apiTokens.id, payload.jti))
+        .limit(1);
       const tok = rows[0];
       if (!tok || tok.revoked_at != null) return null;
       let scopes: string[] = [];
       try {
         const p = JSON.parse(tok.scopes);
         if (Array.isArray(p)) scopes = p.filter((s): s is string => typeof s === "string");
-      } catch { /* malformed — empty */ }
+      } catch {
+        /* malformed — empty */
+      }
       // The principal is the minting admin; rule engine + admin endpoints
       // see them as that admin. Scope middleware further restricts what
       // the token may DO across the surface that the admin could.
@@ -124,7 +130,11 @@ export async function verifyAuthToken(
       // logged-out before mint — a leaked token still goes invalid when the
       // minting admin's password is reset.
       if (recheck) {
-        const aRows = await getDb().select().from(admin).where(eq(admin.id, tok.created_by)).limit(1);
+        const aRows = await getDb()
+          .select()
+          .from(admin)
+          .where(eq(admin.id, tok.created_by))
+          .limit(1);
         const a = aRows[0];
         if (!a) return null;
         if (typeof ctx.iat === "number" && a.password_reset_at > ctx.iat) return null;
@@ -143,10 +153,10 @@ export async function verifyAuthToken(
       };
     }
 
-    const id = String(payload["id"] ?? "");
+    const id = String(payload.id ?? "");
     if (!id) return null;
     const ctx: VerifiedAuth = { id, type: aud as "user" | "admin" };
-    if (typeof payload["email"] === "string") ctx.email = payload["email"];
+    if (typeof payload.email === "string") ctx.email = payload.email;
     if (typeof payload.jti === "string") ctx.jti = payload.jti;
     if (typeof payload.exp === "number") ctx.exp = payload.exp;
     if (typeof payload.iat === "number") ctx.iat = payload.iat;
@@ -162,8 +172,7 @@ export async function verifyAuthToken(
         // v0.11: user-token recheck routes to `vb_<col>` via the JWT
         // `collection` claim. Tokens minted before v0.11 lack the claim
         // and now hard-fail — users re-login on upgrade. Documented.
-        const collectionName = typeof payload["collection"] === "string"
-          ? payload["collection"] : null;
+        const collectionName = typeof payload.collection === "string" ? payload.collection : null;
         if (!collectionName) return null;
         const { getCollection } = await import("./collections.ts");
         const col = await getCollection(collectionName);
@@ -173,7 +182,11 @@ export async function verifyAuthToken(
         if (!u) return null;
         // password_reset_at on per-collection table — bumping it (via
         // force-logout-all) invalidates this token.
-        if (typeof ctx.iat === "number" && typeof u.password_reset_at === "number" && u.password_reset_at > ctx.iat) {
+        if (
+          typeof ctx.iat === "number" &&
+          typeof u.password_reset_at === "number" &&
+          u.password_reset_at > ctx.iat
+        ) {
           return null;
         }
       }
@@ -209,11 +222,13 @@ export async function signAuthToken(opts: {
 /** Add `jti` to the revocation list (idempotent). */
 export async function revokeToken(jti: string, expiresAt: number): Promise<void> {
   try {
-    await getDb().insert(tokenRevocations).values({
-      jti,
-      expires_at: expiresAt,
-      revoked_at: Math.floor(Date.now() / 1000),
-    });
+    await getDb()
+      .insert(tokenRevocations)
+      .values({
+        jti,
+        expires_at: expiresAt,
+        revoked_at: Math.floor(Date.now() / 1000),
+      });
   } catch {
     /* already revoked */
   }
@@ -230,7 +245,8 @@ const STORAGE_FILENAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}(\.[A-Za-z0-9]{1,12
 
 export function isValidStorageFilename(name: string): boolean {
   if (!name || name.length > 140) return false;
-  if (name.includes("..") || name.includes("/") || name.includes("\\") || name.includes("\0")) return false;
+  if (name.includes("..") || name.includes("/") || name.includes("\\") || name.includes("\0"))
+    return false;
   return STORAGE_FILENAME_RE.test(name);
 }
 
@@ -281,14 +297,17 @@ export function isAllowedUploadMime(mime: string): boolean {
 let _trustedProxiesCache: { raw: string; cidrs: ParsedCidr[]; bare: Set<string> } | null = null;
 
 function getTrustedProxies(): { cidrs: ParsedCidr[]; bare: Set<string> } | null {
-  const raw = process.env["VAULTBASE_TRUSTED_PROXIES"] ?? "";
+  const raw = process.env.VAULTBASE_TRUSTED_PROXIES ?? "";
   if (!raw) return null;
   if (_trustedProxiesCache && _trustedProxiesCache.raw === raw) {
     return { cidrs: _trustedProxiesCache.cidrs, bare: _trustedProxiesCache.bare };
   }
   const cidrs: ParsedCidr[] = [];
   const bare = new Set<string>();
-  for (const tok of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
+  for (const tok of raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)) {
     if (tok.includes("/")) {
       const c = parseCidr(tok);
       if (c) cidrs.push(c);
@@ -331,12 +350,12 @@ export async function hmacRecoveryCode(code: string, jwtSecret: string): Promise
     new TextEncoder().encode(jwtSecret) as unknown as ArrayBuffer,
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"]
+    ["sign"],
   );
   const sig = await crypto.subtle.sign(
     "HMAC",
     key,
-    new TextEncoder().encode(code.trim().toUpperCase()) as unknown as ArrayBuffer
+    new TextEncoder().encode(code.trim().toUpperCase()) as unknown as ArrayBuffer,
   );
   return Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, "0")).join("");
 }

@@ -66,10 +66,15 @@ function describeProviders(opts: { reveal?: boolean } = {}) {
   if (cfg.fcm.service_account) {
     fcmServiceAccountBytes = cfg.fcm.service_account.length;
     try {
-      const sa = JSON.parse(cfg.fcm.service_account) as { client_email?: string; project_id?: string };
+      const sa = JSON.parse(cfg.fcm.service_account) as {
+        client_email?: string;
+        project_id?: string;
+      };
       fcmClientEmail = typeof sa.client_email === "string" ? sa.client_email : null;
       // If project_id wasn't set explicitly, surface the SA's project_id for the UI.
-    } catch { /* invalid JSON — leave nulls */ }
+    } catch {
+      /* invalid JSON — leave nulls */
+    }
   }
   return {
     onesignal: {
@@ -123,7 +128,10 @@ const SETTING_KEYS: Record<ProviderName, Record<keyof PatchBody, string | null>>
   },
 };
 
-function applyPatch(provider: ProviderName, body: PatchBody): { applied: number; rejected: string[] } {
+function applyPatch(
+  provider: ProviderName,
+  body: PatchBody,
+): { applied: number; rejected: string[] } {
   const map = SETTING_KEYS[provider];
   let applied = 0;
   const rejected: string[] = [];
@@ -145,146 +153,158 @@ function applyPatch(provider: ProviderName, body: PatchBody): { applied: number;
 }
 
 export function makeNotificationsPlugin(jwtSecret: string) {
-  return new Elysia({ name: "notifications" })
-    // ── Admin: list provider config (secrets masked) ───────────────────────
-    .get("/admin/notifications/providers", async ({ request, query, set }) => {
-      if (!(await isAdmin(request, jwtSecret))) {
-        set.status = 401;
-        return { error: "Unauthorized", code: 401 };
-      }
-      const reveal = query.reveal === "1" || query.reveal === "true";
-      return { data: describeProviders({ reveal }) };
-    })
-    // ── Admin: patch one provider's config ─────────────────────────────────
-    .patch(
-      "/admin/notifications/providers/:name",
-      async ({ params, body, request, set }) => {
+  return (
+    new Elysia({ name: "notifications" })
+      // ── Admin: list provider config (secrets masked) ───────────────────────
+      .get("/admin/notifications/providers", async ({ request, query, set }) => {
         if (!(await isAdmin(request, jwtSecret))) {
           set.status = 401;
           return { error: "Unauthorized", code: 401 };
         }
-        if (!isProviderName(params.name)) {
-          set.status = 404;
-          return { error: `Unknown provider: ${params.name}`, code: 404 };
-        }
-        // Up-front: if the patch enables FCM, the service_account must already
-        // exist (or be in the same patch) AND parse as JSON. Catch this here
-        // rather than at first send.
-        if (params.name === "fcm" && body.enabled === true) {
-          const merged = body.service_account ?? loadProviderConfigs().fcm.service_account;
-          if (!merged) {
-            set.status = 422;
-            return { error: "FCM cannot be enabled without service_account", code: 422 };
+        const reveal = query.reveal === "1" || query.reveal === "true";
+        return { data: describeProviders({ reveal }) };
+      })
+      // ── Admin: patch one provider's config ─────────────────────────────────
+      .patch(
+        "/admin/notifications/providers/:name",
+        async ({ params, body, request, set }) => {
+          if (!(await isAdmin(request, jwtSecret))) {
+            set.status = 401;
+            return { error: "Unauthorized", code: 401 };
           }
-          try { JSON.parse(merged); }
-          catch (e) {
-            set.status = 422;
-            return { error: `service_account is not valid JSON: ${e instanceof Error ? e.message : String(e)}`, code: 422 };
+          if (!isProviderName(params.name)) {
+            set.status = 404;
+            return { error: `Unknown provider: ${params.name}`, code: 404 };
           }
-        }
-        const result = applyPatch(params.name, body);
-        if (result.rejected.length > 0) {
-          set.status = 422;
-          return { error: `Invalid fields for ${params.name}: ${result.rejected.join(", ")}`, code: 422 };
-        }
-        // First-time enable: bootstrap the system collections so hooks can
-        // call helpers.notify() and clients can register devices without the
-        // operator hand-building schema.
-        let bootstrap: { created: string[]; skipped: string[] } | null = null;
-        if (body.enabled === true) {
+          // Up-front: if the patch enables FCM, the service_account must already
+          // exist (or be in the same patch) AND parse as JSON. Catch this here
+          // rather than at first send.
+          if (params.name === "fcm" && body.enabled === true) {
+            const merged = body.service_account ?? loadProviderConfigs().fcm.service_account;
+            if (!merged) {
+              set.status = 422;
+              return { error: "FCM cannot be enabled without service_account", code: 422 };
+            }
+            try {
+              JSON.parse(merged);
+            } catch (e) {
+              set.status = 422;
+              return {
+                error: `service_account is not valid JSON: ${e instanceof Error ? e.message : String(e)}`,
+                code: 422,
+              };
+            }
+          }
+          const result = applyPatch(params.name, body);
+          if (result.rejected.length > 0) {
+            set.status = 422;
+            return {
+              error: `Invalid fields for ${params.name}: ${result.rejected.join(", ")}`,
+              code: 422,
+            };
+          }
+          // First-time enable: bootstrap the system collections so hooks can
+          // call helpers.notify() and clients can register devices without the
+          // operator hand-building schema.
+          let bootstrap: { created: string[]; skipped: string[] } | null = null;
+          if (body.enabled === true) {
+            try {
+              bootstrap = await bootstrapNotificationCollections();
+            } catch (e) {
+              // Don't fail the PATCH — the operator can still send via OneSignal
+              // (no device_tokens needed) or hand-create the collections later.
+              // Surface the error so they know.
+              const msg = e instanceof Error ? e.message : String(e);
+              return { data: describeProviders(), bootstrap_error: msg };
+            }
+          }
+          const out: Record<string, unknown> = { data: describeProviders() };
+          if (bootstrap) out.bootstrap = bootstrap;
+          return out;
+        },
+        { body: PATCH_BODY, params: t.Object({ name: t.String() }) },
+      )
+      // ── Admin: test connection (no message sent) ───────────────────────────
+      .post(
+        "/admin/notifications/providers/:name/test-connection",
+        async ({ params, request, set }) => {
+          if (!(await isAdmin(request, jwtSecret))) {
+            set.status = 401;
+            return { error: "Unauthorized", code: 401 };
+          }
+          if (!isProviderName(params.name)) {
+            set.status = 404;
+            return { error: `Unknown provider: ${params.name}`, code: 404 };
+          }
+          const cfg = loadProviderConfigs();
+          const result =
+            params.name === "onesignal"
+              ? await testOneSignalConnection(cfg.onesignal)
+              : await testFcmConnection(cfg.fcm);
+          if (!result.ok) {
+            set.status = 422;
+            return { error: result.detail, code: 422 };
+          }
+          return { data: { ok: true, detail: result.detail } };
+        },
+        { params: t.Object({ name: t.String() }) },
+      )
+      // ── Admin: send a real test notification to a user ─────────────────────
+      .post(
+        "/admin/notifications/test",
+        async ({ body, request, set }) => {
+          if (!(await isAdmin(request, jwtSecret))) {
+            set.status = 401;
+            return { error: "Unauthorized", code: 401 };
+          }
+          const providers = body.providers?.filter(isProviderName) ?? undefined;
+          const payload: NotificationPayload = {
+            title: body.title ?? "Vaultbase test",
+            body: body.body ?? `Test sent at ${new Date().toISOString()}`,
+            data: body.data ?? { _vbtest: true },
+          };
+          const opts = providers ? { providers } : {};
+          const out = await dispatchNotification(body.userId, payload, opts);
+          return { data: out };
+        },
+        {
+          body: t.Object({
+            userId: t.String(),
+            title: t.Optional(t.String()),
+            body: t.Optional(t.String()),
+            data: t.Optional(t.Record(t.String(), t.Any())),
+            providers: t.Optional(t.Array(t.String())),
+          }),
+        },
+      )
+      // ── Authenticated user: register a device token ────────────────────────
+      .post(
+        "/notifications/devices",
+        async ({ body, request, set }) => {
+          const user = await authedUser(request, jwtSecret);
+          if (!user) {
+            set.status = 401;
+            return { error: "Unauthorized", code: 401 };
+          }
+          if (body.provider !== "fcm" && body.provider !== "apns") {
+            set.status = 422;
+            return {
+              error: `provider must be "fcm" or "apns" (OneSignal users don't register here)`,
+              code: 422,
+            };
+          }
+          if (body.platform !== "ios" && body.platform !== "android" && body.platform !== "web") {
+            set.status = 422;
+            return { error: `platform must be one of ios, android, web`, code: 422 };
+          }
+          const client = rawClient();
+          const now = Math.floor(Date.now() / 1000);
           try {
-            bootstrap = await bootstrapNotificationCollections();
-          } catch (e) {
-            // Don't fail the PATCH — the operator can still send via OneSignal
-            // (no device_tokens needed) or hand-create the collections later.
-            // Surface the error so they know.
-            const msg = e instanceof Error ? e.message : String(e);
-            return { data: describeProviders(), bootstrap_error: msg };
-          }
-        }
-        const out: Record<string, unknown> = { data: describeProviders() };
-        if (bootstrap) out["bootstrap"] = bootstrap;
-        return out;
-      },
-      { body: PATCH_BODY, params: t.Object({ name: t.String() }) },
-    )
-    // ── Admin: test connection (no message sent) ───────────────────────────
-    .post(
-      "/admin/notifications/providers/:name/test-connection",
-      async ({ params, request, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
-        }
-        if (!isProviderName(params.name)) {
-          set.status = 404;
-          return { error: `Unknown provider: ${params.name}`, code: 404 };
-        }
-        const cfg = loadProviderConfigs();
-        const result = params.name === "onesignal"
-          ? await testOneSignalConnection(cfg.onesignal)
-          : await testFcmConnection(cfg.fcm);
-        if (!result.ok) {
-          set.status = 422;
-          return { error: result.detail, code: 422 };
-        }
-        return { data: { ok: true, detail: result.detail } };
-      },
-      { params: t.Object({ name: t.String() }) },
-    )
-    // ── Admin: send a real test notification to a user ─────────────────────
-    .post(
-      "/admin/notifications/test",
-      async ({ body, request, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
-        }
-        const providers = body.providers
-          ?.filter(isProviderName) ?? undefined;
-        const payload: NotificationPayload = {
-          title: body.title ?? "Vaultbase test",
-          body: body.body ?? `Test sent at ${new Date().toISOString()}`,
-          data: body.data ?? { _vbtest: true },
-        };
-        const opts = providers ? { providers } : {};
-        const out = await dispatchNotification(body.userId, payload, opts);
-        return { data: out };
-      },
-      {
-        body: t.Object({
-          userId: t.String(),
-          title: t.Optional(t.String()),
-          body: t.Optional(t.String()),
-          data: t.Optional(t.Record(t.String(), t.Any())),
-          providers: t.Optional(t.Array(t.String())),
-        }),
-      },
-    )
-    // ── Authenticated user: register a device token ────────────────────────
-    .post(
-      "/notifications/devices",
-      async ({ body, request, set }) => {
-        const user = await authedUser(request, jwtSecret);
-        if (!user) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
-        }
-        if (body.provider !== "fcm" && body.provider !== "apns") {
-          set.status = 422;
-          return { error: `provider must be "fcm" or "apns" (OneSignal users don't register here)`, code: 422 };
-        }
-        if (body.platform !== "ios" && body.platform !== "android" && body.platform !== "web") {
-          set.status = 422;
-          return { error: `platform must be one of ios, android, web`, code: 422 };
-        }
-        const client = rawClient();
-        const now = Math.floor(Date.now() / 1000);
-        try {
-          // Upsert by token. The notifications collection bootstrap creates
-          // `token` UNIQUE so this conflict resolution works.
-          client.prepare(
-            `INSERT INTO vb_device_tokens (id, user, provider, token, platform, app_version, enabled, last_seen, created_at)
+            // Upsert by token. The notifications collection bootstrap creates
+            // `token` UNIQUE so this conflict resolution works.
+            client
+              .prepare(
+                `INSERT INTO vb_device_tokens (id, user, provider, token, platform, app_version, enabled, last_seen, created_at)
              VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
              ON CONFLICT(token) DO UPDATE SET
                user = excluded.user,
@@ -293,64 +313,70 @@ export function makeNotificationsPlugin(jwtSecret: string) {
                app_version = excluded.app_version,
                enabled = 1,
                last_seen = excluded.last_seen`,
-          ).run(
-            crypto.randomUUID(),
-            user.id,
-            body.provider,
-            body.token,
-            body.platform,
-            body.app_version ?? null,
-            now,
-            now,
-          );
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          if (msg.includes("no such table")) {
-            set.status = 503;
-            return { error: "Notifications not enabled (vb_device_tokens missing — admin must enable a token-based provider)", code: 503 };
+              )
+              .run(
+                crypto.randomUUID(),
+                user.id,
+                body.provider,
+                body.token,
+                body.platform,
+                body.app_version ?? null,
+                now,
+                now,
+              );
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            if (msg.includes("no such table")) {
+              set.status = 503;
+              return {
+                error:
+                  "Notifications not enabled (vb_device_tokens missing — admin must enable a token-based provider)",
+                code: 503,
+              };
+            }
+            throw e;
           }
-          throw e;
-        }
-        return { data: { ok: true } };
-      },
-      {
-        body: t.Object({
-          token: t.String({ minLength: 1, maxLength: 4096 }),
-          provider: t.String(),
-          platform: t.String(),
-          app_version: t.Optional(t.String({ maxLength: 64 })),
-        }),
-      },
-    )
-    // ── Authenticated user: unregister a device token (logout) ─────────────
-    .delete(
-      "/notifications/devices/:token",
-      async ({ params, request, set }) => {
-        const user = await authedUser(request, jwtSecret);
-        if (!user) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
-        }
-        const client = rawClient();
-        try {
-          // Soft delete (enabled=0) — preserves the row so we can analytics-on-it.
-          // Restrict to the calling user's own tokens (defense against ID forgery).
-          client.prepare(
-            `UPDATE vb_device_tokens SET enabled = 0 WHERE token = ? AND user = ?`,
-          ).run(params.token, user.id);
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          if (msg.includes("no such table")) {
-            // Idempotent: nothing to disable, but not an error from the
-            // client's POV (they were calling logout-cleanup).
-            return { data: { ok: true } };
+          return { data: { ok: true } };
+        },
+        {
+          body: t.Object({
+            token: t.String({ minLength: 1, maxLength: 4096 }),
+            provider: t.String(),
+            platform: t.String(),
+            app_version: t.Optional(t.String({ maxLength: 64 })),
+          }),
+        },
+      )
+      // ── Authenticated user: unregister a device token (logout) ─────────────
+      .delete(
+        "/notifications/devices/:token",
+        async ({ params, request, set }) => {
+          const user = await authedUser(request, jwtSecret);
+          if (!user) {
+            set.status = 401;
+            return { error: "Unauthorized", code: 401 };
           }
-          throw e;
-        }
-        return { data: { ok: true } };
-      },
-      { params: t.Object({ token: t.String() }) },
-    );
+          const client = rawClient();
+          try {
+            // Soft delete (enabled=0) — preserves the row so we can analytics-on-it.
+            // Restrict to the calling user's own tokens (defense against ID forgery).
+            client
+              .prepare(`UPDATE vb_device_tokens SET enabled = 0 WHERE token = ? AND user = ?`)
+              .run(params.token, user.id);
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            if (msg.includes("no such table")) {
+              // Idempotent: nothing to disable, but not an error from the
+              // client's POV (they were calling logout-cleanup).
+              return { data: { ok: true } };
+            }
+            throw e;
+          }
+          return { data: { ok: true } };
+        },
+        { params: t.Object({ token: t.String() }) },
+      )
+  );
 }
 
 /** Test-only: re-export `getAllSettings` so tests don't need to import it separately. */

@@ -28,13 +28,15 @@ afterEach(() => closeDb());
 
 async function signAdmin(id = "admin-1"): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
-  await getDb().insert(adminTable).values({
-    id,
-    email: `${id}@test.local`,
-    password_hash: "x",
-    password_reset_at: 0,
-    created_at: now,
-  });
+  await getDb()
+    .insert(adminTable)
+    .values({
+      id,
+      email: `${id}@test.local`,
+      password_hash: "x",
+      password_reset_at: 0,
+      created_at: now,
+    });
   return await new jose.SignJWT({ id, email: `${id}@test.local`, jti: crypto.randomUUID() })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuer("vaultbase")
@@ -124,10 +126,12 @@ describe("via makeAuditLogPlugin (Elysia onAfterHandle)", () => {
     const app = makeAuditLogPlugin(SECRET)
       // mount a no-op admin endpoint so the request lands somewhere.
       .post("/api/v1/admin/things", () => ({ data: { ok: true } }));
-    const res = await app.handle(new Request("http://localhost/api/v1/admin/things", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    }));
+    const res = await app.handle(
+      new Request("http://localhost/api/v1/admin/things", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    );
     expect(res.status).toBe(200);
     // give the void-promised audit insert a tick to land
     await new Promise((r) => setTimeout(r, 20));
@@ -145,15 +149,18 @@ describe("listAuditEntries — filters", () => {
   beforeEach(async () => {
     await recordAuditEntry({
       request: new Request("http://localhost/api/admin/collections", { method: "POST" }),
-      status: 200, actor: { id: "a1", email: "a@x" },
+      status: 200,
+      actor: { id: "a1", email: "a@x" },
     });
     await recordAuditEntry({
       request: new Request("http://localhost/api/admin/settings", { method: "PATCH" }),
-      status: 200, actor: { id: "a2", email: "b@x" },
+      status: 200,
+      actor: { id: "a2", email: "b@x" },
     });
     await recordAuditEntry({
       request: new Request("http://localhost/api/admin/jobs/j1", { method: "DELETE" }),
-      status: 204, actor: { id: "a1", email: "a@x" },
+      status: 204,
+      actor: { id: "a1", email: "a@x" },
     });
   });
 

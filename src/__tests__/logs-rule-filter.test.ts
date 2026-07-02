@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setLogsDir, appendLogEntry, type LogEntry } from "../core/file-logger.ts";
 import { listLogs } from "../api/logs.ts";
 
@@ -36,23 +36,61 @@ describe("listLogs ruleOutcome filter", () => {
     // No rules
     appendLogEntry(mk({ path: "/api/health" }));
     // Allow
-    appendLogEntry(mk({ path: "/api/posts/p1", rules: [
-      { rule: "view_rule", collection: "posts", expression: null, outcome: "allow", reason: "public" },
-    ] }));
+    appendLogEntry(
+      mk({
+        path: "/api/posts/p1",
+        rules: [
+          {
+            rule: "view_rule",
+            collection: "posts",
+            expression: null,
+            outcome: "allow",
+            reason: "public",
+          },
+        ],
+      }),
+    );
     // Deny
-    appendLogEntry(mk({ path: "/api/posts/p2", status: 403, rules: [
-      { rule: "view_rule", collection: "posts", expression: "owner = @request.auth.id", outcome: "deny", reason: "rule failed" },
-    ] }));
+    appendLogEntry(
+      mk({
+        path: "/api/posts/p2",
+        status: 403,
+        rules: [
+          {
+            rule: "view_rule",
+            collection: "posts",
+            expression: "owner = @request.auth.id",
+            outcome: "deny",
+            reason: "rule failed",
+          },
+        ],
+      }),
+    );
     // Filter
-    appendLogEntry(mk({ path: "/api/posts", rules: [
-      { rule: "list_rule", collection: "posts", expression: "owner = @request.auth.id", outcome: "filter", reason: "applied as SQL filter" },
-    ] }));
+    appendLogEntry(
+      mk({
+        path: "/api/posts",
+        rules: [
+          {
+            rule: "list_rule",
+            collection: "posts",
+            expression: "owner = @request.auth.id",
+            outcome: "filter",
+            reason: "applied as SQL filter",
+          },
+        ],
+      }),
+    );
   });
 
   async function listWith(filter: "all" | "any" | "allow" | "deny" | "filter") {
     return await listLogs({
-      page: 1, perPage: 100, method: "all", status: "all",
-      includeAdmin: true, ruleOutcome: filter,
+      page: 1,
+      perPage: 100,
+      method: "all",
+      status: "all",
+      includeAdmin: true,
+      ruleOutcome: filter,
     });
   }
 

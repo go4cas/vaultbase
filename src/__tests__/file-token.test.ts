@@ -1,8 +1,8 @@
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
 import * as jose from "jose";
-import { mkdtempSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { initDb, closeDb, getDb } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
@@ -32,7 +32,11 @@ afterEach(() => {
 
 async function signUser(id: string, email: string): Promise<string> {
   const { seedAuthUser, signUserJwt } = await import("./_helpers.ts");
-  try { await seedAuthUser({ collection: "users", id, email }); } catch { /* dup */ }
+  try {
+    await seedAuthUser({ collection: "users", id, email });
+  } catch {
+    /* dup */
+  }
   return signUserJwt(id, email, "users", SECRET);
 }
 
@@ -47,7 +51,9 @@ async function signAdmin(id: string): Promise<string> {
       password_reset_at: 0,
       created_at: now,
     });
-  } catch { /* already inserted */ }
+  } catch {
+    /* already inserted */
+  }
   return await new jose.SignJWT({ id, email: "admin@test.local", jti: crypto.randomUUID() })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuer("vaultbase")
@@ -97,7 +103,13 @@ async function setupCollectionAndFile(opts: SetupOpts) {
   return { col, rec, filename };
 }
 
-function tokenReq(token: string | null, collection: string, recordId: string, field: string, filename: string): Request {
+function tokenReq(
+  token: string | null,
+  collection: string,
+  recordId: string,
+  field: string,
+  filename: string,
+): Request {
   const headers: Record<string, string> = {};
   if (token) headers.authorization = `Bearer ${token}`;
   return new Request(
@@ -116,7 +128,7 @@ describe("POST /api/files/:collection/:recordId/:field/:filename/token", () => {
     const app = makeFilesPlugin(tmpDir, SECRET);
     const res = await app.handle(tokenReq(adminToken, "notes", rec.id, "attachment", filename));
     expect(res.status).toBe(200);
-    const body = await res.json() as { data?: { token: string; expires_at: number } };
+    const body = (await res.json()) as { data?: { token: string; expires_at: number } };
     expect(body.data?.token).toBeTruthy();
     expect(body.data?.expires_at).toBeGreaterThan(Math.floor(Date.now() / 1000));
   });
@@ -130,7 +142,7 @@ describe("POST /api/files/:collection/:recordId/:field/:filename/token", () => {
     const app = makeFilesPlugin(tmpDir, SECRET);
     const res = await app.handle(tokenReq(userToken, "notes", rec.id, "attachment", filename));
     expect(res.status).toBe(200);
-    const body = await res.json() as { data?: { token: string } };
+    const body = (await res.json()) as { data?: { token: string } };
     expect(body.data?.token).toBeTruthy();
   });
 
@@ -153,11 +165,11 @@ describe("POST /api/files/:collection/:recordId/:field/:filename/token", () => {
     const app = makeFilesPlugin(tmpDir, SECRET);
     const res = await app.handle(tokenReq(null, "notes", rec.id, "attachment", filename));
     expect(res.status).toBe(200);
-    const body = await res.json() as { data?: { token: string } };
+    const body = (await res.json()) as { data?: { token: string } };
     expect(body.data?.token).toBeTruthy();
   });
 
-  it("admin-only view_rule (\"\") denies a logged-in user", async () => {
+  it('admin-only view_rule ("") denies a logged-in user', async () => {
     const { rec, filename } = await setupCollectionAndFile({
       view_rule: "",
       owner: "u1",
@@ -179,7 +191,9 @@ describe("POST /api/files/:collection/:recordId/:field/:filename/token", () => {
     await setupCollectionAndFile({ view_rule: null, owner: "u1" });
     const adminToken = await signAdmin("a1");
     const app = makeFilesPlugin(tmpDir, SECRET);
-    const res = await app.handle(tokenReq(adminToken, "notes", "no-such-record", "attachment", "x.bin"));
+    const res = await app.handle(
+      tokenReq(adminToken, "notes", "no-such-record", "attachment", "x.bin"),
+    );
     expect(res.status).toBe(404);
   });
 
@@ -187,7 +201,9 @@ describe("POST /api/files/:collection/:recordId/:field/:filename/token", () => {
     const { rec } = await setupCollectionAndFile({ view_rule: null, owner: "u1" });
     const adminToken = await signAdmin("a1");
     const app = makeFilesPlugin(tmpDir, SECRET);
-    const res = await app.handle(tokenReq(adminToken, "notes", rec.id, "attachment", "ghost-filename.bin"));
+    const res = await app.handle(
+      tokenReq(adminToken, "notes", rec.id, "attachment", "ghost-filename.bin"),
+    );
     expect(res.status).toBe(404);
   });
 
@@ -196,12 +212,10 @@ describe("POST /api/files/:collection/:recordId/:field/:filename/token", () => {
     const adminToken = await signAdmin("a1");
     const app = makeFilesPlugin(tmpDir, SECRET);
     const res = await app.handle(tokenReq(adminToken, "notes", rec.id, "attachment", filename));
-    const body = await res.json() as { data: { token: string; expires_at: number } };
-    const verified = await jose.jwtVerify(
-      body.data.token,
-      new TextEncoder().encode(SECRET),
-      { audience: "file" },
-    );
-    expect(verified.payload["filename"]).toBe(filename);
+    const body = (await res.json()) as { data: { token: string; expires_at: number } };
+    const verified = await jose.jwtVerify(body.data.token, new TextEncoder().encode(SECRET), {
+      audience: "file",
+    });
+    expect(verified.payload.filename).toBe(filename);
   });
 });

@@ -31,9 +31,8 @@ describe("Phase 1.x — _via_ back-relations", () => {
   it("parser recognizes the infix and emits a viaRelation operand", () => {
     // We can't easily eval this in single-record mode (it returns null), but
     // SQL compilation should produce a recognizable subquery.
-    const lookup: CollectionLookup = (n) => n === "comments"
-      ? { viewRule: null, hasField: (f) => f === "post" }
-      : null;
+    const lookup: CollectionLookup = (n) =>
+      n === "comments" ? { viewRule: null, hasField: (f) => f === "post" } : null;
     const r = parseFilter(`comments_via_post:length > 0`, "vb_posts", { auth: USER, lookup });
     expect(r).not.toBeNull();
     expect(r?.sql).toContain("vb_comments");
@@ -42,9 +41,10 @@ describe("Phase 1.x — _via_ back-relations", () => {
   });
 
   it("inherits the joined collection's view_rule (non-admin)", () => {
-    const lookup: CollectionLookup = (n) => n === "comments"
-      ? { viewRule: 'visibility = "public"', hasField: (f) => f === "post" || f === "visibility" }
-      : null;
+    const lookup: CollectionLookup = (n) =>
+      n === "comments"
+        ? { viewRule: 'visibility = "public"', hasField: (f) => f === "post" || f === "visibility" }
+        : null;
     const r = parseFilter(`comments_via_post:length > 0`, "vb_posts", { auth: USER, lookup });
     // The compiled SQL must reference the inherited rule.
     expect(r?.sql).toContain('"vb_comments"."visibility" = ?');
@@ -52,26 +52,25 @@ describe("Phase 1.x — _via_ back-relations", () => {
   });
 
   it("inherits admin-only view_rule → forces 1=0 for non-admin", () => {
-    const lookup: CollectionLookup = (n) => n === "comments"
-      ? { viewRule: "", hasField: (f) => f === "post" }
-      : null;
+    const lookup: CollectionLookup = (n) =>
+      n === "comments" ? { viewRule: "", hasField: (f) => f === "post" } : null;
     const r = parseFilter(`comments_via_post:length > 0`, "vb_posts", { auth: USER, lookup });
     expect(r?.sql).toContain("1=0");
   });
 
   it("admin auth bypasses joined view_rule", () => {
-    const lookup: CollectionLookup = (n) => n === "comments"
-      ? { viewRule: "", hasField: (f) => f === "post" }
-      : null;
+    const lookup: CollectionLookup = (n) =>
+      n === "comments" ? { viewRule: "", hasField: (f) => f === "post" } : null;
     const r = parseFilter(`comments_via_post:length > 0`, "vb_posts", { auth: ADMIN, lookup });
     expect(r?.sql).not.toContain("1=0");
   });
 
   it("rejects unknown ref field via lookup", () => {
-    const lookup: CollectionLookup = (n) => n === "comments"
-      ? { viewRule: null, hasField: () => false }
-      : null;
-    expect(() => parseFilter(`comments_via_post = "x"`, "vb_posts", { auth: USER, lookup })).toThrow();
+    const lookup: CollectionLookup = (n) =>
+      n === "comments" ? { viewRule: null, hasField: () => false } : null;
+    expect(() =>
+      parseFilter(`comments_via_post = "x"`, "vb_posts", { auth: USER, lookup }),
+    ).toThrow();
   });
 
   it("rejects identifiers with shell metacharacters", () => {
@@ -93,9 +92,8 @@ describe("Phase 1.x — @collection.* view_rule inheritance", () => {
   });
 
   it("non-admin WITH lookup that exposes a view_rule → inherits", () => {
-    const lookup: CollectionLookup = (n) => n === "posts"
-      ? { viewRule: 'published = true', hasField: () => true }
-      : null;
+    const lookup: CollectionLookup = (n) =>
+      n === "posts" ? { viewRule: "published = true", hasField: () => true } : null;
     const r = parseFilter(`@collection.posts.title = "x"`, "vb_users", { auth: USER, lookup });
     expect(r?.sql).toContain('"vb_posts"."published" = ?');
   });
@@ -107,6 +105,8 @@ describe("Phase 1.x — @collection.* view_rule inheritance", () => {
     });
     // A view_rule that recursively references @collection.posts will exceed
     // MAX_JOIN_DEPTH and fall through to the parser's null-on-throw.
-    expect(() => parseFilter(`@collection.posts.title = "y"`, "vb_users", { auth: USER, lookup })).toThrow();
+    expect(() =>
+      parseFilter(`@collection.posts.title = "y"`, "vb_users", { auth: USER, lookup }),
+    ).toThrow();
   });
 });
