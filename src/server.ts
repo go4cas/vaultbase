@@ -1,5 +1,7 @@
-import Elysia, { t } from "elysia";
+import Elysia from "elysia";
 import { Hono } from "hono";
+import { Type as t } from "@sinclair/typebox";
+import { jsonBody } from "./api/validator.ts";
 import { upgradeWebSocket, websocket as bunWebsocket } from "hono/bun";
 import { openapi } from "@elysiajs/openapi";
 import type { Config } from "./config.ts";
@@ -222,73 +224,12 @@ export function createServer(config: Config) {
     // ── Versioned API surface ───────────────────────────────────────────
     // Every plugin route is declared without the `/api/...` prefix; the
     // group below adds `/api/v1`. Future v2 lives in a sibling group.
-    .group("/api/v1", (app) => app.use(makeRecordsPlugin(config.jwtSecret)))
+    // Admin SPA + auth HTML pages — the remaining non-`/api` surface. Records,
+    // health, and the realtime SSE routes are now native Hono (registered on
+    // the root `app` below); everything under `/api/v1` that's still here has
+    // been migrated out.
     .use(makeAdminPlugin())
-    .use(makeAuthPagesPlugin())
-    // Exemplar of the OpenAPI annotation pattern: a `detail` tag/summary plus
-    // a `response` schema turns an auto-discovered path into a fully-typed
-    // spec entry. Most routes still need this treatment (tracked follow-up).
-    .get("/api/health", () => ({ data: { status: "ok", version: VAULTBASE_VERSION } }), {
-      detail: { tags: ["Meta"], summary: "Liveness probe + server version" },
-      response: t.Object({
-        data: t.Object({ status: t.String(), version: t.String() }),
-      }),
-    })
-    // Cluster health probe — admin proxies / load-balancers hit this. Worker
-    // id (if running under cluster mode) helps debug which worker answered.
-    .get("/_/health", () => ({
-      data: {
-        status: "ok",
-        worker_id: process.env.VAULTBASE_WORKER_ID ?? null,
-        pid: process.pid,
-        uptime_s: Math.floor(process.uptime()),
-      },
-    }))
-    // SSE fallback for clients that can't open WebSockets. Pairs with
-    // `POST /api/v1/realtime` for setting subscriptions.
-    .get("/api/v1/realtime", ({ request, set }) => {
-      const origin = request.headers.get("origin");
-      // Present Origin must be allowlisted (blocks cross-site browsers);
-      // absent Origin (non-browser EventSource clients) is allowed.
-      if (!isOriginAllowed(origin)) {
-        set.status = 403;
-        return { error: "Origin not allowed", code: 403 };
-      }
-      const { response } = openSSEStream();
-      set.headers["content-type"] = "text/event-stream; charset=utf-8";
-      return response;
-    })
-    .post(
-      "/api/v1/realtime",
-      async ({ body, set }) => {
-        const adapter = getSSEClient(body.clientId);
-        if (!adapter) {
-          set.status = 404;
-          return { error: "Unknown clientId — open GET /api/v1/realtime first", code: 404 };
-        }
-        // Optional fresh auth (parallel to WS `{type:"auth"}`).
-        if (body.token) {
-          const auth = await verifyTokenForWS(body.token, config.jwtSecret);
-          setWSAuth(adapter, auth);
-        }
-        const topics = body.topics ?? body.subscriptions ?? body.collections ?? [];
-        setSSESubscriptions(body.clientId, topics);
-        return { data: { clientId: body.clientId, topics } };
-      },
-      {
-        body: t.Object({
-          clientId: t.String(),
-          topics: t.Optional(t.Array(t.String())),
-          subscriptions: t.Optional(t.Array(t.String())), // PB-compat alias
-          collections: t.Optional(t.Array(t.String())), // legacy alias
-          token: t.Optional(t.String()),
-        }),
-      },
-    )
-    .delete("/api/v1/realtime/:clientId", ({ params }) => {
-      unregisterSSEClient(params.clientId);
-      return { data: null };
-    });
+    .use(makeAuthPagesPlugin());
 
   // ── Hono root ──────────────────────────────────────────────────────────
   // Hono owns Bun.serve + the WebSocket; every HTTP request it doesn't have a
@@ -392,6 +333,77 @@ export function createServer(config: Config) {
   migrated.route("/api/v1", makeAuthPlugin(config.jwtSecret));
   migrated.route("/api/v1", makeLogsPlugin(config.jwtSecret));
   migrated.route("/api/v1", makeAuditLogPlugin(config.jwtSecret));
+  // ── Health + realtime SSE (native Hono) ────────────────────────────────
+  // Registered on `migrated` (same router as records) BEFORE records so Hono's
+  // static-over-dynamic priority makes these win over records' `/:collection`
+  // catch-all. (Registering them on the root `app` instead fails: `app.route`
+  // creates a separate router boundary and records shadows them.)
+  migrated.get("/api/health", (c) =>
+    c.json({ data: { status: "ok", version: VAULTBASE_VERSION } }),
+  );
+  // Cluster health probe — admin proxies / load-balancers hit this. Worker id
+  // (if running under cluster mode) helps debug which worker answered.
+  migrated.get("/_/health", (c) =>
+    c.json({
+      data: {
+        status: "ok",
+        worker_id: process.env.VAULTBASE_WORKER_ID ?? null,
+        pid: process.pid,
+        uptime_s: Math.floor(process.uptime()),
+      },
+    }),
+  );
+  // SSE fallback for clients that can't open WebSockets. Pairs with
+  // `POST /api/v1/realtime` for setting subscriptions.
+  migrated.get("/api/v1/realtime", (c) => {
+    const origin = c.req.header("origin") ?? null;
+    // Present Origin must be allowlisted (blocks cross-site browsers); absent
+    // Origin (non-browser EventSource clients) is allowed.
+    if (!isOriginAllowed(origin)) {
+      return c.json({ error: "Origin not allowed", code: 403 }, 403);
+    }
+    const { response } = openSSEStream();
+    response.headers.set("content-type", "text/event-stream; charset=utf-8");
+    return response;
+  });
+  migrated.post(
+    "/api/v1/realtime",
+    jsonBody(
+      t.Object({
+        clientId: t.String(),
+        topics: t.Optional(t.Array(t.String())),
+        subscriptions: t.Optional(t.Array(t.String())), // PB-compat alias
+        collections: t.Optional(t.Array(t.String())), // legacy alias
+        token: t.Optional(t.String()),
+      }),
+    ),
+    async (c) => {
+      const body = c.req.valid("json");
+      const adapter = getSSEClient(body.clientId);
+      if (!adapter) {
+        return c.json(
+          { error: "Unknown clientId — open GET /api/v1/realtime first", code: 404 },
+          404,
+        );
+      }
+      // Optional fresh auth (parallel to WS `{type:"auth"}`).
+      if (body.token) {
+        const auth = await verifyTokenForWS(body.token, config.jwtSecret);
+        setWSAuth(adapter, auth);
+      }
+      const topics = body.topics ?? body.subscriptions ?? body.collections ?? [];
+      setSSESubscriptions(body.clientId, topics);
+      return c.json({ data: { clientId: body.clientId, topics } });
+    },
+  );
+  migrated.delete("/api/v1/realtime/:clientId", (c) => {
+    unregisterSSEClient(c.req.param("clientId"));
+    return c.json({ data: null });
+  });
+  // Records LAST: its greedy `/:collection` + `/:collection/:id` catch-alls
+  // must not shadow any static route. Hono prioritises static routes over
+  // params, so the sibling plugins/routes above win.
+  migrated.route("/api/v1", makeRecordsPlugin(config.jwtSecret));
   app.route("/", migrated);
 
   // The realtime manager keys subscriptions by `ws.data.connId` on a `WSLike

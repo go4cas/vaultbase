@@ -25,7 +25,7 @@ describe("ETag emission", () => {
     await withCollection();
     const r = await createRecord("posts", { title: "x" }, null);
     const app = makeRecordsPlugin(SECRET);
-    const res = await app.handle(new Request(`http://localhost/posts/${r.id}`));
+    const res = await app.request(new Request(`http://localhost/posts/${r.id}`));
     expect(res.status).toBe(200);
     const etag = res.headers.get("etag");
     expect(etag).toMatch(/^W\/"\d+"$/);
@@ -39,7 +39,7 @@ describe("ETag emission", () => {
     const app = makeRecordsPlugin(SECRET);
     // Wait so updated_at advances (1-sec resolution).
     await new Promise((res) => setTimeout(res, 1100));
-    const res = await app.handle(
+    const res = await app.request(
       new Request(`http://localhost/posts/${r.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -58,7 +58,7 @@ describe("If-Match precondition", () => {
     const r = await createRecord("posts", { title: "v1" }, null);
     const u = (await getRecord("posts", r.id))!.updated;
     const app = makeRecordsPlugin(SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       new Request(`http://localhost/posts/${r.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", "If-Match": `W/"${u}"` },
@@ -72,7 +72,7 @@ describe("If-Match precondition", () => {
     await withCollection();
     const r = await createRecord("posts", { title: "v1" }, null);
     const app = makeRecordsPlugin(SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       new Request(`http://localhost/posts/${r.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", "If-Match": `W/"99999999"` },
@@ -87,7 +87,7 @@ describe("If-Match precondition", () => {
     await withCollection();
     const r = await createRecord("posts", { title: "v1" }, null);
     const app = makeRecordsPlugin(SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       new Request(`http://localhost/posts/${r.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", "If-Match": "*" },
@@ -101,7 +101,7 @@ describe("If-Match precondition", () => {
     await withCollection();
     const r = await createRecord("posts", { title: "v1" }, null);
     const app = makeRecordsPlugin(SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       new Request(`http://localhost/posts/${r.id}`, {
         method: "DELETE",
         headers: { "If-Match": `W/"42"` },
@@ -115,7 +115,7 @@ describe("If-Match precondition", () => {
     const r = await createRecord("posts", { title: "v1" }, null);
     const u = (await getRecord("posts", r.id))!.updated;
     const app = makeRecordsPlugin(SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       new Request(`http://localhost/posts/${r.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", "If-Match": `"${u}"` },
@@ -132,7 +132,7 @@ describe("If-None-Match (cheap conditional GET)", () => {
     const r = await createRecord("posts", { title: "v1" }, null);
     const u = (await getRecord("posts", r.id))!.updated;
     const app = makeRecordsPlugin(SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       new Request(`http://localhost/posts/${r.id}`, {
         headers: { "If-None-Match": `W/"${u}"` },
       }),
@@ -144,7 +144,7 @@ describe("If-None-Match (cheap conditional GET)", () => {
     await withCollection();
     const r = await createRecord("posts", { title: "v1" }, null);
     const app = makeRecordsPlugin(SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       new Request(`http://localhost/posts/${r.id}`, {
         headers: { "If-None-Match": `W/"0"` },
       }),

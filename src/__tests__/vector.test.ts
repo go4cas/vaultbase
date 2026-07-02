@@ -167,7 +167,7 @@ describe("nearVector list-API endpoint", () => {
     url.searchParams.set("nearVector", "[1,0,0,0]");
     url.searchParams.set("nearVectorField", "embedding");
     url.searchParams.set("nearLimit", "3");
-    const res = await app.handle(new Request(url.href));
+    const res = await app.request(new Request(url.href));
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { title: string; _score: number }[] };
     expect(body.data).toHaveLength(3);
@@ -184,7 +184,7 @@ describe("nearVector list-API endpoint", () => {
     const url = new URL("http://localhost/docs");
     url.searchParams.set("nearVector", "[1,0,0,0]");
     url.searchParams.set("nearVectorField", "title");
-    const res = await app.handle(new Request(url.href));
+    const res = await app.request(new Request(url.href));
     expect(res.status).toBe(422);
   });
 
@@ -194,7 +194,7 @@ describe("nearVector list-API endpoint", () => {
     const url = new URL("http://localhost/docs");
     url.searchParams.set("nearVector", "[1,0,0]"); // 3 elements, field is 4-dim
     url.searchParams.set("nearVectorField", "embedding");
-    const res = await app.handle(new Request(url.href));
+    const res = await app.request(new Request(url.href));
     expect(res.status).toBe(422);
   });
 
@@ -205,7 +205,7 @@ describe("nearVector list-API endpoint", () => {
     url.searchParams.set("nearVector", "[1,0,0,0]");
     url.searchParams.set("nearVectorField", "embedding");
     url.searchParams.set("nearMinScore", "0.5");
-    const res = await app.handle(new Request(url.href));
+    const res = await app.request(new Request(url.href));
     const body = (await res.json()) as { data: { title: string }[] };
     // Only axis-x (1.0) and near-x (~0.994) should pass minScore=0.5
     expect(body.data.map((d) => d.title).sort()).toEqual(["axis-x", "near-x"]);
