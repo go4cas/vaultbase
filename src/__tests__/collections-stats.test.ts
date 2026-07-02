@@ -4,7 +4,7 @@
  * recentWrites, and the COUNT_CAP saturation flag.
  */
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
-import Elysia from "elysia";
+import { Hono } from "hono";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -40,10 +40,8 @@ async function seedAdmin(): Promise<string> {
   return token;
 }
 
-function mkApp(): Elysia {
-  return new Elysia().group("/api/v1", (app) =>
-    app.use(makeCollectionsPlugin(SECRET)),
-  ) as unknown as Elysia;
+function mkApp(): Hono {
+  return new Hono().route("/api/v1", makeCollectionsPlugin(SECRET));
 }
 
 beforeEach(async () => {
@@ -65,7 +63,7 @@ afterEach(() => {
 describe("GET /admin/collections/stats", () => {
   it("requires admin auth", async () => {
     const app = mkApp();
-    const res = await app.handle(new Request("http://localhost/api/v1/admin/collections/stats"));
+    const res = await app.request(new Request("http://localhost/api/v1/admin/collections/stats"));
     expect(res.status).toBe(403);
   });
 
@@ -90,7 +88,7 @@ describe("GET /admin/collections/stats", () => {
     ).run(now, now);
 
     const app = mkApp();
-    const res = await app.handle(
+    const res = await app.request(
       new Request("http://localhost/api/v1/admin/collections/stats", {
         headers: { Authorization: `Bearer ${tok}` },
       }),
@@ -129,7 +127,7 @@ describe("GET /admin/collections/stats", () => {
       fields: JSON.stringify([]),
     });
     const app = mkApp();
-    const res = await app.handle(
+    const res = await app.request(
       new Request("http://localhost/api/v1/admin/collections/stats", {
         headers: { Authorization: `Bearer ${tok}` },
       }),
@@ -163,7 +161,7 @@ describe("GET /admin/collections/stats", () => {
       .run(now - 7200, now - 7200);
 
     const app = mkApp();
-    const res = await app.handle(
+    const res = await app.request(
       new Request("http://localhost/api/v1/admin/collections/stats", {
         headers: { Authorization: `Bearer ${tok}` },
       }),
@@ -195,7 +193,7 @@ describe("GET /admin/collections/stats", () => {
     ).run(now, now);
 
     const app = mkApp();
-    const res = await app.handle(
+    const res = await app.request(
       new Request("http://localhost/api/v1/admin/collections/stats", {
         headers: { Authorization: `Bearer ${tok}` },
       }),

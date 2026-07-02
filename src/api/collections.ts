@@ -1,4 +1,6 @@
-import Elysia, { t } from "elysia";
+import { Hono } from "hono";
+import { Type as t } from "@sinclair/typebox";
+import { jsonBody } from "./validator.ts";
 import * as jose from "jose";
 import {
   CollectionValidationError,
@@ -15,6 +17,9 @@ import {
 } from "../core/collections.ts";
 import { getRawClient } from "../db/client.ts";
 
+// Elysia's `t.Nullable(x)` → TypeBox `Union([x, Null])`.
+const nullableString = () => t.Union([t.String(), t.Null()]);
+
 function isAdmin(request: Request, jwtSecret: string): Promise<boolean> {
   const token = request.headers.get("authorization")?.replace("Bearer ", "");
   if (!token) return Promise.resolve(false);
@@ -27,34 +32,45 @@ function isAdmin(request: Request, jwtSecret: string): Promise<boolean> {
 
 export function makeCollectionsPlugin(jwtSecret: string) {
   return (
-    new Elysia({ name: "collections" })
-      .get("/collections", async () => {
+    new Hono()
+      .get("/collections", async (c) => {
         const data = await listCollections();
-        return { data };
+        return c.json({ data });
       })
-      .get("/collections/:id", async ({ params, set }) => {
-        const col = await getCollection(params.id);
+      .get("/collections/:id", async (c) => {
+        const col = await getCollection(c.req.param("id"));
         if (!col) {
-          set.status = 404;
-          return { error: "Not found", code: 404 };
+          return c.json({ error: "Not found", code: 404 }, 404);
         }
-        return { data: col };
+        return c.json({ data: col });
       })
       .post(
         "/collections",
-        async ({ body, request, set }) => {
-          if (!(await isAdmin(request, jwtSecret))) {
-            set.status = 403;
-            return { error: "Forbidden", code: 403 };
+        jsonBody(
+          t.Object({
+            name: t.String(),
+            type: t.Optional(t.String()),
+            fields: t.Optional(t.Array(t.Any())),
+            view_query: t.Optional(t.String()),
+            list_rule: t.Optional(nullableString()),
+            view_rule: t.Optional(nullableString()),
+            create_rule: t.Optional(nullableString()),
+            update_rule: t.Optional(nullableString()),
+            delete_rule: t.Optional(nullableString()),
+            history_enabled: t.Optional(t.Boolean()),
+          }),
+        ),
+        async (c) => {
+          if (!(await isAdmin(c.req.raw, jwtSecret))) {
+            return c.json({ error: "Forbidden", code: 403 }, 403);
           }
+          const body = c.req.valid("json");
           const type = body.type ?? "base";
           if (type !== "base" && type !== "auth" && type !== "view") {
-            set.status = 422;
-            return { error: "type must be 'base', 'auth', or 'view'", code: 422 };
+            return c.json({ error: "type must be 'base', 'auth', or 'view'", code: 422 }, 422);
           }
           if (type === "view" && !body.view_query) {
-            set.status = 422;
-            return { error: "view collections require a view_query", code: 422 };
+            return c.json({ error: "view collections require a view_query", code: 422 }, 422);
           }
           try {
             const init: Parameters<typeof createCollection>[0] = {
@@ -73,49 +89,48 @@ export function makeCollectionsPlugin(jwtSecret: string) {
             if (body.history_enabled !== undefined)
               init.history_enabled = body.history_enabled ? 1 : 0;
             const col = await createCollection(init);
-            return { data: col };
+            return c.json({ data: col });
           } catch (e) {
             if (e instanceof CollectionValidationError) {
-              set.status = 422;
-              return { error: e.message, code: 422, details: e.details };
+              return c.json({ error: e.message, code: 422, details: e.details }, 422);
             }
             if (e instanceof Error && /view query/i.test(e.message)) {
-              set.status = 422;
-              return { error: e.message, code: 422 };
+              return c.json({ error: e.message, code: 422 }, 422);
             }
             // SQLite UNIQUE on collection name → friendly 400 instead of crashing
             if (
               e instanceof Error &&
               /UNIQUE constraint failed.*collections\.name/i.test(e.message)
             ) {
-              set.status = 400;
-              return { error: `A collection named '${body.name}' already exists`, code: 400 };
+              return c.json(
+                { error: `A collection named '${body.name}' already exists`, code: 400 },
+                400,
+              );
             }
             throw e;
           }
         },
-        {
-          body: t.Object({
-            name: t.String(),
-            type: t.Optional(t.String()),
-            fields: t.Optional(t.Array(t.Any())),
-            view_query: t.Optional(t.String()),
-            list_rule: t.Optional(t.Nullable(t.String())),
-            view_rule: t.Optional(t.Nullable(t.String())),
-            create_rule: t.Optional(t.Nullable(t.String())),
-            update_rule: t.Optional(t.Nullable(t.String())),
-            delete_rule: t.Optional(t.Nullable(t.String())),
-            history_enabled: t.Optional(t.Boolean()),
-          }),
-        },
       )
       .patch(
         "/collections/:id",
-        async ({ params, body, request, set }) => {
-          if (!(await isAdmin(request, jwtSecret))) {
-            set.status = 403;
-            return { error: "Forbidden", code: 403 };
+        jsonBody(
+          t.Object({
+            name: t.Optional(t.String()),
+            fields: t.Optional(t.Array(t.Any())),
+            view_query: t.Optional(t.String()),
+            list_rule: t.Optional(nullableString()),
+            view_rule: t.Optional(nullableString()),
+            create_rule: t.Optional(nullableString()),
+            update_rule: t.Optional(nullableString()),
+            delete_rule: t.Optional(nullableString()),
+            history_enabled: t.Optional(t.Boolean()),
+          }),
+        ),
+        async (c) => {
+          if (!(await isAdmin(c.req.raw, jwtSecret))) {
+            return c.json({ error: "Forbidden", code: 403 }, 403);
           }
+          const body = c.req.valid("json");
           const update: Record<string, unknown> = {};
           if (body.name !== undefined) update.name = body.name;
           if (body.fields !== undefined) update.fields = JSON.stringify(body.fields);
@@ -129,100 +144,83 @@ export function makeCollectionsPlugin(jwtSecret: string) {
             update.history_enabled = body.history_enabled ? 1 : 0;
           try {
             const col = await updateCollection(
-              params.id,
+              c.req.param("id"),
               update as Parameters<typeof updateCollection>[1],
             );
-            return { data: col };
+            return c.json({ data: col });
           } catch (e) {
             if (e instanceof CollectionValidationError) {
-              set.status = 422;
-              return { error: e.message, code: 422, details: e.details };
+              return c.json({ error: e.message, code: 422, details: e.details }, 422);
             }
             if (e instanceof Error && /view query/i.test(e.message)) {
-              set.status = 422;
-              return { error: e.message, code: 422 };
+              return c.json({ error: e.message, code: 422 }, 422);
             }
             if (
               e instanceof Error &&
               /UNIQUE constraint failed.*collections\.name/i.test(e.message)
             ) {
-              set.status = 400;
-              return { error: `A collection with that name already exists`, code: 400 };
+              return c.json(
+                { error: `A collection with that name already exists`, code: 400 },
+                400,
+              );
             }
             throw e;
           }
-        },
-        {
-          body: t.Object({
-            name: t.Optional(t.String()),
-            fields: t.Optional(t.Array(t.Any())),
-            view_query: t.Optional(t.String()),
-            list_rule: t.Optional(t.Nullable(t.String())),
-            view_rule: t.Optional(t.Nullable(t.String())),
-            create_rule: t.Optional(t.Nullable(t.String())),
-            update_rule: t.Optional(t.Nullable(t.String())),
-            delete_rule: t.Optional(t.Nullable(t.String())),
-            history_enabled: t.Optional(t.Boolean()),
-          }),
         },
       )
       // Dry-run a view query: validate syntax + infer columns. Lets the admin UI
       // surface errors and refresh the field list without actually creating a view.
       .post(
         "/admin/collections/preview-view",
-        async ({ body, request, set }) => {
-          if (!(await isAdmin(request, jwtSecret))) {
-            set.status = 403;
-            return { error: "Forbidden", code: 403 };
+        jsonBody(t.Object({ view_query: t.String() })),
+        async (c) => {
+          if (!(await isAdmin(c.req.raw, jwtSecret))) {
+            return c.json({ error: "Forbidden", code: 403 }, 403);
           }
+          const body = c.req.valid("json");
           try {
             validateViewQuery(body.view_query);
             const columns = inferViewColumns(body.view_query);
             const fields = inferViewFields(body.view_query);
-            return { data: { columns, fields } };
+            return c.json({ data: { columns, fields } });
           } catch (e) {
-            set.status = 422;
-            return { error: e instanceof Error ? e.message : String(e), code: 422 };
+            return c.json({ error: e instanceof Error ? e.message : String(e), code: 422 }, 422);
           }
         },
-        { body: t.Object({ view_query: t.String() }) },
       )
       // Preview the first N rows a view query would return. Lets the admin UI
       // sanity-check a query before saving the collection — no view is created.
       .post(
         "/admin/collections/preview-view-rows",
-        async ({ body, request, set }) => {
-          if (!(await isAdmin(request, jwtSecret))) {
-            set.status = 403;
-            return { error: "Forbidden", code: 403 };
+        jsonBody(t.Object({ view_query: t.String(), limit: t.Optional(t.Number()) })),
+        async (c) => {
+          if (!(await isAdmin(c.req.raw, jwtSecret))) {
+            return c.json({ error: "Forbidden", code: 403 }, 403);
           }
+          const body = c.req.valid("json");
           try {
             const limit = typeof body.limit === "number" ? body.limit : 5;
             const result = previewViewRows(body.view_query, limit);
-            return { data: result };
+            return c.json({ data: result });
           } catch (e) {
-            set.status = 422;
-            return { error: e instanceof Error ? e.message : String(e), code: 422 };
+            return c.json({ error: e instanceof Error ? e.message : String(e), code: 422 }, 422);
           }
         },
-        { body: t.Object({ view_query: t.String(), limit: t.Optional(t.Number()) }) },
       )
-      .delete("/collections/:id", async ({ params, request, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 403;
-          return { error: "Forbidden", code: 403 };
+      .delete("/collections/:id", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Forbidden", code: 403 }, 403);
         }
-        await deleteCollection(params.id);
-        return { data: null };
+        await deleteCollection(c.req.param("id"));
+        return c.json({ data: null });
       })
 
       // Per-collection counts + activity. Backs the Collections page so the
       // "records" + "activity" cells get real values. Admin-only — exposes
       // table-level cardinality.
-      .get("/admin/collections/stats", async ({ request, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 403;
-          return { error: "Forbidden", code: 403 };
+      .get("/admin/collections/stats", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Forbidden", code: 403 }, 403);
         }
         const cols = await listCollections();
         const client = getRawClient();
@@ -232,10 +230,10 @@ export function makeCollectionsPlugin(jwtSecret: string) {
         // Hard cap on count(*) — large tables stay responsive ("50k+" in UI).
         const COUNT_CAP = 50_000;
 
-        const stats = cols.map((c) => {
+        const stats = cols.map((col) => {
           const out = {
-            name: c.name,
-            type: c.type,
+            name: col.name,
+            type: col.type,
             recordCount: null as number | null,
             recordCountCapped: false,
             lastUpdated: null as number | null,
@@ -243,8 +241,8 @@ export function makeCollectionsPlugin(jwtSecret: string) {
           };
           // View collections — counts work via the underlying SELECT but
           // skipping for now (could be huge / expensive). Activity unknowable.
-          if (c.type === "view") return out;
-          const tname = `"${userTableName(c.name).replace(/"/g, '""')}"`;
+          if (col.type === "view") return out;
+          const tname = `"${userTableName(col.name).replace(/"/g, '""')}"`;
           try {
             // Capped count: SELECT count over a LIMIT'd subquery.
             const r = client
@@ -280,11 +278,11 @@ export function makeCollectionsPlugin(jwtSecret: string) {
           return out;
         });
 
-        return {
+        return c.json({
           data: stats,
           windowSec: recentWindowSec,
           cap: COUNT_CAP,
-        };
+        });
       })
   );
 }
