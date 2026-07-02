@@ -1,7 +1,7 @@
 import { and, eq, lt } from "drizzle-orm";
 import Elysia, { t } from "elysia";
-import { existsSync, readdirSync, unlinkSync } from "fs";
-import { join, resolve, sep } from "path";
+import { existsSync, readdirSync, unlinkSync } from "node:fs";
+import { join, resolve, sep } from "node:path";
 import { getDb } from "../db/client.ts";
 import { auditLog, files, fileTokenUses } from "../db/schema.ts";
 import { getCollection, parseFields, type FieldDef } from "../core/collections.ts";
@@ -28,10 +28,7 @@ import {
   verifyAuthToken,
 } from "../core/sec.ts";
 
-async function getAuthContext(
-  request: Request,
-  jwtSecret: string
-): Promise<AuthContext | null> {
+async function getAuthContext(request: Request, jwtSecret: string): Promise<AuthContext | null> {
   const token = extractBearer(request);
   if (!token) return null;
   return await verifyAuthToken(token, jwtSecret);
@@ -60,7 +57,9 @@ function peerIpOf(server: unknown, request: Request): string | null {
   try {
     const s = server as { requestIP?: (r: Request) => { address: string } | null };
     return s?.requestIP?.(request)?.address ?? null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 /** Build the file-context object exposed to per-field rules. */
@@ -80,11 +79,11 @@ function buildFileRequestContext(
   // so the existing rule engine doesn't need a new operand kind. Rule authors
   // write `@request.headers.x_vb_ip = '1.2.3.4'`-style — but for ergonomics we
   // also expose them under conventional names.
-  headers["x_vb_ip"]            = ip;
-  headers["x_vb_file_field"]    = meta.field_name;
-  headers["x_vb_file_mime"]     = meta.mime_type;
-  headers["x_vb_file_size"]     = String(meta.size);
-  headers["x_vb_collection"]    = collectionName;
+  headers.x_vb_ip = ip;
+  headers.x_vb_file_field = meta.field_name;
+  headers.x_vb_file_mime = meta.mime_type;
+  headers.x_vb_file_size = String(meta.size);
+  headers.x_vb_collection = collectionName;
   return {
     method: request.method.toUpperCase(),
     context: "protectedFile",
@@ -106,7 +105,10 @@ interface FileTokenClaims {
  * Verify a file-audience JWT and return the relevant claims. Returns null on
  * any verify failure (signature / audience / expiry / revocation).
  */
-async function verifyFileTokenClaims(token: string, jwtSecret: string): Promise<FileTokenClaims | null> {
+async function verifyFileTokenClaims(
+  token: string,
+  jwtSecret: string,
+): Promise<FileTokenClaims | null> {
   const ctx = await verifyAuthToken(token, jwtSecret, {
     audience: "file",
     recheckPrincipal: false,
@@ -116,16 +118,19 @@ async function verifyFileTokenClaims(token: string, jwtSecret: string): Promise<
   // pull the file-specific claims that the common return shape doesn't carry.
   try {
     const mid = token.split(".")[1] ?? "";
-    const padded = mid.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(mid.length / 4) * 4, "=");
-    const json = JSON.parse(new TextDecoder().decode(
-      Uint8Array.from(atob(padded), (c) => c.charCodeAt(0))
-    )) as Record<string, unknown>;
-    const filename = typeof json["filename"] === "string" ? json["filename"] : null;
+    const padded = mid
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+      .padEnd(Math.ceil(mid.length / 4) * 4, "=");
+    const json = JSON.parse(
+      new TextDecoder().decode(Uint8Array.from(atob(padded), (c) => c.charCodeAt(0))),
+    ) as Record<string, unknown>;
+    const filename = typeof json.filename === "string" ? json.filename : null;
     if (!filename) return null;
     const out: FileTokenClaims = { filename };
-    if (typeof json["ip"]   === "string") out.ip   = json["ip"];
-    if (typeof json["uses"] === "number") out.uses = json["uses"];
-    if (typeof ctx.jti      === "string") out.jti  = ctx.jti;
+    if (typeof json.ip === "string") out.ip = json.ip;
+    if (typeof json.uses === "number") out.uses = json.uses;
+    if (typeof ctx.jti === "string") out.jti = ctx.jti;
     return out;
   } catch {
     return null;
@@ -139,11 +144,13 @@ async function verifyFileTokenClaims(token: string, jwtSecret: string): Promise<
  */
 async function claimOneTimeToken(jti: string, ip: string | null): Promise<boolean> {
   try {
-    await getDb().insert(fileTokenUses).values({
-      jti,
-      used_at: Math.floor(Date.now() / 1000),
-      ...(ip ? { ip } : {}),
-    });
+    await getDb()
+      .insert(fileTokenUses)
+      .values({
+        jti,
+        used_at: Math.floor(Date.now() / 1000),
+        ...(ip ? { ip } : {}),
+      });
     return true;
   } catch {
     return false; // primary-key conflict → replay
@@ -181,7 +188,11 @@ async function evaluateFileAccess(
 
   if (auth?.type === "admin") {
     const fields = parseFields(col.fields);
-    return { allowed: true, reason: "admin bypass", fieldDef: fields.find((f) => f.name === fieldName) ?? null };
+    return {
+      allowed: true,
+      reason: "admin bypass",
+      fieldDef: fields.find((f) => f.name === fieldName) ?? null,
+    };
   }
 
   const fields = parseFields(col.fields);
@@ -232,27 +243,31 @@ async function emitDownloadAudit(opts: {
 }): Promise<void> {
   try {
     const url = new URL(opts.request.url);
-    await getDb().insert(auditLog).values({
-      id: crypto.randomUUID(),
-      actor_id: opts.auth?.id ?? null,
-      actor_email: (opts.auth as { email?: string } | null)?.email ?? null,
-      method: "GET",
-      path: url.pathname,
-      action: "files.download",
-      target: opts.filename,
-      status: 200,
-      ip: opts.ip,
-      summary: JSON.stringify({
-        collection: opts.collection,
-        record: opts.recordId,
-        field: opts.field,
-        mime: opts.mime,
-        size: opts.size,
-        via: opts.via,
-      }).slice(0, 1024),
-      at: Math.floor(Date.now() / 1000),
-    });
-  } catch { /* audit must never break a download */ }
+    await getDb()
+      .insert(auditLog)
+      .values({
+        id: crypto.randomUUID(),
+        actor_id: opts.auth?.id ?? null,
+        actor_email: (opts.auth as { email?: string } | null)?.email ?? null,
+        method: "GET",
+        path: url.pathname,
+        action: "files.download",
+        target: opts.filename,
+        status: 200,
+        ip: opts.ip,
+        summary: JSON.stringify({
+          collection: opts.collection,
+          record: opts.recordId,
+          field: opts.field,
+          mime: opts.mime,
+          size: opts.size,
+          via: opts.via,
+        }).slice(0, 1024),
+        at: Math.floor(Date.now() / 1000),
+      });
+  } catch {
+    /* audit must never break a download */
+  }
 }
 
 function mimeAllowed(mime: string, patterns: string[]): boolean {
@@ -268,6 +283,7 @@ function mimeAllowed(mime: string, patterns: string[]): boolean {
 }
 
 /** Resolve `key` against `uploadDir` and assert it does not escape the dir. */
+// biome-ignore lint/correctness/noUnusedVariables: retained path-safety helper for future storage callers
 function safeJoin(uploadDir: string, key: string): string | null {
   if (!isValidStorageFilename(key)) return null;
   const root = resolve(uploadDir);
@@ -289,7 +305,10 @@ export function makeFilesPlugin(uploadDir: string, jwtSecret: string) {
   return new Elysia({ name: "files" })
     .post("/files/:collection/:recordId/:field", async ({ params, request, set }) => {
       const auth = await getAuthContext(request, jwtSecret);
-      if (!auth) { set.status = 401; return { error: "Unauthorized", code: 401 }; }
+      if (!auth) {
+        set.status = 401;
+        return { error: "Unauthorized", code: 401 };
+      }
 
       const col = await getCollection(params.collection);
       if (!col) {
@@ -302,15 +321,23 @@ export function makeFilesPlugin(uploadDir: string, jwtSecret: string) {
       const existing = await getRecord(params.collection, params.recordId);
       if (auth.type !== "admin") {
         const rule = existing ? col.update_rule : col.create_rule;
-        if (rule === "") { set.status = 403; return { error: "Forbidden", code: 403 }; }
+        if (rule === "") {
+          set.status = 403;
+          return { error: "Forbidden", code: 403 };
+        }
         if (rule !== null) {
           const ok = evaluateRule(rule, auth, (existing ?? {}) as Record<string, unknown>);
-          if (!ok) { set.status = 403; return { error: "Forbidden", code: 403 }; }
+          if (!ok) {
+            set.status = 403;
+            return { error: "Forbidden", code: 403 };
+          }
         }
       }
 
       const formData = await request.formData();
-      const fileEntries = (formData.getAll("file") as unknown[]).filter((v): v is File => v instanceof File);
+      const fileEntries = (formData.getAll("file") as unknown[]).filter(
+        (v): v is File => v instanceof File,
+      );
       if (fileEntries.length === 0) {
         set.status = 400;
         return { error: "No file uploaded", code: 400 };
@@ -328,13 +355,16 @@ export function makeFilesPlugin(uploadDir: string, jwtSecret: string) {
       }
 
       const opts = fieldDef.options ?? {};
-      const multiple = !!opts["multiple"];
-      const maxSize = typeof opts["maxSize"] === "number" ? opts["maxSize"] : 0;
-      const mimeTypes = Array.isArray(opts["mimeTypes"]) ? (opts["mimeTypes"] as string[]) : [];
+      const multiple = !!opts.multiple;
+      const maxSize = typeof opts.maxSize === "number" ? opts.maxSize : 0;
+      const mimeTypes = Array.isArray(opts.mimeTypes) ? (opts.mimeTypes as string[]) : [];
 
       if (!multiple && fileEntries.length > 1) {
         set.status = 400;
-        return { error: `Field '${params.field}' is single-file; multiple uploads not allowed`, code: 400 };
+        return {
+          error: `Field '${params.field}' is single-file; multiple uploads not allowed`,
+          code: 400,
+        };
       }
 
       // Validate every file before writing any. Reject anything outside the
@@ -365,7 +395,13 @@ export function makeFilesPlugin(uploadDir: string, jwtSecret: string) {
 
       const db = getDb();
       const now = Math.floor(Date.now() / 1000);
-      const uploaded: Array<{ id: string; filename: string; originalName: string; size: number; mimeType: string }> = [];
+      const uploaded: Array<{
+        id: string;
+        filename: string;
+        originalName: string;
+        size: number;
+        mimeType: string;
+      }> = [];
       for (const file of fileEntries) {
         const ext = safeExt(file.name);
         const id = crypto.randomUUID();
@@ -383,7 +419,13 @@ export function makeFilesPlugin(uploadDir: string, jwtSecret: string) {
           size: file.size,
           created_at: now,
         });
-        uploaded.push({ id, filename, originalName: file.name, size: file.size, mimeType: fileMime });
+        uploaded.push({
+          id,
+          filename,
+          originalName: file.name,
+          size: file.size,
+          mimeType: fileMime,
+        });
       }
 
       if (!multiple) return { data: uploaded[0] };
@@ -393,44 +435,66 @@ export function makeFilesPlugin(uploadDir: string, jwtSecret: string) {
       "/files/:collection/:recordId/:field/:filename/token",
       async ({ params, request, server, set }) => {
         if (!isValidStorageFilename(params.filename)) {
-          set.status = 400; return { error: "Invalid filename", code: 400 };
+          set.status = 400;
+          return { error: "Invalid filename", code: 400 };
         }
         const auth = await getAuthContext(request, jwtSecret);
 
         const col = await getCollection(params.collection);
-        if (!col) { set.status = 404; return { error: "Collection not found", code: 404 }; }
+        if (!col) {
+          set.status = 404;
+          return { error: "Collection not found", code: 404 };
+        }
         const fields = parseFields(col.fields);
         const fieldDef = fields.find((f) => f.name === params.field);
-        if (!fieldDef || fieldDef.type !== "file") {
-          set.status = 404; return { error: "File field not found", code: 404 };
+        if (fieldDef?.type !== "file") {
+          set.status = 404;
+          return { error: "File field not found", code: 404 };
         }
         const record = await getRecord(params.collection, params.recordId);
-        if (!record) { set.status = 404; return { error: "Record not found", code: 404 }; }
+        if (!record) {
+          set.status = 404;
+          return { error: "Record not found", code: 404 };
+        }
 
         const db = getDb();
-        const fileRows = await db.select().from(files).where(
-          and(
-            eq(files.collection_id, col.id),
-            eq(files.record_id, params.recordId),
-            eq(files.field_name, params.field),
-            eq(files.filename, params.filename)
+        const fileRows = await db
+          .select()
+          .from(files)
+          .where(
+            and(
+              eq(files.collection_id, col.id),
+              eq(files.record_id, params.recordId),
+              eq(files.field_name, params.field),
+              eq(files.filename, params.filename),
+            ),
           )
-        ).limit(1);
+          .limit(1);
         const meta = fileRows[0];
         if (!meta) {
-          set.status = 404; return { error: "File not found", code: 404 };
+          set.status = 404;
+          return { error: "File not found", code: 404 };
         }
 
         const peerIp = peerIpOf(server, request);
         const ip = trustedClientIp(request, peerIp);
         const reqCtx = buildFileRequestContext(request, ip, meta, col.name);
-        const decision = await evaluateFileAccess(col.id, params.recordId, params.field, auth, reqCtx);
-        if (!decision.allowed) { set.status = 403; return { error: "Forbidden", code: 403 }; }
+        const decision = await evaluateFileAccess(
+          col.id,
+          params.recordId,
+          params.field,
+          auth,
+          reqCtx,
+        );
+        if (!decision.allowed) {
+          set.status = 403;
+          return { error: "Forbidden", code: 403 };
+        }
 
         const opts = fieldDef.options ?? {};
         const payload: Record<string, unknown> = { filename: params.filename };
-        if (opts.bindTokenIp)  payload["ip"]   = ip;
-        if (opts.oneTimeToken) payload["uses"] = 1;
+        if (opts.bindTokenIp) payload.ip = ip;
+        if (opts.oneTimeToken) payload.uses = 1;
 
         const { token, exp } = await signAuthToken({
           payload,
@@ -439,166 +503,197 @@ export function makeFilesPlugin(uploadDir: string, jwtSecret: string) {
           jwtSecret,
         });
         return { data: { token, expires_at: exp } };
-      }
+      },
     )
-    .get("/files/:filename", async ({ params, query, request, server, set }) => {
-      if (!isValidStorageFilename(params.filename)) {
-        set.status = 400;
-        return { error: "Invalid filename", code: 400 };
-      }
-      if (!(await fileExists(params.filename))) {
-        set.status = 404;
-        return { error: "File not found", code: 404 };
-      }
-
-      const meta = await fileMetaOf(params.filename);
-      const peerIp = peerIpOf(server, request);
-      const clientIp = trustedClientIp(request, peerIp);
-      const auth = await getAuthContext(request, jwtSecret);
-
-      let allowed = false;
-      let via: "rule" | "token" = "rule";
-      let collectionName = "";
-      let fieldDefForAudit: FieldDef | null = null;
-
-      if (!meta) {
-        // Orphan files (no row) — admin-only.
-        allowed = auth?.type === "admin";
-      } else {
-        const col = await getCollection(meta.collection_id);
-        collectionName = col?.name ?? "";
-        if (col) {
-          const fields = parseFields(col.fields);
-          fieldDefForAudit = fields.find((f) => f.name === meta.field_name) ?? null;
+    .get(
+      "/files/:filename",
+      async ({ params, query, request, server, set }) => {
+        if (!isValidStorageFilename(params.filename)) {
+          set.status = 400;
+          return { error: "Invalid filename", code: 400 };
         }
-        const tok = query.token;
-        if (tok) {
-          // ── Token path ────────────────────────────────────────────────
-          const claims = await verifyFileTokenClaims(tok, jwtSecret);
-          if (claims && claims.filename === params.filename) {
-            // IP binding: token's ip claim must match the requesting client.
-            if (claims.ip !== undefined && claims.ip !== clientIp) {
-              set.status = 403;
-              return { error: "Token bound to a different IP", code: 403 };
-            }
-            // One-time use: insert-or-fail on the jti.
-            if (claims.uses === 1 && claims.jti) {
-              const ok = await claimOneTimeToken(claims.jti, clientIp);
-              if (!ok) {
-                set.status = 410;
-                return { error: "Token already used", code: 410 };
+        if (!(await fileExists(params.filename))) {
+          set.status = 404;
+          return { error: "File not found", code: 404 };
+        }
+
+        const meta = await fileMetaOf(params.filename);
+        const peerIp = peerIpOf(server, request);
+        const clientIp = trustedClientIp(request, peerIp);
+        const auth = await getAuthContext(request, jwtSecret);
+
+        let allowed = false;
+        let via: "rule" | "token" = "rule";
+        let collectionName = "";
+        let fieldDefForAudit: FieldDef | null = null;
+
+        if (!meta) {
+          // Orphan files (no row) — admin-only.
+          allowed = auth?.type === "admin";
+        } else {
+          const col = await getCollection(meta.collection_id);
+          collectionName = col?.name ?? "";
+          if (col) {
+            const fields = parseFields(col.fields);
+            fieldDefForAudit = fields.find((f) => f.name === meta.field_name) ?? null;
+          }
+          const tok = query.token;
+          if (tok) {
+            // ── Token path ────────────────────────────────────────────────
+            const claims = await verifyFileTokenClaims(tok, jwtSecret);
+            if (claims && claims.filename === params.filename) {
+              // IP binding: token's ip claim must match the requesting client.
+              if (claims.ip !== undefined && claims.ip !== clientIp) {
+                set.status = 403;
+                return { error: "Token bound to a different IP", code: 403 };
               }
+              // One-time use: insert-or-fail on the jti.
+              if (claims.uses === 1 && claims.jti) {
+                const ok = await claimOneTimeToken(claims.jti, clientIp);
+                if (!ok) {
+                  set.status = 410;
+                  return { error: "Token already used", code: 410 };
+                }
+              }
+              allowed = true;
+              via = "token";
             }
-            allowed = true;
-            via = "token";
+          }
+          if (!allowed) {
+            // ── Rule path ─────────────────────────────────────────────────
+            const reqCtx = buildFileRequestContext(request, clientIp, meta, collectionName);
+            const decision = await evaluateFileAccess(
+              meta.collection_id,
+              meta.record_id,
+              meta.field_name,
+              auth,
+              reqCtx,
+            );
+            if (decision.fieldDef) fieldDefForAudit = decision.fieldDef;
+            allowed = decision.allowed;
           }
         }
+
         if (!allowed) {
-          // ── Rule path ─────────────────────────────────────────────────
-          const reqCtx = buildFileRequestContext(request, clientIp, meta, collectionName);
-          const decision = await evaluateFileAccess(meta.collection_id, meta.record_id, meta.field_name, auth, reqCtx);
-          if (decision.fieldDef) fieldDefForAudit = decision.fieldDef;
-          allowed = decision.allowed;
+          // Legacy `protected: true` field with no token? 401 (the front-end
+          // knows to mint a token when it sees this code). Otherwise 403.
+          if (meta && (await isFileProtected(params.filename)) && !query.token) {
+            set.status = 401;
+            return { error: "Token required", code: 401 };
+          }
+          set.status = 403;
+          return { error: "Forbidden", code: 403 };
         }
-      }
 
-      if (!allowed) {
-        // Legacy `protected: true` field with no token? 401 (the front-end
-        // knows to mint a token when it sees this code). Otherwise 403.
-        if (meta && (await isFileProtected(params.filename)) && !query.token) {
-          set.status = 401;
-          return { error: "Token required", code: 401 };
+        if (meta && fieldDefForAudit?.options?.auditDownloads) {
+          await emitDownloadAudit({
+            request,
+            ip: clientIp,
+            auth,
+            filename: params.filename,
+            collection: collectionName,
+            recordId: meta.record_id,
+            field: meta.field_name,
+            mime: meta.mime_type,
+            size: meta.size,
+            via,
+          });
         }
-        set.status = 403;
-        return { error: "Forbidden", code: 403 };
-      }
 
-      if (meta && fieldDefForAudit?.options?.auditDownloads) {
-        await emitDownloadAudit({
-          request,
-          ip: clientIp,
-          auth,
-          filename: params.filename,
-          collection: collectionName,
-          recordId: meta.record_id,
-          field: meta.field_name,
-          mime: meta.mime_type,
-          size: meta.size,
-          via,
-        });
-      }
+        const inlineSafe = meta ? isSafeToRenderInline(meta.mime_type) : false;
+        const baseHeaders: Record<string, string> = {
+          "X-Content-Type-Options": "nosniff",
+          "Referrer-Policy": "no-referrer",
+        };
+        if (!inlineSafe) {
+          const safeName = (meta?.original_name ?? params.filename).replace(
+            /[^a-zA-Z0-9._-]/g,
+            "_",
+          );
+          baseHeaders["Content-Disposition"] = `attachment; filename="${safeName}"`;
+        }
 
-      const inlineSafe = meta ? isSafeToRenderInline(meta.mime_type) : false;
-      const baseHeaders: Record<string, string> = {
-        "X-Content-Type-Options": "nosniff",
-        "Referrer-Policy": "no-referrer",
-      };
-      if (!inlineSafe) {
-        const safeName = (meta?.original_name ?? params.filename).replace(/[^a-zA-Z0-9._-]/g, "_");
-        baseHeaders["Content-Disposition"] = `attachment; filename="${safeName}"`;
-      }
+        const spec = parseThumbSpec(query.thumb);
+        if (!spec) {
+          const r = await fileResponse(params.filename);
+          if (!r) {
+            set.status = 404;
+            return { error: "File not found", code: 404 };
+          }
+          // Layer headers on top of storage Response.
+          for (const [k, v] of Object.entries(baseHeaders)) r.headers.set(k, v);
+          return r;
+        }
 
-      const spec = parseThumbSpec(query.thumb);
-      if (!spec) {
-        const r = await fileResponse(params.filename);
-        if (!r) { set.status = 404; return { error: "File not found", code: 404 }; }
-        // Layer headers on top of storage Response.
-        for (const [k, v] of Object.entries(baseHeaders)) r.headers.set(k, v);
-        return r;
-      }
+        const cachePath = thumbCachePath(uploadDir, params.filename, spec);
+        const cached = Bun.file(cachePath);
+        if (await cached.exists()) {
+          const head = new Uint8Array(await cached.slice(0, 16).arrayBuffer());
+          const cf = detectFormat(head);
+          const headers: Record<string, string> = { ...baseHeaders };
+          if (cf) headers["Content-Type"] = thumbMime(cf);
+          return new Response(cached, { headers });
+        }
 
-      const cachePath = thumbCachePath(uploadDir, params.filename, spec);
-      const cached = Bun.file(cachePath);
-      if (await cached.exists()) {
-        const head = new Uint8Array(await cached.slice(0, 16).arrayBuffer());
-        const cf = detectFormat(head);
-        const headers: Record<string, string> = { ...baseHeaders };
-        if (cf) headers["Content-Type"] = thumbMime(cf);
-        return new Response(cached, { headers });
-      }
+        const buf = await readFile(params.filename);
+        if (!buf) {
+          set.status = 404;
+          return { error: "File not found", code: 404 };
+        }
+        const bytes = new Uint8Array(buf);
+        const format = detectFormat(bytes);
+        if (!format) {
+          const r = await fileResponse(params.filename);
+          if (!r) return new Response(null, { status: 404 });
+          for (const [k, v] of Object.entries(baseHeaders)) r.headers.set(k, v);
+          return r;
+        }
 
-      const buf = await readFile(params.filename);
-      if (!buf) { set.status = 404; return { error: "File not found", code: 404 }; }
-      const bytes = new Uint8Array(buf);
-      const format = detectFormat(bytes);
-      if (!format) {
-        const r = await fileResponse(params.filename);
-        if (!r) return new Response(null, { status: 404 });
-        for (const [k, v] of Object.entries(baseHeaders)) r.headers.set(k, v);
-        return r;
-      }
-
-      try {
-        const thumb = await generateThumbnail(bytes, spec, format as ThumbFormat);
-        await Bun.write(cachePath, thumb);
-        const outFormat = detectFormat(thumb) ?? format;
-        return new Response(thumb, {
-          headers: { ...baseHeaders, "Content-Type": thumbMime(outFormat) },
-        });
-      } catch {
-        const r = await fileResponse(params.filename);
-        if (!r) return new Response(null, { status: 404 });
-        for (const [k, v] of Object.entries(baseHeaders)) r.headers.set(k, v);
-        return r;
-      }
-    }, {
-      query: t.Object({
-        thumb: t.Optional(t.String()),
-        token: t.Optional(t.String()),
-      }),
-    })
+        try {
+          const thumb = await generateThumbnail(bytes, spec, format as ThumbFormat);
+          await Bun.write(cachePath, thumb);
+          const outFormat = detectFormat(thumb) ?? format;
+          return new Response(thumb, {
+            headers: { ...baseHeaders, "Content-Type": thumbMime(outFormat) },
+          });
+        } catch {
+          const r = await fileResponse(params.filename);
+          if (!r) return new Response(null, { status: 404 });
+          for (const [k, v] of Object.entries(baseHeaders)) r.headers.set(k, v);
+          return r;
+        }
+      },
+      {
+        query: t.Object({
+          thumb: t.Optional(t.String()),
+          token: t.Optional(t.String()),
+        }),
+      },
+    )
     .delete("/files/:collection/:recordId/:field", async ({ params, request, set }) => {
       const auth = await getAuthContext(request, jwtSecret);
-      if (!auth) { set.status = 401; return { error: "Unauthorized", code: 401 }; }
+      if (!auth) {
+        set.status = 401;
+        return { error: "Unauthorized", code: 401 };
+      }
       const col = await getCollection(params.collection);
-      if (!col) { set.status = 404; return { error: "Collection not found", code: 404 }; }
+      if (!col) {
+        set.status = 404;
+        return { error: "Collection not found", code: 404 };
+      }
       if (auth.type !== "admin") {
         const existing = await getRecord(params.collection, params.recordId);
         const rule = col.update_rule;
-        if (rule === "") { set.status = 403; return { error: "Forbidden", code: 403 }; }
+        if (rule === "") {
+          set.status = 403;
+          return { error: "Forbidden", code: 403 };
+        }
         if (rule !== null) {
           const ok = evaluateRule(rule, auth, (existing ?? {}) as Record<string, unknown>);
-          if (!ok) { set.status = 403; return { error: "Forbidden", code: 403 }; }
+          if (!ok) {
+            set.status = 403;
+            return { error: "Forbidden", code: 403 };
+          }
         }
       }
       const db = getDb();
@@ -609,10 +704,13 @@ export function makeFilesPlugin(uploadDir: string, jwtSecret: string) {
           and(
             eq(files.collection_id, col.id),
             eq(files.record_id, params.recordId),
-            eq(files.field_name, params.field)
-          )
+            eq(files.field_name, params.field),
+          ),
         );
-      if (rows.length === 0) { set.status = 404; return { error: "File not found", code: 404 }; }
+      if (rows.length === 0) {
+        set.status = 404;
+        return { error: "File not found", code: 404 };
+      }
       for (const meta of rows) {
         await deleteFile(meta.filename);
         deleteThumbsFor(uploadDir, meta.filename);
@@ -622,19 +720,32 @@ export function makeFilesPlugin(uploadDir: string, jwtSecret: string) {
     })
     .delete("/files/:collection/:recordId/:field/:filename", async ({ params, request, set }) => {
       const auth = await getAuthContext(request, jwtSecret);
-      if (!auth) { set.status = 401; return { error: "Unauthorized", code: 401 }; }
+      if (!auth) {
+        set.status = 401;
+        return { error: "Unauthorized", code: 401 };
+      }
       if (!isValidStorageFilename(params.filename)) {
-        set.status = 400; return { error: "Invalid filename", code: 400 };
+        set.status = 400;
+        return { error: "Invalid filename", code: 400 };
       }
       const col = await getCollection(params.collection);
-      if (!col) { set.status = 404; return { error: "Collection not found", code: 404 }; }
+      if (!col) {
+        set.status = 404;
+        return { error: "Collection not found", code: 404 };
+      }
       if (auth.type !== "admin") {
         const existing = await getRecord(params.collection, params.recordId);
         const rule = col.update_rule;
-        if (rule === "") { set.status = 403; return { error: "Forbidden", code: 403 }; }
+        if (rule === "") {
+          set.status = 403;
+          return { error: "Forbidden", code: 403 };
+        }
         if (rule !== null) {
           const ok = evaluateRule(rule, auth, (existing ?? {}) as Record<string, unknown>);
-          if (!ok) { set.status = 403; return { error: "Forbidden", code: 403 }; }
+          if (!ok) {
+            set.status = 403;
+            return { error: "Forbidden", code: 403 };
+          }
         }
       }
       const db = getDb();
@@ -646,19 +757,20 @@ export function makeFilesPlugin(uploadDir: string, jwtSecret: string) {
             eq(files.collection_id, col.id),
             eq(files.record_id, params.recordId),
             eq(files.field_name, params.field),
-            eq(files.filename, params.filename)
-          )
+            eq(files.filename, params.filename),
+          ),
         )
         .limit(1);
       const meta = rows[0];
-      if (!meta) { set.status = 404; return { error: "File not found", code: 404 }; }
+      if (!meta) {
+        set.status = 404;
+        return { error: "File not found", code: 404 };
+      }
       await deleteFile(meta.filename);
       deleteThumbsFor(uploadDir, meta.filename);
       await db.delete(files).where(eq(files.id, meta.id));
       return { data: null };
     });
-  // safeJoin retained for storage-layer hardening if/when it grows callers.
-  void safeJoin;
 }
 
 function deleteThumbsFor(uploadDir: string, filename: string): void {
@@ -668,8 +780,14 @@ function deleteThumbsFor(uploadDir: string, filename: string): void {
   try {
     for (const name of readdirSync(dir)) {
       if (name.startsWith(prefix)) {
-        try { unlinkSync(join(dir, name)); } catch { /* ignore */ }
+        try {
+          unlinkSync(join(dir, name));
+        } catch {
+          /* ignore */
+        }
       }
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
