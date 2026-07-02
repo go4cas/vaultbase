@@ -280,7 +280,6 @@ export function createServer(config: Config) {
         .use(makeBatchPlugin(config.jwtSecret))
         .use(makeCsvPlugin(config.jwtSecret))
         .use(makeMigrationsPlugin(config.jwtSecret))
-        .use(makeMetricsPlugin(config.jwtSecret))
         .use(makeAuditLogPlugin(config.jwtSecret))
         .use(makeApiTokensPlugin(config.jwtSecret))
         .use(makeMcpPlugin(config.jwtSecret))
@@ -381,6 +380,7 @@ export function createServer(config: Config) {
     }
   });
   migrated.route("/api/v1", makeThemePlugin());
+  migrated.route("/api/v1", makeMetricsPlugin(config.jwtSecret));
   app.route("/", migrated);
 
   // The realtime manager keys subscriptions by `ws.data.connId` on a `WSLike

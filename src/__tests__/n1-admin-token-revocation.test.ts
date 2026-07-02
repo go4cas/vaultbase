@@ -64,7 +64,7 @@ describe("N-1: admin endpoints honour token revocation", () => {
   it("accepts a fresh admin token", async () => {
     const token = await signAdmin();
     const app = makeMetricsPlugin(SECRET);
-    const res = await app.handle(metricsReq(token));
+    const res = await app.request(metricsReq(token));
     expect(res.status).toBe(200);
   });
 
@@ -79,7 +79,7 @@ describe("N-1: admin endpoints honour token revocation", () => {
         expires_at: Math.floor(Date.now() / 1000) + 3600,
       });
     const app = makeMetricsPlugin(SECRET);
-    const res = await app.handle(metricsReq(token));
+    const res = await app.request(metricsReq(token));
     expect(res.status).toBe(401);
   });
 
@@ -95,7 +95,7 @@ describe("N-1: admin endpoints honour token revocation", () => {
       })
       .where(eq(adminTable.id, id));
     const app = makeMetricsPlugin(SECRET);
-    const res = await app.handle(metricsReq(token));
+    const res = await app.request(metricsReq(token));
     expect(res.status).toBe(401);
   });
 
@@ -103,7 +103,7 @@ describe("N-1: admin endpoints honour token revocation", () => {
     const token = await signAdmin({ id: "admin-3" });
     await getDb().delete(adminTable).where(eq(adminTable.id, "admin-3"));
     const app = makeMetricsPlugin(SECRET);
-    const res = await app.handle(metricsReq(token));
+    const res = await app.request(metricsReq(token));
     expect(res.status).toBe(401);
   });
 
@@ -129,7 +129,7 @@ describe("N-1: admin endpoints honour token revocation", () => {
       .setExpirationTime("1h")
       .sign(new TextEncoder().encode(SECRET));
     const app = makeMetricsPlugin(SECRET);
-    const res = await app.handle(metricsReq(token));
+    const res = await app.request(metricsReq(token));
     expect(res.status).toBe(401);
   });
 });
