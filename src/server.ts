@@ -1,5 +1,7 @@
 import Elysia, { t } from "elysia";
+import { openapi } from "@elysiajs/openapi";
 import type { Config } from "./config.ts";
+import { VAULTBASE_VERSION } from "./core/version.ts";
 import { securityHeaders, verifyAuthToken } from "./core/sec.ts";
 import { getAllSettings } from "./api/settings.ts";
 import { setLogsDir } from "./core/file-logger.ts";
@@ -163,6 +165,21 @@ export function createServer(config: Config) {
   ).unref?.();
   return (
     new Elysia()
+      // Interactive API docs + machine-readable spec at /openapi and
+      // /openapi/json. Starting point — most routes are documented by path
+      // only until they carry Elysia `t.*` body/response schemas.
+      .use(
+        openapi({
+          path: "/openapi",
+          documentation: {
+            info: {
+              title: "Vaultbase API",
+              version: VAULTBASE_VERSION,
+              description: "Self-hosted backend — REST + realtime. Spec is a work in progress.",
+            },
+          },
+        }),
+      )
       // Phase 0: register a per-request timer. WeakMap-keyed by Request, so
       // any handler / records-core call site can record steps via `timeFor`.
       .onRequest(({ request }) => {
@@ -279,9 +296,14 @@ export function createServer(config: Config) {
       )
       .use(makeAdminPlugin())
       .use(makeAuthPagesPlugin())
-      .get("/api/health", async () => {
-        const { VAULTBASE_VERSION } = await import("./core/version.ts");
-        return { data: { status: "ok", version: VAULTBASE_VERSION } };
+      // Exemplar of the OpenAPI annotation pattern: a `detail` tag/summary plus
+      // a `response` schema turns an auto-discovered path into a fully-typed
+      // spec entry. Most routes still need this treatment (tracked follow-up).
+      .get("/api/health", () => ({ data: { status: "ok", version: VAULTBASE_VERSION } }), {
+        detail: { tags: ["Meta"], summary: "Liveness probe + server version" },
+        response: t.Object({
+          data: t.Object({ status: t.String(), version: t.String() }),
+        }),
       })
       // Cluster health probe — admin proxies / load-balancers hit this. Worker
       // id (if running under cluster mode) helps debug which worker answered.
