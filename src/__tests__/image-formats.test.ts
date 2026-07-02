@@ -125,6 +125,26 @@ describe("generateThumbnail — AVIF", () => {
 
 // ── Animated GIF ──────────────────────────────────────────────────────────
 
+// GIF *encoding* is stripped from single-binary builds: `scripts/patch-imagescript.ts`
+// stubs the native `gif.encoder`, so `GIF.encode` throws. The two tests below build
+// their fixtures with the encoder, and the animated one asserts multi-frame output the
+// shipped binary can't produce (thumbnailGif falls back to first-frame PNG). Probe once
+// and skip them when the encoder is absent so `bun test` is honest & green against a
+// patched tree; an unpatched dev/CI checkout still runs the full path.
+// ponytail: skip-when-unavailable beats committing a binary GIF fixture; revisit if GIF
+// encoding ever ships (WASM GIF codec).
+async function probeGifEncoder(): Promise<boolean> {
+  try {
+    const px = new Image(1, 1);
+    px.fill(Image.rgbaToColor(0, 0, 0, 255));
+    await new GIF([Frame.from(px, 100)]).encode(95);
+    return true;
+  } catch {
+    return false;
+  }
+}
+const gifEncoderAvailable = await probeGifEncoder();
+
 async function makeAnimatedGif(): Promise<Uint8Array> {
   // Two 60x60 frames: solid red, then solid green; 100ms each.
   const f1 = new Image(60, 60);
@@ -136,7 +156,7 @@ async function makeAnimatedGif(): Promise<Uint8Array> {
 }
 
 describe("generateThumbnail — animated GIF", () => {
-  it("preserves multi-frame structure when thumbnailing an animated source", async () => {
+  it.skipIf(!gifEncoderAvailable)("preserves multi-frame structure when thumbnailing an animated source", async () => {
     const src = await makeAnimatedGif();
     expect(detectFormat(src)).toBe("gif");
 
@@ -156,7 +176,7 @@ describe("generateThumbnail — animated GIF", () => {
 // ── Static GIF — existing behavior preserved ──────────────────────────────
 
 describe("generateThumbnail — static GIF", () => {
-  it("returns non-empty bytes that respect contain dims (downgrade to PNG is fine)", async () => {
+  it.skipIf(!gifEncoderAvailable)("returns non-empty bytes that respect contain dims (downgrade to PNG is fine)", async () => {
     // Single-frame "GIF" — a plain PNG converted via a 1-frame GIF.
     const f1 = new Image(80, 40);
     f1.fill(Image.rgbaToColor(50, 50, 200, 255));
