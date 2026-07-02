@@ -1,4 +1,5 @@
 import { loadConfig } from "./config.ts";
+import { log } from "./core/log.ts";
 import { initDb, getDb } from "./db/client.ts";
 import { runMigrations } from "./db/migrate.ts";
 import { admin } from "./db/schema.ts";
@@ -431,4 +432,4 @@ async function main() {
   }
 }
 
-main().catch(console.error);
+main().catch((e) => log.error("fatal startup error", { err: e }));

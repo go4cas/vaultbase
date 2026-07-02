@@ -1,5 +1,6 @@
 import { and, eq, isNull } from "drizzle-orm";
 import Elysia, { t } from "elysia";
+import { log } from "../core/log.ts";
 import * as jose from "jose";
 import { getDb } from "../db/client.ts";
 import {
@@ -509,12 +510,11 @@ export function makeAuthPlugin(jwtSecret: string) {
                 col.id,
                 col.name,
               ).catch((e) => {
-                console.error(
-                  "[auth] reset email failed for",
-                  redactEmail(existing.email),
-                  "—",
-                  e instanceof Error ? e.message : e,
-                );
+                log.error("reset email failed", {
+                  scope: "auth",
+                  email: redactEmail(existing.email),
+                  err: e,
+                });
               });
             }
             // Return the same shape as a fresh-success path so a network observer
@@ -582,12 +582,11 @@ export function makeAuthPlugin(jwtSecret: string) {
           }
           if (isSmtpConfigured()) {
             issueAndSend("verify", { id, email }, col.id, col.name).catch((e) => {
-              console.error(
-                "[auth] verification email failed for",
-                redactEmail(email),
-                "—",
-                e instanceof Error ? e.message : e,
-              );
+              log.error("verification email failed", {
+                scope: "auth",
+                email: redactEmail(email),
+                err: e,
+              });
             });
           }
           return { data: { id, email } };
@@ -959,12 +958,11 @@ export function makeAuthPlugin(jwtSecret: string) {
             try {
               await issueAndSend("reset", { id: u.id, email: u.email }, col.id, col.name);
             } catch (e) {
-              console.error(
-                "[auth] password reset email failed for",
-                redactEmail(u.email),
-                "—",
-                e instanceof Error ? e.message : e,
-              );
+              log.error("password reset email failed", {
+                scope: "auth",
+                email: redactEmail(u.email),
+                err: e,
+              });
             }
           }
           return { data: { sent: true } };
@@ -1044,12 +1042,11 @@ export function makeAuthPlugin(jwtSecret: string) {
             try {
               await issueOtpAndSend({ id: u.id, email: u.email }, col.id, col.name);
             } catch (e) {
-              console.error(
-                "[auth] otp email failed for",
-                redactEmail(u.email),
-                "—",
-                e instanceof Error ? e.message : e,
-              );
+              log.error("otp email failed", {
+                scope: "auth",
+                email: redactEmail(u.email),
+                err: e,
+              });
             }
           }
           return { data: { sent: true } };

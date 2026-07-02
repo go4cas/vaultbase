@@ -47,6 +47,7 @@ import { startUpdateCheckScheduler } from "./core/update-check.ts";
 import { startWebhookDispatcher } from "./core/webhooks.ts";
 import { registerNotificationsWorker } from "./core/notifications.ts";
 import { RequestTimer, attachTimer, detachTimer } from "./core/perf-metrics.ts";
+import { log } from "./core/log.ts";
 import {
   setWSAuth,
   subscribe,
@@ -192,10 +193,18 @@ export function createServer(config: Config) {
         const t = detachTimer(request);
         if (t) t.finish();
       })
-      .onError(({ request }) => {
+      .onError(({ request, error, code }) => {
         // Make sure we don't leak timers on error paths.
         const t = detachTimer(request);
         if (t) t.finish();
+        // Surface unexpected failures; 404 / validation / parse are routine noise.
+        if (code === "NOT_FOUND" || code === "VALIDATION" || code === "PARSE") return;
+        log.error("request error", {
+          code,
+          method: request.method,
+          path: new URL(request.url).pathname,
+          err: error,
+        });
       })
       // Custom user routes fire before built-in route resolution so they can't
       // collide with /api/:collection or any other built-in pattern.

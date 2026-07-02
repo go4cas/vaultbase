@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import Elysia, { t } from "elysia";
+import { log } from "../core/log.ts";
 import { getDb } from "../db/client.ts";
 import { routes } from "../db/schema.ts";
 import { ROUTE_METHODS, dispatchCustomRoute, invalidateRoutesCache } from "../core/routes.ts";
@@ -47,7 +48,7 @@ export async function tryDispatchCustom(
     const body = typeof result.body === "string" ? result.body : JSON.stringify(result.body);
     return new Response(body, { status: result.status, headers });
   } catch (e) {
-    console.error("[routes] tryDispatchCustom failed:", e);
+    log.error("tryDispatchCustom failed", { scope: "routes", err: e });
     const msg = e instanceof Error ? e.message : String(e);
     return new Response(
       JSON.stringify({ error: `Custom route dispatch failed: ${msg}`, code: 500 }),

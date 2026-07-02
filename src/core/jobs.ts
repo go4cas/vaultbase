@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { CronExpressionParser } from "cron-parser";
+import { log } from "./log.ts";
 import { getDb } from "../db/client.ts";
 import { jobs } from "../db/schema.ts";
 import { ValidationError } from "./validate.ts";
@@ -57,7 +58,7 @@ function compile(row: JobRow): ((ctx: JobContext) => Promise<unknown>) | null {
     compiledCache.set(row.id, fn);
     return fn;
   } catch (e) {
-    console.error(`[jobs] Failed to compile job ${row.id}:`, e);
+    log.error("failed to compile job", { scope: "jobs", jobId: row.id, err: e });
     return null;
   }
 }

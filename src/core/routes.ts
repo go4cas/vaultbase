@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import * as jose from "jose";
+import { log } from "./log.ts";
 import { getDb } from "../db/client.ts";
 import { routes } from "../db/schema.ts";
 import { ValidationError } from "./validate.ts";
@@ -102,7 +103,7 @@ function compile(row: RouteRow): CompiledRoute | null {
       fn,
     };
   } catch (e) {
-    console.error(`[routes] Failed to compile route ${row.id}:`, e);
+    log.error("failed to compile route", { scope: "routes", routeId: row.id, err: e });
     return null;
   }
 }
@@ -220,7 +221,7 @@ export async function dispatchCustomRoute(
       body = { error: e.message, code: 422, details: e.details };
     } else {
       const msg = e instanceof Error ? e.message : String(e);
-      console.error(`[routes] route ${match.route.id} threw:`, e);
+      log.error("route threw", { scope: "routes", routeId: match.route.id, err: e });
       body = { error: msg, code: 500 };
     }
     void insertLog(

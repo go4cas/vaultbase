@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { eq, or } from "drizzle-orm";
+import { log } from "./log.ts";
 import { getDb } from "../db/client.ts";
 import { collections, type Collection, type NewCollection } from "../db/schema.ts";
 
@@ -172,9 +173,10 @@ export function parseFields(raw: string): FieldDef[] {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? (parsed as FieldDef[]) : [];
   } catch (e) {
-    console.error(
-      `[parseFields] malformed JSON in collection.fields — treating as empty: ${e instanceof Error ? e.message : String(e)}`,
-    );
+    log.warn("malformed JSON in collection.fields — treating as empty", {
+      scope: "parseFields",
+      err: e,
+    });
     return [];
   }
 }

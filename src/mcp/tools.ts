@@ -16,6 +16,7 @@
  */
 
 import type { CallToolResult, ContentBlock, ToolDefinition } from "./types.ts";
+import { log } from "../core/log.ts";
 import { hasScope } from "../core/api-tokens.ts";
 
 export interface ToolContext {
@@ -59,7 +60,7 @@ export class ToolRegistry {
   register(t: RegisteredTool): void {
     if (this.tools.has(t.definition.name)) {
       // eslint-disable-next-line no-console
-      console.warn(`[mcp] tool '${t.definition.name}' already registered — skipping the duplicate`);
+      log.warn("duplicate tool registration skipped", { scope: "mcp", tool: t.definition.name });
       return;
     }
     this.tools.set(t.definition.name, t);

@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import { getDb } from "../db/client.ts";
+import { log } from "./log.ts";
 import { jobsLog, workers } from "../db/schema.ts";
 import { ValidationError } from "./validate.ts";
 import { makeHookHelpers, type HookHelpers } from "./hooks.ts";
@@ -143,7 +144,7 @@ function compile(row: WorkerRow): CompiledWorker | null {
       fn,
     };
   } catch (e) {
-    console.error(`[queues] Failed to compile worker ${row.id}:`, e);
+    log.error("failed to compile worker", { scope: "queues", id: row.id, err: e });
     return null;
   }
 }
@@ -347,7 +348,7 @@ async function runJob(worker: CompiledWorker, job: typeof jobsLog.$inferSelect):
           error: msg,
         })
         .where(eq(jobsLog.id, job.id));
-      console.error(`[queues] Job ${job.id} dead after ${job.attempt} attempts: ${msg}`);
+      log.error("job dead", { scope: "queues", jobId: job.id, attempts: job.attempt, reason: msg });
     }
   }
 }

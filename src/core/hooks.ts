@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { and, eq } from "drizzle-orm";
+import { log } from "./log.ts";
 import { getDb } from "../db/client.ts";
 import { hooks, type Collection } from "../db/schema.ts";
 import { ValidationError } from "./validate.ts";
@@ -157,7 +158,7 @@ function compileHook(row: HookRow): CompiledHook | null {
     const fn = new AsyncFunction("ctx", row.code);
     return { id: row.id, name: row.name ?? "", fn };
   } catch (e) {
-    console.error(`[hooks] Failed to compile hook ${row.id}:`, e);
+    log.error("failed to compile hook", { scope: "hooks", hookId: row.id, err: e });
     return null;
   }
 }
@@ -246,7 +247,7 @@ export function runAfterHook(
       try {
         await h.fn({ ...ctx, helpers });
       } catch (e) {
-        console.error(`[hooks] after-hook ${h.id} threw:`, e);
+        log.error("after-hook threw", { scope: "hooks", hookId: h.id, err: e });
       }
     }
   })();
@@ -314,7 +315,7 @@ export function makeHookHelpers(ctx: HookHelperContext = {}): HookHelpers {
     fetch: globalThis.fetch.bind(globalThis),
     log(...args: unknown[]) {
       const message = args.map(formatLogArg).join(" ");
-      console.log("[hook]", message);
+      log.info(message, { scope: "hook" });
       const input: Parameters<typeof appendHookLog>[0] = { message };
       if (ctx.collection !== undefined) input.collection = ctx.collection;
       if (ctx.event !== undefined) input.event = ctx.event;
