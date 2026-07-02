@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
-import Elysia from "elysia";
+import type { MiddlewareHandler } from "hono";
+import { getConnInfo } from "hono/bun";
 import { getDb } from "../db/client.ts";
 import { trustedClientIp } from "../core/sec.ts";
 import { normalizeApiPath } from "../core/api-paths.ts";
@@ -235,37 +236,38 @@ setInterval(() => {
   }
 }, 60_000);
 
-export function makeRateLimitPlugin() {
-  return new Elysia({ name: "rate-limit" }).onBeforeHandle(
-    { as: "global" },
-    ({ request, server, set }) => {
-      const path = normalizeApiPath(new URL(request.url).pathname);
-      if (shouldSkip(path)) return;
-      const cfg = loadConfig();
-      if (!cfg.enabled || cfg.rules.length === 0) return;
+/**
+ * Root-level Hono middleware: per-IP, per-rule token-bucket rate limit.
+ * Runs before the handler; on a limit hit it short-circuits with 429 +
+ * `Retry-After` and never calls `next()`. Peer IP comes from Bun's
+ * `getConnInfo(c)` (replaces Elysia's `server.requestIP`).
+ */
+export function rateLimitMiddleware(): MiddlewareHandler {
+  return async (c, next) => {
+    const request = c.req.raw;
+    const path = normalizeApiPath(new URL(request.url).pathname);
+    if (shouldSkip(path)) return next();
+    const cfg = loadConfig();
+    if (!cfg.enabled || cfg.rules.length === 0) return next();
 
-      const hasAuth = !!request.headers.get("authorization");
-      const match = findRule(cfg.rules, path, request.method, hasAuth);
-      if (!match) return;
+    const hasAuth = !!request.headers.get("authorization");
+    const match = findRule(cfg.rules, path, request.method, hasAuth);
+    if (!match) return next();
 
-      // Bun exposes the peer IP via `server.requestIP(request)`. Elysia surfaces
-      // `server` on the handler context.
-      let peerIp: string | null = null;
-      try {
-        const s = server as unknown as { requestIP?: (r: Request) => { address: string } | null };
-        peerIp = s?.requestIP?.(request)?.address ?? null;
-      } catch {
-        /* not all runtimes expose this */
-      }
-      const ip = ipFromRequest(request, peerIp);
-      const key = `${ip}|${match.index}`;
-      if (!consumeToken(key, match.rule.max, match.rule.windowMs)) {
-        set.status = 429;
-        set.headers["Retry-After"] = String(Math.ceil(match.rule.windowMs / 1000));
-        return { error: `Rate limit exceeded (rule: ${match.rule.label})`, code: 429 };
-      }
-    },
-  );
+    let peerIp: string | null = null;
+    try {
+      peerIp = getConnInfo(c).remote.address ?? null;
+    } catch {
+      /* not all runtimes expose this */
+    }
+    const ip = ipFromRequest(request, peerIp);
+    const key = `${ip}|${match.index}`;
+    if (!consumeToken(key, match.rule.max, match.rule.windowMs)) {
+      c.header("Retry-After", String(Math.ceil(match.rule.windowMs / 1000)));
+      return c.json({ error: `Rate limit exceeded (rule: ${match.rule.label})`, code: 429 }, 429);
+    }
+    return next();
+  };
 }
 
 // Exposed for admin UI / tests

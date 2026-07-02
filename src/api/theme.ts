@@ -7,13 +7,13 @@
  * under `theme.<var>` keys; missing = use SPA default. Saving lives behind
  * admin auth via the regular `PATCH /api/v1/admin/settings`.
  */
-import Elysia from "elysia";
+import { Hono } from "hono";
 import { getAllSettings } from "./settings.ts";
 
 const THEME_PREFIX = "theme.";
 
 export function makeThemePlugin() {
-  return new Elysia({ name: "theme" }).get("/admin/theme", () => {
+  return new Hono().get("/admin/theme", (c) => {
     const all = getAllSettings();
     const out: Record<string, string> = {};
     for (const [k, v] of Object.entries(all)) {
@@ -21,6 +21,6 @@ export function makeThemePlugin() {
       if (typeof v !== "string" || !v) continue;
       out[k.slice(THEME_PREFIX.length)] = v;
     }
-    return { data: out };
+    return c.json({ data: out });
   });
 }

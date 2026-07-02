@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import Elysia, { t } from "elysia";
+import { Hono } from "hono";
+import { Type as t } from "@sinclair/typebox";
+import { jsonBody } from "./validator.ts";
 import { getDb } from "../db/client.ts";
 import { workers } from "../db/schema.ts";
 import {
@@ -30,33 +32,41 @@ function validateQueueName(q: string): string | null {
 
 export function makeQueuesPlugin(jwtSecret: string) {
   return (
-    new Elysia({ name: "queues" })
-      // ── Workers CRUD ──────────────────────────────────────────────────────
-      .get("/admin/workers", async ({ request, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+    new Hono()
+      .get("/admin/workers", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const rows = await getDb().select().from(workers);
-        return { data: rows };
+        return c.json({ data: rows });
       })
 
       .post(
         "/admin/workers",
-        async ({ request, body, set }) => {
-          if (!(await isAdmin(request, jwtSecret))) {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
+        jsonBody(
+          t.Object({
+            name: t.Optional(t.String()),
+            queue: t.String(),
+            code: t.Optional(t.String()),
+            enabled: t.Optional(t.Boolean()),
+            concurrency: t.Optional(t.Number()),
+            retry_max: t.Optional(t.Number()),
+            retry_backoff: t.Optional(t.String()),
+            retry_delay_ms: t.Optional(t.Number()),
+          }),
+        ),
+        async (c) => {
+          if (!(await isAdmin(c.req.raw, jwtSecret))) {
+            return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
+          const body = c.req.valid("json");
           const qErr = validateQueueName(body.queue);
           if (qErr) {
-            set.status = 422;
-            return { error: qErr, code: 422 };
+            return c.json({ error: qErr, code: 422 }, 422);
           }
           const backoff = body.retry_backoff ?? "exponential";
           if (!VALID_BACKOFF.has(backoff)) {
-            set.status = 422;
-            return { error: `retry_backoff must be exponential|fixed`, code: 422 };
+            return c.json({ error: `retry_backoff must be exponential|fixed`, code: 422 }, 422);
           }
           const id = crypto.randomUUID();
           const now = Math.floor(Date.now() / 1000);
@@ -77,12 +87,16 @@ export function makeQueuesPlugin(jwtSecret: string) {
             });
           invalidateWorkerCache();
           const row = await getDb().select().from(workers).where(eq(workers.id, id)).limit(1);
-          return { data: row[0] };
+          return c.json({ data: row[0] });
         },
-        {
-          body: t.Object({
+      )
+
+      .patch(
+        "/admin/workers/:id",
+        jsonBody(
+          t.Object({
             name: t.Optional(t.String()),
-            queue: t.String(),
+            queue: t.Optional(t.String()),
             code: t.Optional(t.String()),
             enabled: t.Optional(t.Boolean()),
             concurrency: t.Optional(t.Number()),
@@ -90,23 +104,18 @@ export function makeQueuesPlugin(jwtSecret: string) {
             retry_backoff: t.Optional(t.String()),
             retry_delay_ms: t.Optional(t.Number()),
           }),
-        },
-      )
-
-      .patch(
-        "/admin/workers/:id",
-        async ({ request, params, body, set }) => {
-          if (!(await isAdmin(request, jwtSecret))) {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
+        ),
+        async (c) => {
+          if (!(await isAdmin(c.req.raw, jwtSecret))) {
+            return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
+          const body = c.req.valid("json");
           const update: Record<string, unknown> = { updated_at: Math.floor(Date.now() / 1000) };
           if (body.name !== undefined) update.name = body.name;
           if (body.queue !== undefined) {
             const qErr = validateQueueName(body.queue);
             if (qErr) {
-              set.status = 422;
-              return { error: qErr, code: 422 };
+              return c.json({ error: qErr, code: 422 }, 422);
             }
             update.queue = body.queue;
           }
@@ -116,116 +125,92 @@ export function makeQueuesPlugin(jwtSecret: string) {
           if (body.retry_max !== undefined) update.retry_max = Math.max(0, body.retry_max);
           if (body.retry_backoff !== undefined) {
             if (!VALID_BACKOFF.has(body.retry_backoff)) {
-              set.status = 422;
-              return { error: `retry_backoff must be exponential|fixed`, code: 422 };
+              return c.json({ error: `retry_backoff must be exponential|fixed`, code: 422 }, 422);
             }
             update.retry_backoff = body.retry_backoff;
           }
           if (body.retry_delay_ms !== undefined)
             update.retry_delay_ms = Math.max(50, body.retry_delay_ms);
-          await getDb().update(workers).set(update).where(eq(workers.id, params.id));
+          await getDb()
+            .update(workers)
+            .set(update)
+            .where(eq(workers.id, c.req.param("id")));
           invalidateWorkerCache();
           const row = await getDb()
             .select()
             .from(workers)
-            .where(eq(workers.id, params.id))
+            .where(eq(workers.id, c.req.param("id")))
             .limit(1);
           if (row.length === 0) {
-            set.status = 404;
-            return { error: "Worker not found", code: 404 };
+            return c.json({ error: "Worker not found", code: 404 }, 404);
           }
-          return { data: row[0] };
-        },
-        {
-          body: t.Object({
-            name: t.Optional(t.String()),
-            queue: t.Optional(t.String()),
-            code: t.Optional(t.String()),
-            enabled: t.Optional(t.Boolean()),
-            concurrency: t.Optional(t.Number()),
-            retry_max: t.Optional(t.Number()),
-            retry_backoff: t.Optional(t.String()),
-            retry_delay_ms: t.Optional(t.Number()),
-          }),
+          return c.json({ data: row[0] });
         },
       )
 
-      .delete("/admin/workers/:id", async ({ request, params, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+      .delete("/admin/workers/:id", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        await getDb().delete(workers).where(eq(workers.id, params.id));
+        await getDb()
+          .delete(workers)
+          .where(eq(workers.id, c.req.param("id")));
         invalidateWorkerCache();
-        return { data: null };
+        return c.json({ data: null });
       })
 
       // ── Jobs log + admin actions ──────────────────────────────────────────
-      .get(
-        "/admin/queues/jobs",
-        async ({ request, query, set }) => {
-          if (!(await isAdmin(request, jwtSecret))) {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
-          }
-          const opts: Parameters<typeof listJobsLog>[0] = {};
-          if (query.queue) opts.queue = query.queue;
-          if (query.status) {
-            if (!VALID_STATUS.has(query.status as JobStatus)) {
-              set.status = 422;
-              return { error: `Invalid status: ${query.status}`, code: 422 };
-            }
-            opts.status = query.status as JobStatus;
-          }
-          if (query.worker_id) opts.worker_id = query.worker_id;
-          if (query.page) opts.page = Number(query.page);
-          if (query.perPage) opts.perPage = Number(query.perPage);
-          return listJobsLog(opts);
-        },
-        {
-          query: t.Object({
-            queue: t.Optional(t.String()),
-            status: t.Optional(t.String()),
-            worker_id: t.Optional(t.String()),
-            page: t.Optional(t.String()),
-            perPage: t.Optional(t.String()),
-          }),
-        },
-      )
-
-      .post("/admin/queues/jobs/:id/retry", async ({ request, params, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+      .get("/admin/queues/jobs", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        const ok = await retryJob(params.id);
-        if (!ok) {
-          set.status = 404;
-          return { error: "Job not found or not retryable", code: 404 };
+        const opts: Parameters<typeof listJobsLog>[0] = {};
+        const queue = c.req.query("queue");
+        const status = c.req.query("status");
+        const workerId = c.req.query("worker_id");
+        const page = c.req.query("page");
+        const perPage = c.req.query("perPage");
+        if (queue) opts.queue = queue;
+        if (status) {
+          if (!VALID_STATUS.has(status as JobStatus)) {
+            return c.json({ error: `Invalid status: ${status}`, code: 422 }, 422);
+          }
+          opts.status = status as JobStatus;
         }
-        return { data: { ok: true } };
+        if (workerId) opts.worker_id = workerId;
+        if (page) opts.page = Number(page);
+        if (perPage) opts.perPage = Number(perPage);
+        return c.json(await listJobsLog(opts));
       })
 
-      .delete("/admin/queues/jobs/:id", async ({ request, params, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+      .post("/admin/queues/jobs/:id/retry", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        const ok = await discardJob(params.id);
+        const ok = await retryJob(c.req.param("id"));
         if (!ok) {
-          set.status = 404;
-          return { error: "Job not found or running", code: 404 };
+          return c.json({ error: "Job not found or not retryable", code: 404 }, 404);
         }
-        return { data: null };
+        return c.json({ data: { ok: true } });
       })
 
-      .get("/admin/queues/stats", async ({ request, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+      .delete("/admin/queues/jobs/:id", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
+        }
+        const ok = await discardJob(c.req.param("id"));
+        if (!ok) {
+          return c.json({ error: "Job not found or running", code: 404 }, 404);
+        }
+        return c.json({ data: null });
+      })
+
+      .get("/admin/queues/stats", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const data = await queueStats();
-        return { data };
+        return c.json({ data });
       })
   );
 }

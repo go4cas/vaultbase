@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import Elysia, { t } from "elysia";
+import { Hono } from "hono";
+import { Type as t } from "@sinclair/typebox";
+import { jsonBody } from "./validator.ts";
 import { log } from "../core/log.ts";
 import { getDb } from "../db/client.ts";
 import { routes } from "../db/schema.ts";
@@ -61,32 +63,38 @@ export async function tryDispatchCustom(
 }
 
 export function makeRoutesPlugin(jwtSecret: string) {
-  return new Elysia({ name: "routes" })
-    .get("/admin/routes", async ({ request, set }) => {
-      if (!(await isAdmin(request, jwtSecret))) {
-        set.status = 401;
-        return { error: "Unauthorized", code: 401 };
+  return new Hono()
+    .get("/admin/routes", async (c) => {
+      if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        return c.json({ error: "Unauthorized", code: 401 }, 401);
       }
       const rows = await getDb().select().from(routes);
-      return { data: rows };
+      return c.json({ data: rows });
     })
 
     .post(
       "/admin/routes",
-      async ({ request, body, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+      jsonBody(
+        t.Object({
+          name: t.Optional(t.String()),
+          method: t.Optional(t.String()),
+          path: t.String(),
+          code: t.Optional(t.String()),
+          enabled: t.Optional(t.Boolean()),
+        }),
+      ),
+      async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
+        const body = c.req.valid("json");
         const method = (body.method ?? "GET").toUpperCase();
         if (!ROUTE_METHODS.includes(method as (typeof ROUTE_METHODS)[number])) {
-          set.status = 422;
-          return { error: `Invalid method: ${method}`, code: 422 };
+          return c.json({ error: `Invalid method: ${method}`, code: 422 }, 422);
         }
         const pathErr = validatePath(body.path ?? "");
         if (pathErr) {
-          set.status = 422;
-          return { error: pathErr, code: 422 };
+          return c.json({ error: pathErr, code: 422 }, 422);
         }
         const id = crypto.randomUUID();
         const now = Math.floor(Date.now() / 1000);
@@ -104,26 +112,26 @@ export function makeRoutesPlugin(jwtSecret: string) {
           });
         invalidateRoutesCache();
         const row = await getDb().select().from(routes).where(eq(routes.id, id)).limit(1);
-        return { data: row[0] };
-      },
-      {
-        body: t.Object({
-          name: t.Optional(t.String()),
-          method: t.Optional(t.String()),
-          path: t.String(),
-          code: t.Optional(t.String()),
-          enabled: t.Optional(t.Boolean()),
-        }),
+        return c.json({ data: row[0] });
       },
     )
 
     .patch(
       "/admin/routes/:id",
-      async ({ request, params, body, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+      jsonBody(
+        t.Object({
+          name: t.Optional(t.String()),
+          method: t.Optional(t.String()),
+          path: t.Optional(t.String()),
+          code: t.Optional(t.String()),
+          enabled: t.Optional(t.Boolean()),
+        }),
+      ),
+      async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
+        const body = c.req.valid("json");
         const update: {
           name?: string;
           method?: string;
@@ -138,48 +146,44 @@ export function makeRoutesPlugin(jwtSecret: string) {
         if (body.method !== undefined) {
           const m = body.method.toUpperCase();
           if (!ROUTE_METHODS.includes(m as (typeof ROUTE_METHODS)[number])) {
-            set.status = 422;
-            return { error: `Invalid method: ${body.method}`, code: 422 };
+            return c.json({ error: `Invalid method: ${body.method}`, code: 422 }, 422);
           }
           update.method = m;
         }
         if (body.path !== undefined) {
           const pathErr = validatePath(body.path);
           if (pathErr) {
-            set.status = 422;
-            return { error: pathErr, code: 422 };
+            return c.json({ error: pathErr, code: 422 }, 422);
           }
           update.path = body.path;
         }
         if (body.code !== undefined) update.code = body.code;
         if (body.enabled !== undefined) update.enabled = body.enabled ? 1 : 0;
-        await getDb().update(routes).set(update).where(eq(routes.id, params.id));
+        await getDb()
+          .update(routes)
+          .set(update)
+          .where(eq(routes.id, c.req.param("id")));
         invalidateRoutesCache();
-        const row = await getDb().select().from(routes).where(eq(routes.id, params.id)).limit(1);
+        const row = await getDb()
+          .select()
+          .from(routes)
+          .where(eq(routes.id, c.req.param("id")))
+          .limit(1);
         if (row.length === 0) {
-          set.status = 404;
-          return { error: "Route not found", code: 404 };
+          return c.json({ error: "Route not found", code: 404 }, 404);
         }
-        return { data: row[0] };
-      },
-      {
-        body: t.Object({
-          name: t.Optional(t.String()),
-          method: t.Optional(t.String()),
-          path: t.Optional(t.String()),
-          code: t.Optional(t.String()),
-          enabled: t.Optional(t.Boolean()),
-        }),
+        return c.json({ data: row[0] });
       },
     )
 
-    .delete("/admin/routes/:id", async ({ request, params, set }) => {
-      if (!(await isAdmin(request, jwtSecret))) {
-        set.status = 401;
-        return { error: "Unauthorized", code: 401 };
+    .delete("/admin/routes/:id", async (c) => {
+      if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        return c.json({ error: "Unauthorized", code: 401 }, 401);
       }
-      await getDb().delete(routes).where(eq(routes.id, params.id));
+      await getDb()
+        .delete(routes)
+        .where(eq(routes.id, c.req.param("id")));
       invalidateRoutesCache();
-      return { data: null };
+      return c.json({ data: null });
     });
 }

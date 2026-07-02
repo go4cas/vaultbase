@@ -1,12 +1,12 @@
 /**
  * MCP Phase-3 — HTTP transport at /api/v1/mcp.
  *
- * Drives the Elysia plugin through `app.handle(Request)` so we exercise
+ * Drives the Elysia plugin through `app.request(Request)` so we exercise
  * the real auth path (extractBearer → verifyAuthToken → scope check),
  * dispatcher build, and JSON-RPC framing — without binding a port.
  */
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
-import Elysia from "elysia";
+import { Hono } from "hono";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -35,12 +35,8 @@ async function seedAdmin(): Promise<{ id: string; email: string }> {
   return { id, email };
 }
 
-function mkApp(): Elysia {
-  // The plugin attaches to /api/v1 but Elysia's generic type chain bloats
-  // through .group() — the cast keeps test signatures readable.
-  return new Elysia().group("/api/v1", (app) =>
-    app.use(makeMcpPlugin(SECRET)),
-  ) as unknown as Elysia;
+function mkApp() {
+  return new Hono().route("/api/v1", makeMcpPlugin(SECRET));
 }
 
 beforeEach(async () => {
@@ -55,10 +51,10 @@ afterEach(() => {
   rmSync(tmpDir, { recursive: true, force: true });
 });
 
-async function rpc(app: Elysia, body: unknown, token: string | null): Promise<Response> {
+async function rpc(app: Hono, body: unknown, token: string | null): Promise<Response> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
-  return await app.handle(
+  return await app.request(
     new Request("http://localhost/api/v1/mcp", {
       method: "POST",
       headers,

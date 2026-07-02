@@ -1,5 +1,5 @@
 import { existsSync, renameSync } from "node:fs";
-import Elysia from "elysia";
+import { Hono } from "hono";
 import { closeDb, initDb } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
 import { verifyAuthToken } from "../core/sec.ts";
@@ -16,44 +16,44 @@ const SQLITE_MAGIC = "SQLite format 3\0";
 
 export function makeBackupPlugin(jwtSecret: string, dbPath: string) {
   return (
-    new Elysia({ name: "backup" })
-      // Download SQLite snapshot
-      .get("/admin/backup", async ({ request, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+    new Hono()
+      .get("/admin/backup", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         if (!existsSync(dbPath)) {
-          set.status = 404;
-          return { error: "Database file not found", code: 404 };
+          return c.json({ error: "Database file not found", code: 404 }, 404);
         }
         const file = Bun.file(dbPath);
         const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-        set.headers["Content-Type"] = "application/octet-stream";
-        set.headers["Content-Disposition"] = `attachment; filename="vaultbase-backup-${stamp}.db"`;
-        return new Response(file);
+        return new Response(file, {
+          headers: {
+            "Content-Type": "application/octet-stream",
+            "Content-Disposition": `attachment; filename="vaultbase-backup-${stamp}.db"`,
+          },
+        });
       })
 
       // Restore from uploaded SQLite file
-      .post("/admin/restore", async ({ request, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+      .post("/admin/restore", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
 
-        const formData = await request.formData();
+        const formData = await c.req.raw.formData();
         const file = formData.get("file");
         if (!(file instanceof File)) {
-          set.status = 400;
-          return { error: "No file uploaded (expected multipart 'file' field)", code: 400 };
+          return c.json(
+            { error: "No file uploaded (expected multipart 'file' field)", code: 400 },
+            400,
+          );
         }
 
         // Magic header check
         const sliced = file.slice(0, SQLITE_MAGIC.length);
         const header = sliced instanceof Blob ? await sliced.text() : String(sliced);
         if (header !== SQLITE_MAGIC) {
-          set.status = 422;
-          return { error: "File is not a valid SQLite database", code: 422 };
+          return c.json({ error: "File is not a valid SQLite database", code: 422 }, 422);
         }
 
         // Write to a staging path next to the live DB
@@ -88,18 +88,20 @@ export function makeBackupPlugin(jwtSecret: string, dbPath: string) {
           // Re-init the original DB to keep the server alive
           initDb(`file:${dbPath}`);
           await runMigrations();
-          set.status = 500;
-          return {
-            error: `Restore failed: ${e instanceof Error ? e.message : String(e)}`,
-            code: 500,
-          };
+          return c.json(
+            {
+              error: `Restore failed: ${e instanceof Error ? e.message : String(e)}`,
+              code: 500,
+            },
+            500,
+          );
         }
 
         // Re-open and verify schema
         initDb(`file:${dbPath}`);
         await runMigrations();
 
-        return { data: { message: "Restore complete. Existing tokens are still valid." } };
+        return c.json({ data: { message: "Restore complete. Existing tokens are still valid." } });
       })
   );
 }

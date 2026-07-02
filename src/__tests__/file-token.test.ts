@@ -126,7 +126,7 @@ describe("POST /api/files/:collection/:recordId/:field/:filename/token", () => {
     });
     const adminToken = await signAdmin("a1");
     const app = makeFilesPlugin(tmpDir, SECRET);
-    const res = await app.handle(tokenReq(adminToken, "notes", rec.id, "attachment", filename));
+    const res = await app.request(tokenReq(adminToken, "notes", rec.id, "attachment", filename));
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data?: { token: string; expires_at: number } };
     expect(body.data?.token).toBeTruthy();
@@ -140,7 +140,7 @@ describe("POST /api/files/:collection/:recordId/:field/:filename/token", () => {
     });
     const userToken = await signUser("u1", "u1@test.local");
     const app = makeFilesPlugin(tmpDir, SECRET);
-    const res = await app.handle(tokenReq(userToken, "notes", rec.id, "attachment", filename));
+    const res = await app.request(tokenReq(userToken, "notes", rec.id, "attachment", filename));
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data?: { token: string } };
     expect(body.data?.token).toBeTruthy();
@@ -153,7 +153,7 @@ describe("POST /api/files/:collection/:recordId/:field/:filename/token", () => {
     });
     const userToken = await signUser("u1", "u1@test.local");
     const app = makeFilesPlugin(tmpDir, SECRET);
-    const res = await app.handle(tokenReq(userToken, "notes", rec.id, "attachment", filename));
+    const res = await app.request(tokenReq(userToken, "notes", rec.id, "attachment", filename));
     expect(res.status).toBe(403);
   });
 
@@ -163,7 +163,7 @@ describe("POST /api/files/:collection/:recordId/:field/:filename/token", () => {
       owner: "u1",
     });
     const app = makeFilesPlugin(tmpDir, SECRET);
-    const res = await app.handle(tokenReq(null, "notes", rec.id, "attachment", filename));
+    const res = await app.request(tokenReq(null, "notes", rec.id, "attachment", filename));
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data?: { token: string } };
     expect(body.data?.token).toBeTruthy();
@@ -176,14 +176,14 @@ describe("POST /api/files/:collection/:recordId/:field/:filename/token", () => {
     });
     const userToken = await signUser("u1", "u1@test.local");
     const app = makeFilesPlugin(tmpDir, SECRET);
-    const res = await app.handle(tokenReq(userToken, "notes", rec.id, "attachment", filename));
+    const res = await app.request(tokenReq(userToken, "notes", rec.id, "attachment", filename));
     expect(res.status).toBe(403);
   });
 
   it("404 when the collection does not exist", async () => {
     const adminToken = await signAdmin("a1");
     const app = makeFilesPlugin(tmpDir, SECRET);
-    const res = await app.handle(tokenReq(adminToken, "missing", "rec1", "attachment", "x.bin"));
+    const res = await app.request(tokenReq(adminToken, "missing", "rec1", "attachment", "x.bin"));
     expect(res.status).toBe(404);
   });
 
@@ -191,7 +191,7 @@ describe("POST /api/files/:collection/:recordId/:field/:filename/token", () => {
     await setupCollectionAndFile({ view_rule: null, owner: "u1" });
     const adminToken = await signAdmin("a1");
     const app = makeFilesPlugin(tmpDir, SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       tokenReq(adminToken, "notes", "no-such-record", "attachment", "x.bin"),
     );
     expect(res.status).toBe(404);
@@ -201,7 +201,7 @@ describe("POST /api/files/:collection/:recordId/:field/:filename/token", () => {
     const { rec } = await setupCollectionAndFile({ view_rule: null, owner: "u1" });
     const adminToken = await signAdmin("a1");
     const app = makeFilesPlugin(tmpDir, SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       tokenReq(adminToken, "notes", rec.id, "attachment", "ghost-filename.bin"),
     );
     expect(res.status).toBe(404);
@@ -211,7 +211,7 @@ describe("POST /api/files/:collection/:recordId/:field/:filename/token", () => {
     const { rec, filename } = await setupCollectionAndFile({ view_rule: null, owner: "u1" });
     const adminToken = await signAdmin("a1");
     const app = makeFilesPlugin(tmpDir, SECRET);
-    const res = await app.handle(tokenReq(adminToken, "notes", rec.id, "attachment", filename));
+    const res = await app.request(tokenReq(adminToken, "notes", rec.id, "attachment", filename));
     const body = (await res.json()) as { data: { token: string; expires_at: number } };
     const verified = await jose.jwtVerify(body.data.token, new TextEncoder().encode(SECRET), {
       audience: "file",

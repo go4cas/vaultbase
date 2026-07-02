@@ -359,15 +359,13 @@ describe("saved queries — CRUD", () => {
 
 // ── /admin/sql/schema introspection ─────────────────────────────────────
 
-import Elysia from "elysia";
+import { Hono } from "hono";
 import { signAuthToken } from "../core/sec.ts";
 import { makeSqlPlugin } from "../api/sql.ts";
 
 describe("/admin/sql/schema endpoint", () => {
-  function mkApp(): Elysia {
-    return new Elysia().group("/api/v1", (app) =>
-      app.use(makeSqlPlugin("test-secret-sql-schema", dbPath)),
-    ) as unknown as Elysia;
+  function mkApp(): Hono {
+    return new Hono().route("/api/v1", makeSqlPlugin("test-secret-sql-schema", dbPath));
   }
 
   async function adminToken(adminId: string, email: string): Promise<string> {
@@ -382,7 +380,7 @@ describe("/admin/sql/schema endpoint", () => {
 
   it("requires admin auth", async () => {
     const app = mkApp();
-    const res = await app.handle(new Request("http://localhost/api/v1/admin/sql/schema"));
+    const res = await app.request(new Request("http://localhost/api/v1/admin/sql/schema"));
     expect(res.status).toBe(401);
   });
 
@@ -401,7 +399,7 @@ describe("/admin/sql/schema endpoint", () => {
     getDb().run("CREATE INDEX idx_widgets_name ON _test_widgets(name)" as never);
 
     const app = mkApp();
-    const res = await app.handle(
+    const res = await app.request(
       new Request("http://localhost/api/v1/admin/sql/schema", {
         headers: { Authorization: `Bearer ${tok}` },
       }),

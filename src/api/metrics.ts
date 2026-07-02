@@ -1,4 +1,4 @@
-import Elysia from "elysia";
+import { Hono } from "hono";
 import { globalMetrics, STEPS } from "../core/perf-metrics.ts";
 import { getRawClient } from "../db/client.ts";
 import { verifyAuthToken } from "../core/sec.ts";
@@ -40,39 +40,35 @@ function sqliteSnapshot(): SqliteSnapshot | null {
 
 export function makeMetricsPlugin(jwtSecret: string) {
   return (
-    new Elysia({ name: "metrics" })
-      .get("/_/metrics", async ({ request, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+    new Hono()
+      .get("/_/metrics", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        return {
+        return c.json({
           ...globalMetrics.snapshot(),
           sqlite: sqliteSnapshot(),
-        };
+        });
       })
-      .post("/_/metrics/reset", async ({ request, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+      .post("/_/metrics/reset", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         globalMetrics.reset();
-        return { data: { reset: true } };
+        return c.json({ data: { reset: true } });
       })
       // Public Prometheus exposition. Off by default; enable via
       // `metrics.enabled` setting. Optional bearer auth via `metrics.token`.
-      .get("/metrics", ({ request, set }) => {
+      .get("/metrics", (c) => {
         if (getSetting("metrics.enabled", "0") !== "1") {
-          set.status = 404;
-          return "";
+          return c.text("", 404);
         }
         const required = getSetting("metrics.token", "");
         if (required) {
-          const got = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+          const got = (c.req.header("authorization") ?? "").replace(/^Bearer\s+/i, "");
           if (got !== required) {
-            set.status = 401;
-            set.headers["www-authenticate"] = "Bearer";
-            return "";
+            c.header("www-authenticate", "Bearer");
+            return c.text("", 401);
           }
         }
         const snap = globalMetrics.snapshot();
@@ -136,8 +132,9 @@ export function makeMetricsPlugin(jwtSecret: string) {
             ["", sql.wal_pages],
           ]);
         }
-        set.headers["content-type"] = "text/plain; version=0.0.4; charset=utf-8";
-        return `${lines.join("\n")}\n`;
+        return c.text(`${lines.join("\n")}\n`, 200, {
+          "content-type": "text/plain; version=0.0.4; charset=utf-8",
+        });
       })
   );
 }

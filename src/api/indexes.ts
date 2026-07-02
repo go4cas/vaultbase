@@ -1,5 +1,7 @@
 import type { Database } from "bun:sqlite";
-import Elysia, { t } from "elysia";
+import { Hono } from "hono";
+import { Type as t } from "@sinclair/typebox";
+import { jsonBody } from "./validator.ts";
 import { getDb } from "../db/client.ts";
 import { getCollection, parseFields, userTableName } from "../core/collections.ts";
 import { verifyAuthToken } from "../core/sec.ts";
@@ -60,54 +62,51 @@ function indexName(collectionName: string, field: string, unique: boolean): stri
 
 export function makeIndexesPlugin(jwtSecret: string) {
   return (
-    new Elysia({ name: "indexes" })
-      // List indexes for a collection
-      .get("/admin/collections/:name/indexes", async ({ request, params, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+    new Hono()
+      .get("/admin/collections/:name/indexes", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        const col = await getCollection(params.name);
+        const col = await getCollection(c.req.param("name"));
         if (!col) {
-          set.status = 404;
-          return { error: "Collection not found", code: 404 };
+          return c.json({ error: "Collection not found", code: 404 }, 404);
         }
         try {
           const indexes = listIndexes(userTableName(col.name));
-          return { data: indexes };
+          return c.json({ data: indexes });
         } catch (e) {
-          set.status = 500;
-          return { error: e instanceof Error ? e.message : String(e), code: 500 };
+          return c.json({ error: e instanceof Error ? e.message : String(e), code: 500 }, 500);
         }
       })
 
       // Create index
       .post(
         "/admin/collections/:name/indexes",
-        async ({ request, params, body, set }) => {
-          if (!(await isAdmin(request, jwtSecret))) {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
+        jsonBody(t.Object({ field: t.String(), unique: t.Optional(t.Boolean()) })),
+        async (c) => {
+          if (!(await isAdmin(c.req.raw, jwtSecret))) {
+            return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
-          const col = await getCollection(params.name);
+          const col = await getCollection(c.req.param("name"));
           if (!col) {
-            set.status = 404;
-            return { error: "Collection not found", code: 404 };
+            return c.json({ error: "Collection not found", code: 404 }, 404);
           }
 
+          const body = c.req.valid("json");
           const fields = parseFields(col.fields);
           const fieldName = body.field;
           if (!/^[a-z0-9_]+$/.test(fieldName)) {
-            set.status = 422;
-            return { error: "Field name must match [a-z0-9_]+", code: 422 };
+            return c.json({ error: "Field name must match [a-z0-9_]+", code: 422 }, 422);
           }
           const builtIn = ["id", "created_at", "updated_at"];
           const existsInSchema =
             builtIn.includes(fieldName) ||
             fields.some((f) => f.name === fieldName && !f.system && f.type !== "autodate");
           if (!existsInSchema) {
-            set.status = 422;
-            return { error: `Field '${fieldName}' not found on '${col.name}'`, code: 422 };
+            return c.json(
+              { error: `Field '${fieldName}' not found on '${col.name}'`, code: 422 },
+              422,
+            );
           }
 
           const isUnique = !!body.unique;
@@ -116,33 +115,31 @@ export function makeIndexesPlugin(jwtSecret: string) {
           const sql = `CREATE ${isUnique ? "UNIQUE " : ""}INDEX IF NOT EXISTS "${name}" ON ${tableRef} ("${fieldName}")`;
           try {
             rawClient().exec(sql);
-            return { data: { name, field: fieldName, unique: isUnique } };
+            return c.json({ data: { name, field: fieldName, unique: isUnique } });
           } catch (e) {
-            set.status = 422;
-            return { error: e instanceof Error ? e.message : String(e), code: 422 };
+            return c.json({ error: e instanceof Error ? e.message : String(e), code: 422 }, 422);
           }
         },
-        { body: t.Object({ field: t.String(), unique: t.Optional(t.Boolean()) }) },
       )
 
       // Drop index
-      .delete("/admin/collections/:name/indexes/:indexName", async ({ request, params, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+      .delete("/admin/collections/:name/indexes/:indexName", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        const idxName = params.indexName;
+        const idxName = c.req.param("indexName");
         // Sanity check: only allow our prefixes
         if (!idxName.startsWith("idx_") && !idxName.startsWith("uniq_")) {
-          set.status = 422;
-          return { error: "Refusing to drop index outside vaultbase prefix", code: 422 };
+          return c.json(
+            { error: "Refusing to drop index outside vaultbase prefix", code: 422 },
+            422,
+          );
         }
         try {
           rawClient().exec(`DROP INDEX IF EXISTS "${idxName}"`);
-          return { data: null };
+          return c.json({ data: null });
         } catch (e) {
-          set.status = 500;
-          return { error: e instanceof Error ? e.message : String(e), code: 500 };
+          return c.json({ error: e instanceof Error ? e.message : String(e), code: 500 }, 500);
         }
       })
   );

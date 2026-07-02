@@ -1,4 +1,7 @@
-import Elysia, { t } from "elysia";
+import { Hono } from "hono";
+import type { MiddlewareHandler } from "hono";
+import { Type as t } from "@sinclair/typebox";
+import { jsonBody } from "./validator.ts";
 import * as jose from "jose";
 import { timeFor } from "../core/perf-metrics.ts";
 import { verifyAuthToken } from "../core/sec.ts";
@@ -157,121 +160,102 @@ export async function extractAuth(
   }
 }
 
-export function makeLogsPlugin(jwtSecret: string) {
-  const timings = new WeakMap<Request, number>();
+/**
+ * Root-level Hono middleware: access-log every non-skipped request after the
+ * handler runs (replaces the Elysia `{as:"global"}` onAfterHandle + onError).
+ * Uses try/finally so errored requests are logged too. Best-effort — the log
+ * write is fire-and-forget so it never adds latency or breaks the response.
+ */
+export function accessLogMiddleware(jwtSecret: string): MiddlewareHandler {
   const secret = new TextEncoder().encode(jwtSecret);
+  return async (c, next) => {
+    const request = c.req.raw;
+    const start = Date.now();
+    try {
+      await next();
+    } finally {
+      const path = new URL(request.url).pathname;
+      if (!shouldSkip(path)) {
+        const ms = Date.now() - start;
+        const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+        let status = 500;
+        try {
+          status = c.res.status;
+        } catch {
+          /* no response set (threw before dispatch) — treat as 500 */
+        }
+        void (async () => {
+          const auth = await extractAuth(request, secret);
+          const rules = getRuleEvals(request);
+          clearRequestContext(request);
+          void timeFor(request, "log_write", () =>
+            insertLog(request.method, path, status, ms, ip, auth, rules),
+          );
+        })();
+      }
+    }
+  };
+}
 
-  return new Elysia({ name: "logs" })
-    .onRequest(({ request }) => {
-      timings.set(request, Date.now());
-    })
-    .onAfterHandle({ as: "global" }, async ({ request, set }) => {
-      const path = new URL(request.url).pathname;
-      if (shouldSkip(path)) return;
-      const start = timings.get(request) ?? Date.now();
-      timings.delete(request);
-      const ms = Date.now() - start;
-      const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
-      const auth = await extractAuth(request, secret);
-      const rules = getRuleEvals(request);
-      clearRequestContext(request);
-      void timeFor(request, "log_write", () =>
-        insertLog(request.method, path, Number(set.status ?? 200), ms, ip, auth, rules),
-      );
-    })
-    .onError({ as: "global" }, async ({ request, error }) => {
-      const path = new URL(request.url).pathname;
-      if (shouldSkip(path)) return;
-      const start = timings.get(request) ?? Date.now();
-      timings.delete(request);
-      const ms = Date.now() - start;
-      const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
-      const status = "status" in error ? Number((error as { status: number }).status) : 500;
-      const auth = await extractAuth(request, secret);
-      const rules = getRuleEvals(request);
-      clearRequestContext(request);
-      void timeFor(request, "log_write", () =>
-        insertLog(request.method, path, status, ms, ip, auth, rules),
-      );
-    })
-    .get(
-      "/admin/logs",
-      async ({ request, query, set }) => {
-        const token = request.headers.get("authorization")?.replace("Bearer ", "");
-        if (!token) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
-        }
-        // Centralized verifier — fixes N-1 admin-token-bypass.
-        const ctx = await verifyAuthToken(token, jwtSecret, { audience: "admin" });
-        if (!ctx) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
-        }
-        const page = Math.max(1, parseInt(query.page ?? "1", 10) || 1);
-        const perPage = Math.min(200, Math.max(1, parseInt(query.perPage ?? "50", 10) || 50));
-        const minDuration = query.minDuration ? parseInt(query.minDuration, 10) || 0 : 0;
-        const opts: ListLogsOptions = {
-          page,
-          perPage,
-          method: query.method ?? "all",
-          status: query.status ?? "all",
-          includeAdmin: query.includeAdmin === "true",
-          minDuration,
-        };
-        if (query.search) opts.search = query.search;
-        if (
-          query.ruleOutcome &&
-          ["all", "any", "allow", "deny", "filter"].includes(query.ruleOutcome)
-        ) {
-          opts.ruleOutcome = query.ruleOutcome as RuleOutcomeFilter;
-        }
-        return listLogs(opts);
-      },
-      {
-        query: t.Object({
-          page: t.Optional(t.String()),
-          perPage: t.Optional(t.String()),
-          method: t.Optional(t.String()),
-          status: t.Optional(t.String()),
-          includeAdmin: t.Optional(t.String()),
-          search: t.Optional(t.String()),
-          minDuration: t.Optional(t.String()),
-          ruleOutcome: t.Optional(t.String()),
-        }),
-      },
-    )
-    .get("/admin/logs/files", async ({ request, set }) => {
-      const token = request.headers.get("authorization")?.replace("Bearer ", "");
-      if (!token) {
-        set.status = 401;
-        return { error: "Unauthorized", code: 401 };
+async function requireAdmin(request: Request, jwtSecret: string): Promise<boolean> {
+  const token = request.headers.get("authorization")?.replace("Bearer ", "");
+  if (!token) return false;
+  // Centralized verifier — fixes N-1 admin-token-bypass.
+  return (await verifyAuthToken(token, jwtSecret, { audience: "admin" })) !== null;
+}
+
+export function makeLogsPlugin(jwtSecret: string) {
+  return new Hono()
+    .get("/admin/logs", async (c) => {
+      if (!(await requireAdmin(c.req.raw, jwtSecret))) {
+        return c.json({ error: "Unauthorized", code: 401 }, 401);
       }
-      // Centralized verifier — fixes N-1 admin-token-bypass.
-      const ctx = await verifyAuthToken(token, jwtSecret, { audience: "admin" });
-      if (!ctx) {
-        set.status = 401;
-        return { error: "Unauthorized", code: 401 };
+      const page = Math.max(1, parseInt(c.req.query("page") ?? "1", 10) || 1);
+      const perPage = Math.min(
+        200,
+        Math.max(1, parseInt(c.req.query("perPage") ?? "50", 10) || 50),
+      );
+      const minDurationRaw = c.req.query("minDuration");
+      const minDuration = minDurationRaw ? parseInt(minDurationRaw, 10) || 0 : 0;
+      const opts: ListLogsOptions = {
+        page,
+        perPage,
+        method: c.req.query("method") ?? "all",
+        status: c.req.query("status") ?? "all",
+        includeAdmin: c.req.query("includeAdmin") === "true",
+        minDuration,
+      };
+      const search = c.req.query("search");
+      if (search) opts.search = search;
+      const ruleOutcome = c.req.query("ruleOutcome");
+      if (ruleOutcome && ["all", "any", "allow", "deny", "filter"].includes(ruleOutcome)) {
+        opts.ruleOutcome = ruleOutcome as RuleOutcomeFilter;
       }
-      return { data: listLogDates() };
+      return c.json(await listLogs(opts));
+    })
+    .get("/admin/logs/files", async (c) => {
+      if (!(await requireAdmin(c.req.raw, jwtSecret))) {
+        return c.json({ error: "Unauthorized", code: 401 }, 401);
+      }
+      return c.json({ data: listLogDates() });
     })
     .post(
       "/admin/logs/search",
-      async ({ request, body, set }) => {
-        const token = request.headers.get("authorization")?.replace("Bearer ", "");
-        if (!token) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+      jsonBody(
+        t.Object({
+          jsonpath: t.String(),
+          from: t.Optional(t.String()),
+          to: t.Optional(t.String()),
+          limit: t.Optional(t.Number()),
+        }),
+      ),
+      async (c) => {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        // Centralized verifier — fixes N-1 admin-token-bypass.
-        const ctx = await verifyAuthToken(token, jwtSecret, { audience: "admin" });
-        if (!ctx) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
-        }
+        const body = c.req.valid("json");
         if (!body.jsonpath || typeof body.jsonpath !== "string") {
-          set.status = 422;
-          return { error: "jsonpath required", code: 422 };
+          return c.json({ error: "jsonpath required", code: 422 }, 422);
         }
         const opts: { from?: string; to?: string; limit?: number } = {};
         if (body.from) opts.from = body.from;
@@ -279,15 +263,7 @@ export function makeLogsPlugin(jwtSecret: string) {
         if (typeof body.limit === "number" && body.limit > 0)
           opts.limit = Math.min(5000, body.limit);
         const result = await searchLogs(body.jsonpath, opts);
-        return { data: result };
-      },
-      {
-        body: t.Object({
-          jsonpath: t.String(),
-          from: t.Optional(t.String()),
-          to: t.Optional(t.String()),
-          limit: t.Optional(t.Number()),
-        }),
+        return c.json({ data: result });
       },
     );
 }

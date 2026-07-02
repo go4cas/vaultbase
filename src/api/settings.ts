@@ -1,5 +1,7 @@
 import type { Database } from "bun:sqlite";
-import Elysia, { t } from "elysia";
+import { Hono } from "hono";
+import { Type as t } from "@sinclair/typebox";
+import { jsonBody } from "./validator.ts";
 import { getDb } from "../db/client.ts";
 import { invalidateRateLimitCache } from "./ratelimit.ts";
 import { invalidateEmailCache, sendEmail, verifySmtp } from "../core/email.ts";
@@ -149,122 +151,103 @@ async function isAdmin(request: Request, jwtSecret: string): Promise<boolean> {
 
 export function makeSettingsPlugin(jwtSecret: string) {
   return (
-    new Elysia({ name: "settings" })
-      // Read all settings
-      .get("/admin/settings", async ({ request, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+    new Hono()
+      .get("/admin/settings", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        return { data: getAllSettings() };
+        return c.json({ data: getAllSettings() });
       })
       // Update settings (partial — keys not in body are left alone)
-      .patch(
-        "/admin/settings",
-        async ({ request, body, set }) => {
-          if (!(await isAdmin(request, jwtSecret))) {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
-          }
-          // Pre-validate auth window keys before any write — reject the whole
-          // PATCH on the first invalid value rather than half-applying.
-          for (const [k, v] of Object.entries(body)) {
-            if (isAuthWindowKey(k)) {
-              const err = validateWindowSeconds(v);
-              if (err) {
-                set.status = 422;
-                return { error: `${k}: ${err}`, code: 422 };
-              }
+      .patch("/admin/settings", jsonBody(t.Record(t.String(), t.Any())), async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
+        }
+        const body = c.req.valid("json");
+        // Pre-validate auth window keys before any write — reject the whole
+        // PATCH on the first invalid value rather than half-applying.
+        for (const [k, v] of Object.entries(body)) {
+          if (isAuthWindowKey(k)) {
+            const err = validateWindowSeconds(v);
+            if (err) {
+              return c.json({ error: `${k}: ${err}`, code: 422 }, 422);
             }
           }
-          for (const [k, v] of Object.entries(body)) {
-            setSetting(k, String(v));
-          }
-          // Bust caches that depend on settings
-          invalidateRateLimitCache();
-          invalidateEmailCache();
-          // Storage driver / S3 creds may have changed — drop the cached client
-          // and the local thumb cache (different bucket means different objects)
-          invalidateStorageCache();
-          clearThumbCache();
-          invalidateEgressCache();
-          invalidateCorsCache();
-          // Re-arm the update-check scheduler if the toggle flipped.
-          if (Object.hasOwn(body, "update_check.enabled")) {
-            if (String(body["update_check.enabled"]) === "1") startUpdateCheckScheduler();
-            else stopUpdateCheckScheduler();
-          }
-          return { data: getAllSettings() };
-        },
-        { body: t.Record(t.String(), t.Any()) },
-      )
+        }
+        for (const [k, v] of Object.entries(body)) {
+          setSetting(k, String(v));
+        }
+        // Bust caches that depend on settings
+        invalidateRateLimitCache();
+        invalidateEmailCache();
+        // Storage driver / S3 creds may have changed — drop the cached client
+        // and the local thumb cache (different bucket means different objects)
+        invalidateStorageCache();
+        clearThumbCache();
+        invalidateEgressCache();
+        invalidateCorsCache();
+        // Re-arm the update-check scheduler if the toggle flipped.
+        if (Object.hasOwn(body, "update_check.enabled")) {
+          if (String(body["update_check.enabled"]) === "1") startUpdateCheckScheduler();
+          else stopUpdateCheckScheduler();
+        }
+        return c.json({ data: getAllSettings() });
+      })
       // Send test email — verifies + delivers a one-line message
-      .post(
-        "/admin/settings/smtp/test",
-        async ({ request, body, set }) => {
-          if (!(await isAdmin(request, jwtSecret))) {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
-          }
-          if (!body.to || typeof body.to !== "string") {
-            set.status = 422;
-            return { error: "`to` required", code: 422 };
-          }
-          const v = await verifySmtp();
-          if (!v.ok) {
-            set.status = 422;
-            return { error: v.error ?? "SMTP verify failed", code: 422 };
-          }
-          try {
-            const info = await sendEmail({
-              to: body.to,
-              subject: "Vaultbase SMTP test",
-              text: "If you can read this, your SMTP settings are working.",
-            });
-            return { data: { messageId: info.messageId } };
-          } catch (e) {
-            set.status = 500;
-            return { error: e instanceof Error ? e.message : String(e), code: 500 };
-          }
-        },
-        { body: t.Object({ to: t.String() }) },
-      )
+      .post("/admin/settings/smtp/test", jsonBody(t.Object({ to: t.String() })), async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
+        }
+        const body = c.req.valid("json");
+        if (!body.to || typeof body.to !== "string") {
+          return c.json({ error: "`to` required", code: 422 }, 422);
+        }
+        const v = await verifySmtp();
+        if (!v.ok) {
+          return c.json({ error: v.error ?? "SMTP verify failed", code: 422 }, 422);
+        }
+        try {
+          const info = await sendEmail({
+            to: body.to,
+            subject: "Vaultbase SMTP test",
+            text: "If you can read this, your SMTP settings are working.",
+          });
+          return c.json({ data: { messageId: info.messageId } });
+        } catch (e) {
+          return c.json({ error: e instanceof Error ? e.message : String(e), code: 500 }, 500);
+        }
+      })
       // Storage round-trip test: write probe object → read back → delete
-      .post("/admin/settings/storage/test", async ({ request, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+      .post("/admin/settings/storage/test", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const result = await testStorage();
         if (!result.ok) {
-          set.status = 500;
-          return { error: result.error ?? "Storage test failed", code: 500 };
+          return c.json({ error: result.error ?? "Storage test failed", code: 500 }, 500);
         }
-        return { data: result };
+        return c.json({ data: result });
       })
       // Storage status — what driver is in use, plus relevant identifiers
-      .get("/admin/settings/storage/status", async ({ request, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+      .get("/admin/settings/storage/status", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        return { data: getStorageStatus() };
+        return c.json({ data: getStorageStatus() });
       })
       // Update checker — current vs latest GitHub release.
-      .get("/admin/update-status", async ({ request, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+      .get("/admin/update-status", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        return { data: getUpdateStatus() };
+        return c.json({ data: getUpdateStatus() });
       })
-      .post("/admin/update-status/check", async ({ request, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+      .post("/admin/update-status/check", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         await runUpdateCheck();
-        return { data: getUpdateStatus() };
+        return c.json({ data: getUpdateStatus() });
       })
   );
 }

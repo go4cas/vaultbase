@@ -388,13 +388,18 @@ async function main() {
   const rows = await db.select().from(admin).limit(1);
   const adminExists = rows.length > 0;
 
-  const server = createServer(config);
+  const { fetch: honoFetch, websocket } = createServer(config);
   // Cluster mode: when spawned by `src/cluster.ts`, every worker calls
   // `Bun.serve({ reusePort: true })` so the kernel load-balances incoming
   // connections (SO_REUSEPORT). Single-process mode behaves exactly as
   // before — no flag, no behavior change.
   const isWorker = !!process.env.VAULTBASE_WORKER_ID;
-  server.listen({ port: config.port, ...(isWorker ? { reusePort: true } : {}) });
+  Bun.serve({
+    port: config.port,
+    fetch: honoFetch,
+    websocket,
+    ...(isWorker ? { reusePort: true } : {}),
+  });
 
   // Graceful shutdown: drain the buffered log writer so the last 50ms of
   // entries reach disk before exit. Two layers — async on signals (loop

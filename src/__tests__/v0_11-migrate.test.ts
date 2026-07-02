@@ -237,7 +237,7 @@ describe("v0.11 — /register writes to vb_<col>", () => {
     });
     const SECRET = "test-secret-v011";
     const app = makeAuthPlugin(SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       new Request("http://localhost/auth/members/register", {
         method: "POST",
         headers: { "content-type": "application/json" },

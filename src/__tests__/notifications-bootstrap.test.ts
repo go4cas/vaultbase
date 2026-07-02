@@ -134,7 +134,7 @@ describe("PATCH provider triggers bootstrap on enable", () => {
   it("creates collections on first enable", async () => {
     const token = await adminToken();
     const app = makeNotificationsPlugin(JWT_SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       new Request("http://localhost/admin/notifications/providers/onesignal", {
         method: "PATCH",
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
@@ -156,7 +156,7 @@ describe("PATCH provider triggers bootstrap on enable", () => {
     // First, enable + bootstrap.
     const token = await adminToken();
     const app = makeNotificationsPlugin(JWT_SECRET);
-    await app.handle(
+    await app.request(
       new Request("http://localhost/admin/notifications/providers/onesignal", {
         method: "PATCH",
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
@@ -164,7 +164,7 @@ describe("PATCH provider triggers bootstrap on enable", () => {
       }),
     );
     // Then disable.
-    const res = await app.handle(
+    const res = await app.request(
       new Request("http://localhost/admin/notifications/providers/onesignal", {
         method: "PATCH",
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },

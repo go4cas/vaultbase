@@ -1,5 +1,7 @@
 import { and, eq } from "drizzle-orm";
-import Elysia, { t } from "elysia";
+import { Hono } from "hono";
+import { Type as t } from "@sinclair/typebox";
+import { jsonBody } from "./validator.ts";
 import * as jose from "jose";
 import { getDb } from "../db/client.ts";
 import { authTokens, oauthLinks } from "../db/schema.ts";
@@ -49,18 +51,16 @@ function isRedirectUriAllowed(provider: string, uri: string): boolean {
 
 export function makeAuthOauth2Plugin(jwtSecret: string) {
   return (
-    new Elysia({ name: "auth-oauth2" })
-      .get("/auth/:collection/oauth2/providers", async ({ params, set }) => {
-        const col = await getCollection(params.collection);
+    new Hono()
+      .get("/auth/:collection/oauth2/providers", async (c) => {
+        const col = await getCollection(c.req.param("collection"));
         if (!col) {
-          set.status = 404;
-          return { error: "Collection not found", code: 404 };
+          return c.json({ error: "Collection not found", code: 404 }, 404);
         }
         if (col.type !== "auth") {
-          set.status = 422;
-          return { error: `'${col.name}' is not an auth collection`, code: 422 };
+          return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
         }
-        return { data: listEnabledProviders() };
+        return c.json({ data: listEnabledProviders() });
       })
       // Returns the provider's authorize URL with the caller-supplied redirect/state.
       // PKCE (RFC 7636):
@@ -70,99 +70,86 @@ export function makeAuthOauth2Plugin(jwtSecret: string) {
       //    in `vaultbase_auth_tokens` keyed by `state` (purpose="oauth2_pkce"), and
       //    bakes the derived challenge into the URL. Useful for confidential web
       //    flows where the caller can't easily keep the verifier across the redirect.
-      .get(
-        "/auth/:collection/oauth2/authorize",
-        async ({ params, query, set }) => {
-          const col = await getCollection(params.collection);
-          if (!col) {
-            set.status = 404;
-            return { error: "Collection not found", code: 404 };
+      .get("/auth/:collection/oauth2/authorize", async (c) => {
+        const col = await getCollection(c.req.param("collection"));
+        if (!col) {
+          return c.json({ error: "Collection not found", code: 404 }, 404);
+        }
+        if (col.type !== "auth") {
+          return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
+        }
+        const provider = c.req.query("provider");
+        const redirectUri = c.req.query("redirectUri");
+        if (!provider || !redirectUri) {
+          return c.json({ error: "provider and redirectUri are required", code: 422 }, 422);
+        }
+        if (!isProviderEnabled(provider)) {
+          return c.json({ error: `Provider '${provider}' is not enabled`, code: 422 }, 422);
+        }
+        if (!isRedirectUriAllowed(provider, redirectUri)) {
+          return c.json({ error: "redirectUri not in allowlist", code: 422 }, 422);
+        }
+        const state = c.req.query("state") ?? "";
+        let codeChallenge: string | undefined;
+        let serverManagedPkce = false;
+        // Twitter (and any future requiresPkce provider) needs PKCE no matter what
+        // the caller asked for. Promote use_pkce so we generate + store the verifier.
+        const forcePkce = providerRequiresPkce(provider);
+        const codeChallengeQuery = c.req.query("code_challenge");
+        const usePkce = c.req.query("use_pkce");
+        if (codeChallengeQuery) {
+          // Client-managed PKCE: trust their challenge, store nothing.
+          codeChallenge = codeChallengeQuery;
+        } else if (usePkce === "1" || usePkce === "true" || forcePkce) {
+          // Server-managed PKCE: generate verifier, store keyed by state.
+          if (!state) {
+            return c.json({ error: "state is required when use_pkce=1", code: 422 }, 422);
           }
-          if (col.type !== "auth") {
-            set.status = 422;
-            return { error: `'${col.name}' is not an auth collection`, code: 422 };
-          }
-          if (!query.provider || !query.redirectUri) {
-            set.status = 422;
-            return { error: "provider and redirectUri are required", code: 422 };
-          }
-          if (!isProviderEnabled(query.provider)) {
-            set.status = 422;
-            return { error: `Provider '${query.provider}' is not enabled`, code: 422 };
-          }
-          if (!isRedirectUriAllowed(query.provider, query.redirectUri)) {
-            set.status = 422;
-            return { error: "redirectUri not in allowlist", code: 422 };
-          }
-          const state = query.state ?? "";
-          let codeChallenge: string | undefined;
-          let serverManagedPkce = false;
-          // Twitter (and any future requiresPkce provider) needs PKCE no matter what
-          // the caller asked for. Promote use_pkce so we generate + store the verifier.
-          const forcePkce = providerRequiresPkce(query.provider);
-          if (query.code_challenge) {
-            // Client-managed PKCE: trust their challenge, store nothing.
-            codeChallenge = query.code_challenge;
-          } else if (query.use_pkce === "1" || query.use_pkce === "true" || forcePkce) {
-            // Server-managed PKCE: generate verifier, store keyed by state.
-            if (!state) {
-              set.status = 422;
-              return { error: "state is required when use_pkce=1", code: 422 };
-            }
-            const verifier = generateCodeVerifier();
-            codeChallenge = await codeChallengeFromVerifier(verifier);
-            const now = Math.floor(Date.now() / 1000);
-            try {
-              await getDb()
-                .insert(authTokens)
-                .values({
-                  id: state,
-                  user_id: "", // pre-auth flow, no user yet
-                  collection_id: col.id,
-                  purpose: "oauth2_pkce",
-                  code: verifier, // reuse the `code` column to hold the verifier
-                  expires_at: now + PKCE_TTL_SECONDS,
-                });
-            } catch (e) {
-              set.status = 422;
-              return {
+          const verifier = generateCodeVerifier();
+          codeChallenge = await codeChallengeFromVerifier(verifier);
+          const now = Math.floor(Date.now() / 1000);
+          try {
+            await getDb()
+              .insert(authTokens)
+              .values({
+                id: state,
+                user_id: "", // pre-auth flow, no user yet
+                collection_id: col.id,
+                purpose: "oauth2_pkce",
+                code: verifier, // reuse the `code` column to hold the verifier
+                expires_at: now + PKCE_TTL_SECONDS,
+              });
+          } catch (e) {
+            return c.json(
+              {
                 error: `Failed to persist PKCE state (state must be unique): ${e instanceof Error ? e.message : String(e)}`,
                 code: 422,
-              };
-            }
-            serverManagedPkce = true;
-          }
-          try {
-            const url = buildAuthorizeUrl({
-              provider: query.provider,
-              redirectUri: query.redirectUri,
-              state,
-              ...(codeChallenge ? { codeChallenge, codeChallengeMethod: "S256" as const } : {}),
-            });
-            return {
-              data: {
-                authorize_url: url,
-                ...(codeChallenge
-                  ? { code_challenge: codeChallenge, code_challenge_method: "S256" }
-                  : {}),
-                pkce: serverManagedPkce ? "server" : codeChallenge ? "client" : "none",
               },
-            };
-          } catch (e) {
-            set.status = 422;
-            return { error: e instanceof Error ? e.message : String(e), code: 422 };
+              422,
+            );
           }
-        },
-        {
-          query: t.Object({
-            provider: t.String(),
-            redirectUri: t.String(),
-            state: t.Optional(t.String()),
-            code_challenge: t.Optional(t.String()),
-            use_pkce: t.Optional(t.String()),
-          }),
-        },
-      )
+          serverManagedPkce = true;
+        }
+        try {
+          const url = buildAuthorizeUrl({
+            provider,
+            redirectUri,
+            state,
+            ...(codeChallenge ? { codeChallenge, codeChallengeMethod: "S256" as const } : {}),
+          });
+          return c.json({
+            data: {
+              authorize_url: url,
+              ...(codeChallenge
+                ? { code_challenge: codeChallenge, code_challenge_method: "S256" }
+                : {}),
+              pkce: serverManagedPkce ? "server" : codeChallenge ? "client" : "none",
+            },
+          });
+        } catch (e) {
+          return c.json({ error: e instanceof Error ? e.message : String(e), code: 422 }, 422);
+        }
+      })
       // Exchange authorization code for a vaultbase JWT.
       // Linking strategy:
       //  1. Existing oauth_link row for (provider, provider_user_id) → log in linked user
@@ -171,27 +158,33 @@ export function makeAuthOauth2Plugin(jwtSecret: string) {
       //  3. Otherwise, create a fresh user (random unguessable password) + link
       .post(
         "/auth/:collection/oauth2/exchange",
-        async ({ params, body, set }) => {
-          const col = await getCollection(params.collection);
+        jsonBody(
+          t.Object({
+            provider: t.String(),
+            code: t.String(),
+            redirectUri: t.String(),
+            // PKCE: client-supplied verifier wins; otherwise we look up by `state`.
+            state: t.Optional(t.String()),
+            code_verifier: t.Optional(t.String()),
+          }),
+        ),
+        async (c) => {
+          const body = c.req.valid("json");
+          const col = await getCollection(c.req.param("collection"));
           if (!col) {
-            set.status = 404;
-            return { error: "Collection not found", code: 404 };
+            return c.json({ error: "Collection not found", code: 404 }, 404);
           }
           if (col.type !== "auth") {
-            set.status = 422;
-            return { error: `'${col.name}' is not an auth collection`, code: 422 };
+            return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
           }
           if (!PROVIDERS[body.provider]) {
-            set.status = 422;
-            return { error: `Unknown provider '${body.provider}'`, code: 422 };
+            return c.json({ error: `Unknown provider '${body.provider}'`, code: 422 }, 422);
           }
           if (!isProviderEnabled(body.provider)) {
-            set.status = 422;
-            return { error: `Provider '${body.provider}' is not enabled`, code: 422 };
+            return c.json({ error: `Provider '${body.provider}' is not enabled`, code: 422 }, 422);
           }
           if (!isRedirectUriAllowed(body.provider, body.redirectUri)) {
-            set.status = 422;
-            return { error: "redirectUri not in allowlist", code: 422 };
+            return c.json({ error: "redirectUri not in allowlist", code: 422 }, 422);
           }
 
           // PKCE — pull a server-stored verifier keyed by state, if one exists.
@@ -231,15 +224,16 @@ export function makeAuthOauth2Plugin(jwtSecret: string) {
             // Everyone else: hit the provider's userinfo endpoint with the access_token.
             profile = await fetchProviderProfileFromExchange(body.provider, tok);
           } catch (e) {
-            set.status = 400;
-            return { error: e instanceof Error ? e.message : String(e), code: 400 };
+            return c.json({ error: e instanceof Error ? e.message : String(e), code: 400 }, 400);
           }
           if (!profile.id || !profile.email) {
-            set.status = 400;
-            return {
-              error: "Provider returned an incomplete profile (missing id or email)",
-              code: 400,
-            };
+            return c.json(
+              {
+                error: "Provider returned an incomplete profile (missing id or email)",
+                code: 400,
+              },
+              400,
+            );
           }
 
           // 1. Existing link?
@@ -283,7 +277,7 @@ export function makeAuthOauth2Plugin(jwtSecret: string) {
                 used_at: null,
                 created_at: now,
               });
-              return {
+              return c.json({
                 data: {
                   merge_required: true,
                   merge_token: mergeToken,
@@ -292,7 +286,7 @@ export function makeAuthOauth2Plugin(jwtSecret: string) {
                   message:
                     "An account with this email already exists. Confirm with your existing password (or a valid user token) at POST /api/v1/auth/:collection/oauth2/merge-confirm to link this provider.",
                 },
-              };
+              });
             }
           }
 
@@ -337,17 +331,7 @@ export function makeAuthOauth2Plugin(jwtSecret: string) {
             expiresInSeconds: tokenWindowSeconds("user"),
             jwtSecret,
           });
-          return { data: { token, record: { id: userId, email: profile.email } } };
-        },
-        {
-          body: t.Object({
-            provider: t.String(),
-            code: t.String(),
-            redirectUri: t.String(),
-            // PKCE: client-supplied verifier wins; otherwise we look up by `state`.
-            state: t.Optional(t.String()),
-            code_verifier: t.Optional(t.String()),
-          }),
+          return c.json({ data: { token, record: { id: userId, email: profile.email } } });
         },
       )
       // Confirm a pending OAuth2 → existing-user merge. The exchange step
@@ -357,11 +341,18 @@ export function makeAuthOauth2Plugin(jwtSecret: string) {
       // account) and performs the link.
       .post(
         "/auth/:collection/oauth2/merge-confirm",
-        async ({ params, body, request, set }) => {
-          const col = await getCollection(params.collection);
+        jsonBody(
+          t.Object({
+            merge_token: t.String(),
+            password: t.Optional(t.String()),
+          }),
+        ),
+        async (c) => {
+          const request = c.req.raw;
+          const body = c.req.valid("json");
+          const col = await getCollection(c.req.param("collection"));
           if (!col) {
-            set.status = 404;
-            return { error: "Collection not found", code: 404 };
+            return c.json({ error: "Collection not found", code: 404 }, 404);
           }
           const db = getDb();
           const now = Math.floor(Date.now() / 1000);
@@ -378,8 +369,7 @@ export function makeAuthOauth2Plugin(jwtSecret: string) {
             tok.used_at ||
             tok.expires_at < now
           ) {
-            set.status = 401;
-            return { error: "Invalid or expired merge token", code: 401 };
+            return c.json({ error: "Invalid or expired merge token", code: 401 }, 401);
           }
 
           let stored: {
@@ -391,14 +381,12 @@ export function makeAuthOauth2Plugin(jwtSecret: string) {
           try {
             stored = JSON.parse(tok.code ?? "");
           } catch {
-            set.status = 500;
-            return { error: "Corrupted merge token", code: 500 };
+            return c.json({ error: "Corrupted merge token", code: 500 }, 500);
           }
 
           const user = findUserById(col, tok.user_id);
           if (!user) {
-            set.status = 401;
-            return { error: "Account no longer exists", code: 401 };
+            return c.json({ error: "Account no longer exists", code: 401 }, 401);
           }
 
           // Proof of ownership — accept either:
@@ -422,11 +410,13 @@ export function makeAuthOauth2Plugin(jwtSecret: string) {
             }
           }
           if (!proven) {
-            set.status = 401;
-            return {
-              error: "Password or user token did not match the existing account",
-              code: 401,
-            };
+            return c.json(
+              {
+                error: "Password or user token did not match the existing account",
+                code: 401,
+              },
+              401,
+            );
           }
 
           // Already linked? If the same provider+provider_user_id row already
@@ -463,19 +453,13 @@ export function makeAuthOauth2Plugin(jwtSecret: string) {
             expiresInSeconds: tokenWindowSeconds("user"),
             jwtSecret,
           });
-          return {
+          return c.json({
             data: {
               token,
               record: { id: user.id, email: user.email },
               linked_provider: stored.provider,
             },
-          };
-        },
-        {
-          body: t.Object({
-            merge_token: t.String(),
-            password: t.Optional(t.String()),
-          }),
+          });
         },
       )
       // Unlink an OAuth2 provider from the calling user's account.
@@ -486,20 +470,18 @@ export function makeAuthOauth2Plugin(jwtSecret: string) {
       // is present (any user has one — anonymous + oauth-only users still hold a
       // random one — so the heuristic falls back to "must have ≥1 other sign-in
       // path", i.e. another link OR a verified email + non-anonymous flag).
-      .delete("/auth/:collection/oauth2/:provider/unlink", async ({ params, request, set }) => {
-        const col = await getCollection(params.collection);
+      .delete("/auth/:collection/oauth2/:provider/unlink", async (c) => {
+        const request = c.req.raw;
+        const col = await getCollection(c.req.param("collection"));
         if (!col) {
-          set.status = 404;
-          return { error: "Collection not found", code: 404 };
+          return c.json({ error: "Collection not found", code: 404 }, 404);
         }
         if (col.type !== "auth") {
-          set.status = 422;
-          return { error: `'${col.name}' is not an auth collection`, code: 422 };
+          return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
         }
         const token = request.headers.get("authorization")?.replace("Bearer ", "");
         if (!token) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         let userId: string;
         try {
@@ -509,24 +491,23 @@ export function makeAuthOauth2Plugin(jwtSecret: string) {
           userId = String(payload.id ?? "");
           if (!userId) throw new Error("missing id");
         } catch {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const db = getDb();
         const u = findUserById(col, userId);
         if (!u) {
-          set.status = 404;
-          return { error: "User not found", code: 404 };
+          return c.json({ error: "User not found", code: 404 }, 404);
         }
 
         const linkRows = await db
           .select()
           .from(oauthLinks)
-          .where(and(eq(oauthLinks.user_id, userId), eq(oauthLinks.provider, params.provider)))
+          .where(
+            and(eq(oauthLinks.user_id, userId), eq(oauthLinks.provider, c.req.param("provider"))),
+          )
           .limit(1);
         if (linkRows.length === 0) {
-          set.status = 404;
-          return { error: "No link for that provider", code: 404 };
+          return c.json({ error: "No link for that provider", code: 404 }, 404);
         }
 
         // Lockout guard: a user with no password and no other oauth link would
@@ -537,17 +518,20 @@ export function makeAuthOauth2Plugin(jwtSecret: string) {
         // password+oauth must keep the password column non-empty — which the
         // standard register flow does.)
         const allLinks = await db.select().from(oauthLinks).where(eq(oauthLinks.user_id, userId));
-        const remainingAfter = allLinks.filter((l) => l.provider !== params.provider).length;
+        const remainingAfter = allLinks.filter(
+          (l) => l.provider !== c.req.param("provider"),
+        ).length;
         const hasPassword = u.password_hash !== "" && u.is_anonymous !== 1;
         if (!hasPassword && remainingAfter === 0) {
-          set.status = 409;
-          return { error: "Cannot unlink — would leave you locked out", code: 409 };
+          return c.json({ error: "Cannot unlink — would leave you locked out", code: 409 }, 409);
         }
 
         await db
           .delete(oauthLinks)
-          .where(and(eq(oauthLinks.user_id, userId), eq(oauthLinks.provider, params.provider)));
-        return { data: null };
+          .where(
+            and(eq(oauthLinks.user_id, userId), eq(oauthLinks.provider, c.req.param("provider"))),
+          );
+        return c.json({ data: null });
       })
   );
 }

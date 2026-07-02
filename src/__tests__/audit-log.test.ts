@@ -15,7 +15,8 @@ import { initDb, closeDb, getDb } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
 import { admin as adminTable, auditLog } from "../db/schema.ts";
 import { listAuditEntries, recordAuditEntry } from "../core/audit-log.ts";
-import { makeAuditLogPlugin } from "../api/audit-log.ts";
+import { Hono } from "hono";
+import { auditLogMiddleware } from "../api/audit-log.ts";
 
 const SECRET = "test-secret-audit-log";
 
@@ -120,13 +121,14 @@ describe("recordAuditEntry — direct calls", () => {
   });
 });
 
-describe("via makeAuditLogPlugin (Elysia onAfterHandle)", () => {
-  it("captures via the plugin global hook", async () => {
+describe("via auditLogMiddleware (Hono root middleware)", () => {
+  it("captures via the global middleware", async () => {
     const token = await signAdmin();
-    const app = makeAuditLogPlugin(SECRET)
-      // mount a no-op admin endpoint so the request lands somewhere.
-      .post("/api/v1/admin/things", () => ({ data: { ok: true } }));
-    const res = await app.handle(
+    const app = new Hono();
+    app.use("*", auditLogMiddleware(SECRET));
+    // mount a no-op admin endpoint so the request lands somewhere.
+    app.post("/api/v1/admin/things", (c) => c.json({ data: { ok: true } }));
+    const res = await app.request(
       new Request("http://localhost/api/v1/admin/things", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },

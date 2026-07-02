@@ -134,7 +134,7 @@ describe("streaming CSV export", () => {
     await seedNotes(250);
     const token = await signAdmin();
     const app = makeCsvPlugin(SECRET);
-    const res = await app.handle(exportReq(token, "notes"));
+    const res = await app.request(exportReq(token, "notes"));
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toBe("text/csv; charset=utf-8");
     expect(res.headers.get("Content-Disposition")).toContain("notes.csv");
@@ -148,7 +148,7 @@ describe("streaming CSV export", () => {
     await seedNotes(50);
     const token = await signAdmin();
     const app = makeCsvPlugin(SECRET);
-    const res = await app.handle(exportReq(token, "notes"));
+    const res = await app.request(exportReq(token, "notes"));
 
     // The handler returns a Response wrapping a ReadableStream — not pre-buffered.
     expect(res.body).toBeInstanceOf(ReadableStream);
@@ -181,7 +181,7 @@ describe("streaming CSV export", () => {
     await seedNotes(2000); // 4 pages of 500
     const token = await signAdmin();
     const app = makeCsvPlugin(SECRET);
-    const res = await app.handle(exportReq(token, "notes"));
+    const res = await app.request(exportReq(token, "notes"));
 
     const reader = res.body!.getReader();
     const first = await reader.read();
@@ -208,7 +208,7 @@ describe("streaming CSV export", () => {
     });
     const token = await signAdmin();
     const app = makeCsvPlugin(SECRET);
-    const res = await app.handle(exportReq(token, "empty"));
+    const res = await app.request(exportReq(token, "empty"));
     expect(res.status).toBe(200);
     const text = await readAll(res.body!);
     // Same byte-level shape encodeCsv() produces for [] — header only.

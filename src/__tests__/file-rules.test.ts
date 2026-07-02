@@ -158,7 +158,7 @@ describe("file viewRule — per-field rule", () => {
     });
     const app = makeFilesPlugin(tmpDir, SECRET);
     // Public collection + no field rule → anon mint OK.
-    const res = await app.handle(tokenReq(null, rec.id, filename));
+    const res = await app.request(tokenReq(null, rec.id, filename));
     expect(res.status).toBe(200);
   });
 
@@ -170,7 +170,7 @@ describe("file viewRule — per-field rule", () => {
     });
     const userToken = await signUser("u1", "u1@test.local");
     const app = makeFilesPlugin(tmpDir, SECRET);
-    const res = await app.handle(tokenReq(userToken, rec.id, filename));
+    const res = await app.request(tokenReq(userToken, rec.id, filename));
     expect(res.status).toBe(403);
   });
 
@@ -183,7 +183,7 @@ describe("file viewRule — per-field rule", () => {
     void rec;
     const userToken = await signUser("u1", "u1@test.local");
     const app = makeFilesPlugin(tmpDir, SECRET);
-    const res = await app.handle(getReq(filename, {}, userToken));
+    const res = await app.request(getReq(filename, {}, userToken));
     expect(res.status).toBe(403);
   });
 
@@ -195,7 +195,7 @@ describe("file viewRule — per-field rule", () => {
     });
     const adminToken = await signAdmin("a1");
     const app = makeFilesPlugin(tmpDir, SECRET);
-    const res = await app.handle(tokenReq(adminToken, rec.id, filename));
+    const res = await app.request(tokenReq(adminToken, rec.id, filename));
     expect(res.status).toBe(200);
   });
 
@@ -207,7 +207,7 @@ describe("file viewRule — per-field rule", () => {
     });
     const userToken = await signUser("u1", "u1@test.local");
     const app = makeFilesPlugin(tmpDir, SECRET);
-    const res = await app.handle(tokenReq(userToken, rec.id, filename));
+    const res = await app.request(tokenReq(userToken, rec.id, filename));
     expect(res.status).toBe(403);
   });
 });
@@ -223,7 +223,7 @@ describe("file requireAuth", () => {
     });
     void rec;
     const app = makeFilesPlugin(tmpDir, SECRET);
-    const res = await app.handle(getReq(filename));
+    const res = await app.request(getReq(filename));
     expect(res.status).toBe(403);
   });
 
@@ -236,7 +236,7 @@ describe("file requireAuth", () => {
     void rec;
     const userToken = await signUser("u1", "u1@test.local");
     const app = makeFilesPlugin(tmpDir, SECRET);
-    const res = await app.handle(getReq(filename, {}, userToken));
+    const res = await app.request(getReq(filename, {}, userToken));
     expect(res.status).toBe(200);
   });
 });
@@ -251,14 +251,14 @@ describe("file oneTimeToken", () => {
       owner: "u1",
     });
     const app = makeFilesPlugin(tmpDir, SECRET);
-    const mint = await app.handle(tokenReq(null, rec.id, filename));
+    const mint = await app.request(tokenReq(null, rec.id, filename));
     const body = (await mint.json()) as { data: { token: string } };
     const tok = body.data.token;
 
-    const a = await app.handle(getReq(filename, { token: tok }));
+    const a = await app.request(getReq(filename, { token: tok }));
     expect(a.status).toBe(200);
 
-    const b = await app.handle(getReq(filename, { token: tok }));
+    const b = await app.request(getReq(filename, { token: tok }));
     expect(b.status).toBe(410);
   });
 });
@@ -281,7 +281,7 @@ describe("file bindTokenIp", () => {
     // Mint a token. The current client IP is "unknown" (no peer plumbing in
     // tests). Then forge a JWT with a *different* ip claim and confirm it's
     // rejected — this proves the comparison runs.
-    const mint = await app.handle(tokenReq(null, rec.id, filename));
+    const mint = await app.request(tokenReq(null, rec.id, filename));
     expect(mint.status).toBe(200);
     const body = (await mint.json()) as { data: { token: string } };
     void body;
@@ -295,7 +295,7 @@ describe("file bindTokenIp", () => {
       .setJti(crypto.randomUUID())
       .sign(new TextEncoder().encode(SECRET));
 
-    const res = await app.handle(getReq(filename, { token: forged }));
+    const res = await app.request(getReq(filename, { token: forged }));
     expect(res.status).toBe(403);
   });
 
@@ -318,7 +318,7 @@ describe("file bindTokenIp", () => {
       .setJti(crypto.randomUUID())
       .sign(new TextEncoder().encode(SECRET));
 
-    const res = await app.handle(getReq(filename, { token: forged }));
+    const res = await app.request(getReq(filename, { token: forged }));
     expect(res.status).toBe(200);
   });
 });
@@ -334,7 +334,7 @@ describe("file auditDownloads", () => {
     });
     void rec;
     const app = makeFilesPlugin(tmpDir, SECRET);
-    const res = await app.handle(getReq(filename));
+    const res = await app.request(getReq(filename));
     expect(res.status).toBe(200);
 
     const rows = await getDb().select().from(auditLog).where(eq(auditLog.action, "files.download"));
@@ -350,7 +350,7 @@ describe("file auditDownloads", () => {
     });
     void rec;
     const app = makeFilesPlugin(tmpDir, SECRET);
-    const res = await app.handle(getReq(filename));
+    const res = await app.request(getReq(filename));
     expect(res.status).toBe(200);
 
     const rows = await getDb().select().from(auditLog).where(eq(auditLog.action, "files.download"));

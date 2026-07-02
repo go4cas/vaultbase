@@ -1,5 +1,7 @@
 import { and, eq, lt } from "drizzle-orm";
-import Elysia, { t } from "elysia";
+import { Hono } from "hono";
+import type { Context } from "hono";
+import { getConnInfo } from "hono/bun";
 import { existsSync, readdirSync, unlinkSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { getDb } from "../db/client.ts";
@@ -52,11 +54,10 @@ async function fileMetaOf(filename: string) {
   return rows[0] ?? null;
 }
 
-/** Pull the peer-IP off the Bun.serve `server` object that Elysia exposes. */
-function peerIpOf(server: unknown, request: Request): string | null {
+/** Pull the peer-IP off the Bun connection info Hono exposes. */
+function peerIpOf(c: Context): string | null {
   try {
-    const s = server as { requestIP?: (r: Request) => { address: string } | null };
-    return s?.requestIP?.(request)?.address ?? null;
+    return getConnInfo(c).remote.address ?? null;
   } catch {
     return null;
   }
@@ -302,34 +303,34 @@ function safeExt(originalName: string): string {
 }
 
 export function makeFilesPlugin(uploadDir: string, jwtSecret: string) {
-  return new Elysia({ name: "files" })
-    .post("/files/:collection/:recordId/:field", async ({ params, request, set }) => {
+  return new Hono()
+    .post("/files/:collection/:recordId/:field", async (c) => {
+      const request = c.req.raw;
+      const collection = c.req.param("collection");
+      const recordId = c.req.param("recordId");
+      const field = c.req.param("field");
       const auth = await getAuthContext(request, jwtSecret);
       if (!auth) {
-        set.status = 401;
-        return { error: "Unauthorized", code: 401 };
+        return c.json({ error: "Unauthorized", code: 401 }, 401);
       }
 
-      const col = await getCollection(params.collection);
+      const col = await getCollection(collection);
       if (!col) {
-        set.status = 404;
-        return { error: `Collection '${params.collection}' not found`, code: 404 };
+        return c.json({ error: `Collection '${collection}' not found`, code: 404 }, 404);
       }
 
       // Authz — admin always; else evaluate the appropriate rule. New record
       // → create_rule; existing record → update_rule.
-      const existing = await getRecord(params.collection, params.recordId);
+      const existing = await getRecord(collection, recordId);
       if (auth.type !== "admin") {
         const rule = existing ? col.update_rule : col.create_rule;
         if (rule === "") {
-          set.status = 403;
-          return { error: "Forbidden", code: 403 };
+          return c.json({ error: "Forbidden", code: 403 }, 403);
         }
         if (rule !== null) {
           const ok = evaluateRule(rule, auth, (existing ?? {}) as Record<string, unknown>);
           if (!ok) {
-            set.status = 403;
-            return { error: "Forbidden", code: 403 };
+            return c.json({ error: "Forbidden", code: 403 }, 403);
           }
         }
       }
@@ -339,19 +340,16 @@ export function makeFilesPlugin(uploadDir: string, jwtSecret: string) {
         (v): v is File => v instanceof File,
       );
       if (fileEntries.length === 0) {
-        set.status = 400;
-        return { error: "No file uploaded", code: 400 };
+        return c.json({ error: "No file uploaded", code: 400 }, 400);
       }
 
       const schema = parseFields(col.fields);
-      const fieldDef = schema.find((f) => f.name === params.field);
+      const fieldDef = schema.find((f) => f.name === field);
       if (!fieldDef) {
-        set.status = 404;
-        return { error: `Field '${params.field}' not found on '${col.name}'`, code: 404 };
+        return c.json({ error: `Field '${field}' not found on '${col.name}'`, code: 404 }, 404);
       }
       if (fieldDef.type !== "file") {
-        set.status = 400;
-        return { error: `Field '${params.field}' is not a file field`, code: 400 };
+        return c.json({ error: `Field '${field}' is not a file field`, code: 400 }, 400);
       }
 
       const opts = fieldDef.options ?? {};
@@ -360,36 +358,41 @@ export function makeFilesPlugin(uploadDir: string, jwtSecret: string) {
       const mimeTypes = Array.isArray(opts.mimeTypes) ? (opts.mimeTypes as string[]) : [];
 
       if (!multiple && fileEntries.length > 1) {
-        set.status = 400;
-        return {
-          error: `Field '${params.field}' is single-file; multiple uploads not allowed`,
-          code: 400,
-        };
+        return c.json(
+          {
+            error: `Field '${field}' is single-file; multiple uploads not allowed`,
+            code: 400,
+          },
+          400,
+        );
       }
 
       // Validate every file before writing any. Reject anything outside the
       // global allowlist regardless of the field's configured patterns.
       for (const f of fileEntries) {
         if (maxSize > 0 && f.size > maxSize) {
-          set.status = 422;
-          return {
-            error: `File too large: ${f.size} bytes (max ${maxSize})`,
-            code: 422,
-            details: { [params.field]: `Max ${maxSize} bytes` },
-          };
+          return c.json(
+            {
+              error: `File too large: ${f.size} bytes (max ${maxSize})`,
+              code: 422,
+              details: { [field]: `Max ${maxSize} bytes` },
+            },
+            422,
+          );
         }
         const fm = f.type || "application/octet-stream";
         if (!isAllowedUploadMime(fm)) {
-          set.status = 415;
-          return { error: `MIME type '${fm}' not allowed`, code: 415 };
+          return c.json({ error: `MIME type '${fm}' not allowed`, code: 415 }, 415);
         }
         if (!mimeAllowed(fm, mimeTypes)) {
-          set.status = 422;
-          return {
-            error: `MIME type '${fm}' not allowed by field rules`,
-            code: 422,
-            details: { [params.field]: `Allowed: ${mimeTypes.join(", ")}` },
-          };
+          return c.json(
+            {
+              error: `MIME type '${fm}' not allowed by field rules`,
+              code: 422,
+              details: { [field]: `Allowed: ${mimeTypes.join(", ")}` },
+            },
+            422,
+          );
         }
       }
 
@@ -411,8 +414,8 @@ export function makeFilesPlugin(uploadDir: string, jwtSecret: string) {
         await db.insert(files).values({
           id,
           collection_id: col.id,
-          record_id: params.recordId,
-          field_name: params.field,
+          record_id: recordId,
+          field_name: field,
           filename,
           original_name: file.name.slice(0, 255),
           mime_type: fileMime,
@@ -428,271 +431,245 @@ export function makeFilesPlugin(uploadDir: string, jwtSecret: string) {
         });
       }
 
-      if (!multiple) return { data: uploaded[0] };
-      return { data: uploaded };
+      if (!multiple) return c.json({ data: uploaded[0] });
+      return c.json({ data: uploaded });
     })
-    .post(
-      "/files/:collection/:recordId/:field/:filename/token",
-      async ({ params, request, server, set }) => {
-        if (!isValidStorageFilename(params.filename)) {
-          set.status = 400;
-          return { error: "Invalid filename", code: 400 };
-        }
-        const auth = await getAuthContext(request, jwtSecret);
+    .post("/files/:collection/:recordId/:field/:filename/token", async (c) => {
+      const request = c.req.raw;
+      const collection = c.req.param("collection");
+      const recordId = c.req.param("recordId");
+      const field = c.req.param("field");
+      const filename = c.req.param("filename");
+      if (!isValidStorageFilename(filename)) {
+        return c.json({ error: "Invalid filename", code: 400 }, 400);
+      }
+      const auth = await getAuthContext(request, jwtSecret);
 
-        const col = await getCollection(params.collection);
-        if (!col) {
-          set.status = 404;
-          return { error: "Collection not found", code: 404 };
-        }
-        const fields = parseFields(col.fields);
-        const fieldDef = fields.find((f) => f.name === params.field);
-        if (fieldDef?.type !== "file") {
-          set.status = 404;
-          return { error: "File field not found", code: 404 };
-        }
-        const record = await getRecord(params.collection, params.recordId);
-        if (!record) {
-          set.status = 404;
-          return { error: "Record not found", code: 404 };
-        }
+      const col = await getCollection(collection);
+      if (!col) {
+        return c.json({ error: "Collection not found", code: 404 }, 404);
+      }
+      const fields = parseFields(col.fields);
+      const fieldDef = fields.find((f) => f.name === field);
+      if (fieldDef?.type !== "file") {
+        return c.json({ error: "File field not found", code: 404 }, 404);
+      }
+      const record = await getRecord(collection, recordId);
+      if (!record) {
+        return c.json({ error: "Record not found", code: 404 }, 404);
+      }
 
-        const db = getDb();
-        const fileRows = await db
-          .select()
-          .from(files)
-          .where(
-            and(
-              eq(files.collection_id, col.id),
-              eq(files.record_id, params.recordId),
-              eq(files.field_name, params.field),
-              eq(files.filename, params.filename),
-            ),
-          )
-          .limit(1);
-        const meta = fileRows[0];
-        if (!meta) {
-          set.status = 404;
-          return { error: "File not found", code: 404 };
+      const db = getDb();
+      const fileRows = await db
+        .select()
+        .from(files)
+        .where(
+          and(
+            eq(files.collection_id, col.id),
+            eq(files.record_id, recordId),
+            eq(files.field_name, field),
+            eq(files.filename, filename),
+          ),
+        )
+        .limit(1);
+      const meta = fileRows[0];
+      if (!meta) {
+        return c.json({ error: "File not found", code: 404 }, 404);
+      }
+
+      const peerIp = peerIpOf(c);
+      const ip = trustedClientIp(request, peerIp);
+      const reqCtx = buildFileRequestContext(request, ip, meta, col.name);
+      const decision = await evaluateFileAccess(col.id, recordId, field, auth, reqCtx);
+      if (!decision.allowed) {
+        return c.json({ error: "Forbidden", code: 403 }, 403);
+      }
+
+      const opts = fieldDef.options ?? {};
+      const payload: Record<string, unknown> = { filename };
+      if (opts.bindTokenIp) payload.ip = ip;
+      if (opts.oneTimeToken) payload.uses = 1;
+
+      const { token, exp } = await signAuthToken({
+        payload,
+        audience: "file",
+        expiresInSeconds: tokenWindowSeconds("file"),
+        jwtSecret,
+      });
+      return c.json({ data: { token, expires_at: exp } });
+    })
+    .get("/files/:filename", async (c) => {
+      const request = c.req.raw;
+      const filename = c.req.param("filename");
+      const queryToken = c.req.query("token");
+      const queryThumb = c.req.query("thumb");
+      if (!isValidStorageFilename(filename)) {
+        return c.json({ error: "Invalid filename", code: 400 }, 400);
+      }
+      if (!(await fileExists(filename))) {
+        return c.json({ error: "File not found", code: 404 }, 404);
+      }
+
+      const meta = await fileMetaOf(filename);
+      const peerIp = peerIpOf(c);
+      const clientIp = trustedClientIp(request, peerIp);
+      const auth = await getAuthContext(request, jwtSecret);
+
+      let allowed = false;
+      let via: "rule" | "token" = "rule";
+      let collectionName = "";
+      let fieldDefForAudit: FieldDef | null = null;
+
+      if (!meta) {
+        // Orphan files (no row) — admin-only.
+        allowed = auth?.type === "admin";
+      } else {
+        const col = await getCollection(meta.collection_id);
+        collectionName = col?.name ?? "";
+        if (col) {
+          const fields = parseFields(col.fields);
+          fieldDefForAudit = fields.find((f) => f.name === meta.field_name) ?? null;
         }
-
-        const peerIp = peerIpOf(server, request);
-        const ip = trustedClientIp(request, peerIp);
-        const reqCtx = buildFileRequestContext(request, ip, meta, col.name);
-        const decision = await evaluateFileAccess(
-          col.id,
-          params.recordId,
-          params.field,
-          auth,
-          reqCtx,
-        );
-        if (!decision.allowed) {
-          set.status = 403;
-          return { error: "Forbidden", code: 403 };
-        }
-
-        const opts = fieldDef.options ?? {};
-        const payload: Record<string, unknown> = { filename: params.filename };
-        if (opts.bindTokenIp) payload.ip = ip;
-        if (opts.oneTimeToken) payload.uses = 1;
-
-        const { token, exp } = await signAuthToken({
-          payload,
-          audience: "file",
-          expiresInSeconds: tokenWindowSeconds("file"),
-          jwtSecret,
-        });
-        return { data: { token, expires_at: exp } };
-      },
-    )
-    .get(
-      "/files/:filename",
-      async ({ params, query, request, server, set }) => {
-        if (!isValidStorageFilename(params.filename)) {
-          set.status = 400;
-          return { error: "Invalid filename", code: 400 };
-        }
-        if (!(await fileExists(params.filename))) {
-          set.status = 404;
-          return { error: "File not found", code: 404 };
-        }
-
-        const meta = await fileMetaOf(params.filename);
-        const peerIp = peerIpOf(server, request);
-        const clientIp = trustedClientIp(request, peerIp);
-        const auth = await getAuthContext(request, jwtSecret);
-
-        let allowed = false;
-        let via: "rule" | "token" = "rule";
-        let collectionName = "";
-        let fieldDefForAudit: FieldDef | null = null;
-
-        if (!meta) {
-          // Orphan files (no row) — admin-only.
-          allowed = auth?.type === "admin";
-        } else {
-          const col = await getCollection(meta.collection_id);
-          collectionName = col?.name ?? "";
-          if (col) {
-            const fields = parseFields(col.fields);
-            fieldDefForAudit = fields.find((f) => f.name === meta.field_name) ?? null;
-          }
-          const tok = query.token;
-          if (tok) {
-            // ── Token path ────────────────────────────────────────────────
-            const claims = await verifyFileTokenClaims(tok, jwtSecret);
-            if (claims && claims.filename === params.filename) {
-              // IP binding: token's ip claim must match the requesting client.
-              if (claims.ip !== undefined && claims.ip !== clientIp) {
-                set.status = 403;
-                return { error: "Token bound to a different IP", code: 403 };
-              }
-              // One-time use: insert-or-fail on the jti.
-              if (claims.uses === 1 && claims.jti) {
-                const ok = await claimOneTimeToken(claims.jti, clientIp);
-                if (!ok) {
-                  set.status = 410;
-                  return { error: "Token already used", code: 410 };
-                }
-              }
-              allowed = true;
-              via = "token";
+        const tok = queryToken;
+        if (tok) {
+          // ── Token path ────────────────────────────────────────────────
+          const claims = await verifyFileTokenClaims(tok, jwtSecret);
+          if (claims && claims.filename === filename) {
+            // IP binding: token's ip claim must match the requesting client.
+            if (claims.ip !== undefined && claims.ip !== clientIp) {
+              return c.json({ error: "Token bound to a different IP", code: 403 }, 403);
             }
-          }
-          if (!allowed) {
-            // ── Rule path ─────────────────────────────────────────────────
-            const reqCtx = buildFileRequestContext(request, clientIp, meta, collectionName);
-            const decision = await evaluateFileAccess(
-              meta.collection_id,
-              meta.record_id,
-              meta.field_name,
-              auth,
-              reqCtx,
-            );
-            if (decision.fieldDef) fieldDefForAudit = decision.fieldDef;
-            allowed = decision.allowed;
+            // One-time use: insert-or-fail on the jti.
+            if (claims.uses === 1 && claims.jti) {
+              const ok = await claimOneTimeToken(claims.jti, clientIp);
+              if (!ok) {
+                return c.json({ error: "Token already used", code: 410 }, 410);
+              }
+            }
+            allowed = true;
+            via = "token";
           }
         }
-
         if (!allowed) {
-          // Legacy `protected: true` field with no token? 401 (the front-end
-          // knows to mint a token when it sees this code). Otherwise 403.
-          if (meta && (await isFileProtected(params.filename)) && !query.token) {
-            set.status = 401;
-            return { error: "Token required", code: 401 };
-          }
-          set.status = 403;
-          return { error: "Forbidden", code: 403 };
-        }
-
-        if (meta && fieldDefForAudit?.options?.auditDownloads) {
-          await emitDownloadAudit({
-            request,
-            ip: clientIp,
+          // ── Rule path ─────────────────────────────────────────────────
+          const reqCtx = buildFileRequestContext(request, clientIp, meta, collectionName);
+          const decision = await evaluateFileAccess(
+            meta.collection_id,
+            meta.record_id,
+            meta.field_name,
             auth,
-            filename: params.filename,
-            collection: collectionName,
-            recordId: meta.record_id,
-            field: meta.field_name,
-            mime: meta.mime_type,
-            size: meta.size,
-            via,
-          });
-        }
-
-        const inlineSafe = meta ? isSafeToRenderInline(meta.mime_type) : false;
-        const baseHeaders: Record<string, string> = {
-          "X-Content-Type-Options": "nosniff",
-          "Referrer-Policy": "no-referrer",
-        };
-        if (!inlineSafe) {
-          const safeName = (meta?.original_name ?? params.filename).replace(
-            /[^a-zA-Z0-9._-]/g,
-            "_",
+            reqCtx,
           );
-          baseHeaders["Content-Disposition"] = `attachment; filename="${safeName}"`;
+          if (decision.fieldDef) fieldDefForAudit = decision.fieldDef;
+          allowed = decision.allowed;
         }
+      }
 
-        const spec = parseThumbSpec(query.thumb);
-        if (!spec) {
-          const r = await fileResponse(params.filename);
-          if (!r) {
-            set.status = 404;
-            return { error: "File not found", code: 404 };
-          }
-          // Layer headers on top of storage Response.
-          for (const [k, v] of Object.entries(baseHeaders)) r.headers.set(k, v);
-          return r;
+      if (!allowed) {
+        // Legacy `protected: true` field with no token? 401 (the front-end
+        // knows to mint a token when it sees this code). Otherwise 403.
+        if (meta && (await isFileProtected(filename)) && !queryToken) {
+          return c.json({ error: "Token required", code: 401 }, 401);
         }
+        return c.json({ error: "Forbidden", code: 403 }, 403);
+      }
 
-        const cachePath = thumbCachePath(uploadDir, params.filename, spec);
-        const cached = Bun.file(cachePath);
-        if (await cached.exists()) {
-          const head = new Uint8Array(await cached.slice(0, 16).arrayBuffer());
-          const cf = detectFormat(head);
-          const headers: Record<string, string> = { ...baseHeaders };
-          if (cf) headers["Content-Type"] = thumbMime(cf);
-          return new Response(cached, { headers });
-        }
+      if (meta && fieldDefForAudit?.options?.auditDownloads) {
+        await emitDownloadAudit({
+          request,
+          ip: clientIp,
+          auth,
+          filename,
+          collection: collectionName,
+          recordId: meta.record_id,
+          field: meta.field_name,
+          mime: meta.mime_type,
+          size: meta.size,
+          via,
+        });
+      }
 
-        const buf = await readFile(params.filename);
-        if (!buf) {
-          set.status = 404;
-          return { error: "File not found", code: 404 };
-        }
-        const bytes = new Uint8Array(buf);
-        const format = detectFormat(bytes);
-        if (!format) {
-          const r = await fileResponse(params.filename);
-          if (!r) return new Response(null, { status: 404 });
-          for (const [k, v] of Object.entries(baseHeaders)) r.headers.set(k, v);
-          return r;
-        }
+      const inlineSafe = meta ? isSafeToRenderInline(meta.mime_type) : false;
+      const baseHeaders: Record<string, string> = {
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+      };
+      if (!inlineSafe) {
+        const safeName = (meta?.original_name ?? filename).replace(/[^a-zA-Z0-9._-]/g, "_");
+        baseHeaders["Content-Disposition"] = `attachment; filename="${safeName}"`;
+      }
 
-        try {
-          const thumb = await generateThumbnail(bytes, spec, format as ThumbFormat);
-          await Bun.write(cachePath, thumb);
-          const outFormat = detectFormat(thumb) ?? format;
-          return new Response(thumb, {
-            headers: { ...baseHeaders, "Content-Type": thumbMime(outFormat) },
-          });
-        } catch {
-          const r = await fileResponse(params.filename);
-          if (!r) return new Response(null, { status: 404 });
-          for (const [k, v] of Object.entries(baseHeaders)) r.headers.set(k, v);
-          return r;
+      const spec = parseThumbSpec(queryThumb);
+      if (!spec) {
+        const r = await fileResponse(filename);
+        if (!r) {
+          return c.json({ error: "File not found", code: 404 }, 404);
         }
-      },
-      {
-        query: t.Object({
-          thumb: t.Optional(t.String()),
-          token: t.Optional(t.String()),
-        }),
-      },
-    )
-    .delete("/files/:collection/:recordId/:field", async ({ params, request, set }) => {
+        // Layer headers on top of storage Response.
+        for (const [k, v] of Object.entries(baseHeaders)) r.headers.set(k, v);
+        return r;
+      }
+
+      const cachePath = thumbCachePath(uploadDir, filename, spec);
+      const cached = Bun.file(cachePath);
+      if (await cached.exists()) {
+        const head = new Uint8Array(await cached.slice(0, 16).arrayBuffer());
+        const cf = detectFormat(head);
+        const headers: Record<string, string> = { ...baseHeaders };
+        if (cf) headers["Content-Type"] = thumbMime(cf);
+        return new Response(cached, { headers });
+      }
+
+      const buf = await readFile(filename);
+      if (!buf) {
+        return c.json({ error: "File not found", code: 404 }, 404);
+      }
+      const bytes = new Uint8Array(buf);
+      const format = detectFormat(bytes);
+      if (!format) {
+        const r = await fileResponse(filename);
+        if (!r) return new Response(null, { status: 404 });
+        for (const [k, v] of Object.entries(baseHeaders)) r.headers.set(k, v);
+        return r;
+      }
+
+      try {
+        const thumb = await generateThumbnail(bytes, spec, format as ThumbFormat);
+        await Bun.write(cachePath, thumb);
+        const outFormat = detectFormat(thumb) ?? format;
+        return new Response(thumb, {
+          headers: { ...baseHeaders, "Content-Type": thumbMime(outFormat) },
+        });
+      } catch {
+        const r = await fileResponse(filename);
+        if (!r) return new Response(null, { status: 404 });
+        for (const [k, v] of Object.entries(baseHeaders)) r.headers.set(k, v);
+        return r;
+      }
+    })
+    .delete("/files/:collection/:recordId/:field", async (c) => {
+      const request = c.req.raw;
+      const collection = c.req.param("collection");
+      const recordId = c.req.param("recordId");
+      const field = c.req.param("field");
       const auth = await getAuthContext(request, jwtSecret);
       if (!auth) {
-        set.status = 401;
-        return { error: "Unauthorized", code: 401 };
+        return c.json({ error: "Unauthorized", code: 401 }, 401);
       }
-      const col = await getCollection(params.collection);
+      const col = await getCollection(collection);
       if (!col) {
-        set.status = 404;
-        return { error: "Collection not found", code: 404 };
+        return c.json({ error: "Collection not found", code: 404 }, 404);
       }
       if (auth.type !== "admin") {
-        const existing = await getRecord(params.collection, params.recordId);
+        const existing = await getRecord(collection, recordId);
         const rule = col.update_rule;
         if (rule === "") {
-          set.status = 403;
-          return { error: "Forbidden", code: 403 };
+          return c.json({ error: "Forbidden", code: 403 }, 403);
         }
         if (rule !== null) {
           const ok = evaluateRule(rule, auth, (existing ?? {}) as Record<string, unknown>);
           if (!ok) {
-            set.status = 403;
-            return { error: "Forbidden", code: 403 };
+            return c.json({ error: "Forbidden", code: 403 }, 403);
           }
         }
       }
@@ -703,48 +680,47 @@ export function makeFilesPlugin(uploadDir: string, jwtSecret: string) {
         .where(
           and(
             eq(files.collection_id, col.id),
-            eq(files.record_id, params.recordId),
-            eq(files.field_name, params.field),
+            eq(files.record_id, recordId),
+            eq(files.field_name, field),
           ),
         );
       if (rows.length === 0) {
-        set.status = 404;
-        return { error: "File not found", code: 404 };
+        return c.json({ error: "File not found", code: 404 }, 404);
       }
       for (const meta of rows) {
         await deleteFile(meta.filename);
         deleteThumbsFor(uploadDir, meta.filename);
         await db.delete(files).where(eq(files.id, meta.id));
       }
-      return { data: { deleted: rows.length } };
+      return c.json({ data: { deleted: rows.length } });
     })
-    .delete("/files/:collection/:recordId/:field/:filename", async ({ params, request, set }) => {
+    .delete("/files/:collection/:recordId/:field/:filename", async (c) => {
+      const request = c.req.raw;
+      const collection = c.req.param("collection");
+      const recordId = c.req.param("recordId");
+      const field = c.req.param("field");
+      const filename = c.req.param("filename");
       const auth = await getAuthContext(request, jwtSecret);
       if (!auth) {
-        set.status = 401;
-        return { error: "Unauthorized", code: 401 };
+        return c.json({ error: "Unauthorized", code: 401 }, 401);
       }
-      if (!isValidStorageFilename(params.filename)) {
-        set.status = 400;
-        return { error: "Invalid filename", code: 400 };
+      if (!isValidStorageFilename(filename)) {
+        return c.json({ error: "Invalid filename", code: 400 }, 400);
       }
-      const col = await getCollection(params.collection);
+      const col = await getCollection(collection);
       if (!col) {
-        set.status = 404;
-        return { error: "Collection not found", code: 404 };
+        return c.json({ error: "Collection not found", code: 404 }, 404);
       }
       if (auth.type !== "admin") {
-        const existing = await getRecord(params.collection, params.recordId);
+        const existing = await getRecord(collection, recordId);
         const rule = col.update_rule;
         if (rule === "") {
-          set.status = 403;
-          return { error: "Forbidden", code: 403 };
+          return c.json({ error: "Forbidden", code: 403 }, 403);
         }
         if (rule !== null) {
           const ok = evaluateRule(rule, auth, (existing ?? {}) as Record<string, unknown>);
           if (!ok) {
-            set.status = 403;
-            return { error: "Forbidden", code: 403 };
+            return c.json({ error: "Forbidden", code: 403 }, 403);
           }
         }
       }
@@ -755,21 +731,20 @@ export function makeFilesPlugin(uploadDir: string, jwtSecret: string) {
         .where(
           and(
             eq(files.collection_id, col.id),
-            eq(files.record_id, params.recordId),
-            eq(files.field_name, params.field),
-            eq(files.filename, params.filename),
+            eq(files.record_id, recordId),
+            eq(files.field_name, field),
+            eq(files.filename, filename),
           ),
         )
         .limit(1);
       const meta = rows[0];
       if (!meta) {
-        set.status = 404;
-        return { error: "File not found", code: 404 };
+        return c.json({ error: "File not found", code: 404 }, 404);
       }
       await deleteFile(meta.filename);
       deleteThumbsFor(uploadDir, meta.filename);
       await db.delete(files).where(eq(files.id, meta.id));
-      return { data: null };
+      return c.json({ data: null });
     });
 }
 

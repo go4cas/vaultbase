@@ -100,7 +100,7 @@ describe("batch endpoint enforces collection rules", () => {
     });
     const token = await signUser("u1", "user@test.local");
     const app = makeBatchPlugin(SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       batchReq(token, [
         { method: "POST", url: "/api/v1/notes", body: { title: "hi", owner: "u1" } },
       ]),
@@ -120,7 +120,7 @@ describe("batch endpoint enforces collection rules", () => {
     });
     const token = await signAdmin("a1");
     const app = makeBatchPlugin(SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       batchReq(token, [
         { method: "POST", url: "/api/v1/notes", body: { title: "hi", owner: "a1" } },
       ]),
@@ -144,7 +144,7 @@ describe("batch endpoint enforces collection rules", () => {
 
     const token = await signUser("u1", "u1@test.local");
     const app = makeBatchPlugin(SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       batchReq(token, [
         { method: "POST", url: "/api/v1/notes", body: { title: "fresh", owner: "u1" } },
         { method: "PATCH", url: `/api/notes/${r.id}`, body: { title: "hijacked" } },
@@ -169,7 +169,7 @@ describe("batch endpoint enforces collection rules", () => {
 
     const token = await signUser("u1", "u1@test.local");
     const app = makeBatchPlugin(SECRET);
-    const res = await app.handle(batchReq(token, [{ method: "GET", url: "/api/v1/notes" }]));
+    const res = await app.request(batchReq(token, [{ method: "GET", url: "/api/v1/notes" }]));
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       data: Array<{ status: number; body: { data: Array<{ title: string }> } }>;
@@ -190,7 +190,7 @@ describe("batch endpoint enforces collection rules", () => {
 
     const token = await signUser("u1", "u1@test.local");
     const app = makeBatchPlugin(SECRET);
-    const res = await app.handle(batchReq(token, [{ method: "GET", url: `/api/notes/${r.id}` }]));
+    const res = await app.request(batchReq(token, [{ method: "GET", url: `/api/notes/${r.id}` }]));
     expect(res.status).toBe(403);
   });
 
@@ -203,7 +203,7 @@ describe("batch endpoint enforces collection rules", () => {
     });
     const token = await signUser("u1", "u1@test.local");
     const app = makeBatchPlugin(SECRET);
-    const res = await app.handle(batchReq(token, [{ method: "GET", url: "/api/v1/notes" }]));
+    const res = await app.request(batchReq(token, [{ method: "GET", url: "/api/v1/notes" }]));
     expect(res.status).toBe(403);
   });
 });

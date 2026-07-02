@@ -134,7 +134,7 @@ describe("anonymous endpoint honors auth.anonymous.window_seconds", () => {
       headers: { "content-type": "application/json" },
       body: "{}",
     });
-    const res = await app.handle(req);
+    const res = await app.request(req);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { token: string } };
     const { payload } = await jose.jwtVerify(body.data.token, new TextEncoder().encode(SECRET), {
@@ -156,7 +156,7 @@ describe("anonymous endpoint honors auth.anonymous.window_seconds", () => {
       headers: { "content-type": "application/json" },
       body: "{}",
     });
-    const res = await app.handle(req);
+    const res = await app.request(req);
     const body = (await res.json()) as { data: { token: string } };
     const { payload } = await jose.jwtVerify(body.data.token, new TextEncoder().encode(SECRET));
     const issuedFor = (payload.exp as number) - Math.floor(Date.now() / 1000);
@@ -173,7 +173,7 @@ describe("anonymous endpoint honors auth.anonymous.window_seconds", () => {
       headers: { "content-type": "application/json" },
       body: "{}",
     });
-    const res = await app.handle(req);
+    const res = await app.request(req);
     const body = (await res.json()) as { data: { token: string } };
     const { payload } = await jose.jwtVerify(body.data.token, new TextEncoder().encode(SECRET));
     const issuedFor = (payload.exp as number) - Math.floor(Date.now() / 1000);

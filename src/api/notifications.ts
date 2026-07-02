@@ -13,7 +13,9 @@
  *   - DELETE /notifications/devices/:token
  */
 import type { Database } from "bun:sqlite";
-import Elysia, { t } from "elysia";
+import { Hono } from "hono";
+import { Type as t } from "@sinclair/typebox";
+import { jsonBody } from "./validator.ts";
 import { getDb } from "../db/client.ts";
 import { setSetting, getAllSettings } from "./settings.ts";
 import { verifyAuthToken } from "../core/sec.ts";
@@ -154,109 +156,110 @@ function applyPatch(
 
 export function makeNotificationsPlugin(jwtSecret: string) {
   return (
-    new Elysia({ name: "notifications" })
+    new Hono()
       // ── Admin: list provider config (secrets masked) ───────────────────────
-      .get("/admin/notifications/providers", async ({ request, query, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+      .get("/admin/notifications/providers", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        const reveal = query.reveal === "1" || query.reveal === "true";
-        return { data: describeProviders({ reveal }) };
+        const reveal = c.req.query("reveal") === "1" || c.req.query("reveal") === "true";
+        return c.json({ data: describeProviders({ reveal }) });
       })
       // ── Admin: patch one provider's config ─────────────────────────────────
-      .patch(
-        "/admin/notifications/providers/:name",
-        async ({ params, body, request, set }) => {
-          if (!(await isAdmin(request, jwtSecret))) {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
+      .patch("/admin/notifications/providers/:name", jsonBody(PATCH_BODY), async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
+        }
+        const name = c.req.param("name");
+        const body = c.req.valid("json");
+        if (!isProviderName(name)) {
+          return c.json({ error: `Unknown provider: ${name}`, code: 404 }, 404);
+        }
+        // Up-front: if the patch enables FCM, the service_account must already
+        // exist (or be in the same patch) AND parse as JSON. Catch this here
+        // rather than at first send.
+        if (name === "fcm" && body.enabled === true) {
+          const merged = body.service_account ?? loadProviderConfigs().fcm.service_account;
+          if (!merged) {
+            return c.json(
+              { error: "FCM cannot be enabled without service_account", code: 422 },
+              422,
+            );
           }
-          if (!isProviderName(params.name)) {
-            set.status = 404;
-            return { error: `Unknown provider: ${params.name}`, code: 404 };
-          }
-          // Up-front: if the patch enables FCM, the service_account must already
-          // exist (or be in the same patch) AND parse as JSON. Catch this here
-          // rather than at first send.
-          if (params.name === "fcm" && body.enabled === true) {
-            const merged = body.service_account ?? loadProviderConfigs().fcm.service_account;
-            if (!merged) {
-              set.status = 422;
-              return { error: "FCM cannot be enabled without service_account", code: 422 };
-            }
-            try {
-              JSON.parse(merged);
-            } catch (e) {
-              set.status = 422;
-              return {
+          try {
+            JSON.parse(merged);
+          } catch (e) {
+            return c.json(
+              {
                 error: `service_account is not valid JSON: ${e instanceof Error ? e.message : String(e)}`,
                 code: 422,
-              };
-            }
+              },
+              422,
+            );
           }
-          const result = applyPatch(params.name, body);
-          if (result.rejected.length > 0) {
-            set.status = 422;
-            return {
-              error: `Invalid fields for ${params.name}: ${result.rejected.join(", ")}`,
-              code: 422,
-            };
+        }
+        const result = applyPatch(name, body);
+        if (result.rejected.length > 0) {
+          return c.json(
+            { error: `Invalid fields for ${name}: ${result.rejected.join(", ")}`, code: 422 },
+            422,
+          );
+        }
+        // First-time enable: bootstrap the system collections so hooks can
+        // call helpers.notify() and clients can register devices without the
+        // operator hand-building schema.
+        let bootstrap: { created: string[]; skipped: string[] } | null = null;
+        if (body.enabled === true) {
+          try {
+            bootstrap = await bootstrapNotificationCollections();
+          } catch (e) {
+            // Don't fail the PATCH — the operator can still send via OneSignal
+            // (no device_tokens needed) or hand-create the collections later.
+            // Surface the error so they know.
+            const msg = e instanceof Error ? e.message : String(e);
+            return c.json({ data: describeProviders(), bootstrap_error: msg });
           }
-          // First-time enable: bootstrap the system collections so hooks can
-          // call helpers.notify() and clients can register devices without the
-          // operator hand-building schema.
-          let bootstrap: { created: string[]; skipped: string[] } | null = null;
-          if (body.enabled === true) {
-            try {
-              bootstrap = await bootstrapNotificationCollections();
-            } catch (e) {
-              // Don't fail the PATCH — the operator can still send via OneSignal
-              // (no device_tokens needed) or hand-create the collections later.
-              // Surface the error so they know.
-              const msg = e instanceof Error ? e.message : String(e);
-              return { data: describeProviders(), bootstrap_error: msg };
-            }
-          }
-          const out: Record<string, unknown> = { data: describeProviders() };
-          if (bootstrap) out.bootstrap = bootstrap;
-          return out;
-        },
-        { body: PATCH_BODY, params: t.Object({ name: t.String() }) },
-      )
+        }
+        const out: Record<string, unknown> = { data: describeProviders() };
+        if (bootstrap) out.bootstrap = bootstrap;
+        return c.json(out);
+      })
       // ── Admin: test connection (no message sent) ───────────────────────────
-      .post(
-        "/admin/notifications/providers/:name/test-connection",
-        async ({ params, request, set }) => {
-          if (!(await isAdmin(request, jwtSecret))) {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
-          }
-          if (!isProviderName(params.name)) {
-            set.status = 404;
-            return { error: `Unknown provider: ${params.name}`, code: 404 };
-          }
-          const cfg = loadProviderConfigs();
-          const result =
-            params.name === "onesignal"
-              ? await testOneSignalConnection(cfg.onesignal)
-              : await testFcmConnection(cfg.fcm);
-          if (!result.ok) {
-            set.status = 422;
-            return { error: result.detail, code: 422 };
-          }
-          return { data: { ok: true, detail: result.detail } };
-        },
-        { params: t.Object({ name: t.String() }) },
-      )
+      .post("/admin/notifications/providers/:name/test-connection", async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
+        }
+        const name = c.req.param("name");
+        if (!isProviderName(name)) {
+          return c.json({ error: `Unknown provider: ${name}`, code: 404 }, 404);
+        }
+        const cfg = loadProviderConfigs();
+        const result =
+          name === "onesignal"
+            ? await testOneSignalConnection(cfg.onesignal)
+            : await testFcmConnection(cfg.fcm);
+        if (!result.ok) {
+          return c.json({ error: result.detail, code: 422 }, 422);
+        }
+        return c.json({ data: { ok: true, detail: result.detail } });
+      })
       // ── Admin: send a real test notification to a user ─────────────────────
       .post(
         "/admin/notifications/test",
-        async ({ body, request, set }) => {
-          if (!(await isAdmin(request, jwtSecret))) {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
+        jsonBody(
+          t.Object({
+            userId: t.String(),
+            title: t.Optional(t.String()),
+            body: t.Optional(t.String()),
+            data: t.Optional(t.Record(t.String(), t.Any())),
+            providers: t.Optional(t.Array(t.String())),
+          }),
+        ),
+        async (c) => {
+          if (!(await isAdmin(c.req.raw, jwtSecret))) {
+            return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
+          const body = c.req.valid("json");
           const providers = body.providers?.filter(isProviderName) ?? undefined;
           const payload: NotificationPayload = {
             title: body.title ?? "Vaultbase test",
@@ -265,37 +268,37 @@ export function makeNotificationsPlugin(jwtSecret: string) {
           };
           const opts = providers ? { providers } : {};
           const out = await dispatchNotification(body.userId, payload, opts);
-          return { data: out };
-        },
-        {
-          body: t.Object({
-            userId: t.String(),
-            title: t.Optional(t.String()),
-            body: t.Optional(t.String()),
-            data: t.Optional(t.Record(t.String(), t.Any())),
-            providers: t.Optional(t.Array(t.String())),
-          }),
+          return c.json({ data: out });
         },
       )
       // ── Authenticated user: register a device token ────────────────────────
       .post(
         "/notifications/devices",
-        async ({ body, request, set }) => {
-          const user = await authedUser(request, jwtSecret);
+        jsonBody(
+          t.Object({
+            token: t.String({ minLength: 1, maxLength: 4096 }),
+            provider: t.String(),
+            platform: t.String(),
+            app_version: t.Optional(t.String({ maxLength: 64 })),
+          }),
+        ),
+        async (c) => {
+          const user = await authedUser(c.req.raw, jwtSecret);
           if (!user) {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
+            return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
+          const body = c.req.valid("json");
           if (body.provider !== "fcm" && body.provider !== "apns") {
-            set.status = 422;
-            return {
-              error: `provider must be "fcm" or "apns" (OneSignal users don't register here)`,
-              code: 422,
-            };
+            return c.json(
+              {
+                error: `provider must be "fcm" or "apns" (OneSignal users don't register here)`,
+                code: 422,
+              },
+              422,
+            );
           }
           if (body.platform !== "ios" && body.platform !== "android" && body.platform !== "web") {
-            set.status = 422;
-            return { error: `platform must be one of ios, android, web`, code: 422 };
+            return c.json({ error: `platform must be one of ios, android, web`, code: 422 }, 422);
           }
           const client = rawClient();
           const now = Math.floor(Date.now() / 1000);
@@ -327,55 +330,44 @@ export function makeNotificationsPlugin(jwtSecret: string) {
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
             if (msg.includes("no such table")) {
-              set.status = 503;
-              return {
-                error:
-                  "Notifications not enabled (vb_device_tokens missing — admin must enable a token-based provider)",
-                code: 503,
-              };
+              return c.json(
+                {
+                  error:
+                    "Notifications not enabled (vb_device_tokens missing — admin must enable a token-based provider)",
+                  code: 503,
+                },
+                503,
+              );
             }
             throw e;
           }
-          return { data: { ok: true } };
-        },
-        {
-          body: t.Object({
-            token: t.String({ minLength: 1, maxLength: 4096 }),
-            provider: t.String(),
-            platform: t.String(),
-            app_version: t.Optional(t.String({ maxLength: 64 })),
-          }),
+          return c.json({ data: { ok: true } });
         },
       )
       // ── Authenticated user: unregister a device token (logout) ─────────────
-      .delete(
-        "/notifications/devices/:token",
-        async ({ params, request, set }) => {
-          const user = await authedUser(request, jwtSecret);
-          if (!user) {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
+      .delete("/notifications/devices/:token", async (c) => {
+        const user = await authedUser(c.req.raw, jwtSecret);
+        if (!user) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
+        }
+        const client = rawClient();
+        try {
+          // Soft delete (enabled=0) — preserves the row so we can analytics-on-it.
+          // Restrict to the calling user's own tokens (defense against ID forgery).
+          client
+            .prepare(`UPDATE vb_device_tokens SET enabled = 0 WHERE token = ? AND user = ?`)
+            .run(c.req.param("token"), user.id);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          if (msg.includes("no such table")) {
+            // Idempotent: nothing to disable, but not an error from the
+            // client's POV (they were calling logout-cleanup).
+            return c.json({ data: { ok: true } });
           }
-          const client = rawClient();
-          try {
-            // Soft delete (enabled=0) — preserves the row so we can analytics-on-it.
-            // Restrict to the calling user's own tokens (defense against ID forgery).
-            client
-              .prepare(`UPDATE vb_device_tokens SET enabled = 0 WHERE token = ? AND user = ?`)
-              .run(params.token, user.id);
-          } catch (e) {
-            const msg = e instanceof Error ? e.message : String(e);
-            if (msg.includes("no such table")) {
-              // Idempotent: nothing to disable, but not an error from the
-              // client's POV (they were calling logout-cleanup).
-              return { data: { ok: true } };
-            }
-            throw e;
-          }
-          return { data: { ok: true } };
-        },
-        { params: t.Object({ token: t.String() }) },
-      )
+          throw e;
+        }
+        return c.json({ data: { ok: true } });
+      })
   );
 }
 

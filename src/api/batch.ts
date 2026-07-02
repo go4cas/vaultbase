@@ -1,5 +1,7 @@
 import type { Database } from "bun:sqlite";
-import Elysia, { t } from "elysia";
+import { Hono } from "hono";
+import { Type as t } from "@sinclair/typebox";
+import { jsonBody } from "./validator.ts";
 import { getDb } from "../db/client.ts";
 import { getCollection } from "../core/collections.ts";
 import {
@@ -169,18 +171,29 @@ async function dispatchOp(
 }
 
 export function makeBatchPlugin(jwtSecret: string) {
-  return new Elysia({ name: "batch" }).post(
+  return new Hono().post(
     "/batch",
-    async ({ request, body, set }) => {
+    jsonBody(
+      t.Object({
+        requests: t.Array(
+          t.Object({
+            method: t.String(),
+            url: t.String(),
+            body: t.Optional(t.Any()),
+          }),
+        ),
+      }),
+    ),
+    async (c) => {
+      const request = c.req.raw;
       const auth = await extractAuth(request, jwtSecret);
+      const body = c.req.valid("json");
       const requests = body.requests;
       if (!Array.isArray(requests) || requests.length === 0) {
-        set.status = 422;
-        return { error: "requests array required", code: 422 };
+        return c.json({ error: "requests array required", code: 422 }, 422);
       }
       if (requests.length > MAX_BATCH) {
-        set.status = 422;
-        return { error: `Max ${MAX_BATCH} requests per batch`, code: 422 };
+        return c.json({ error: `Max ${MAX_BATCH} requests per batch`, code: 422 }, 422);
       }
 
       // Pre-parse to fail fast on invalid URLs/methods
@@ -189,8 +202,7 @@ export function makeBatchPlugin(jwtSecret: string) {
         const r = requests[i] as BatchRequest;
         const p = parseOp(r.method ?? "", r.url ?? "");
         if ("error" in p) {
-          set.status = 422;
-          return { error: `Request ${i}: ${p.error}`, code: 422 };
+          return c.json({ error: `Request ${i}: ${p.error}`, code: 422 }, 422);
         }
         parsed.push(p);
       }
@@ -205,51 +217,50 @@ export function makeBatchPlugin(jwtSecret: string) {
           results.push(result);
         }
         client.exec("COMMIT");
-        return { data: results };
+        return c.json({ data: results });
       } catch (e) {
         client.exec("ROLLBACK");
         if (e instanceof RuleDeniedError) {
-          set.status = 403;
-          return {
-            error: `Batch failed at request ${results.length}: forbidden by ${e.ruleName}`,
-            code: 403,
-          };
+          return c.json(
+            {
+              error: `Batch failed at request ${results.length}: forbidden by ${e.ruleName}`,
+              code: 403,
+            },
+            403,
+          );
         }
         if (e instanceof ValidationError) {
-          set.status = 422;
-          return {
-            error: `Batch failed at request ${results.length}: ${e.message}`,
-            code: 422,
-            details: e.details,
-          };
+          return c.json(
+            {
+              error: `Batch failed at request ${results.length}: ${e.message}`,
+              code: 422,
+              details: e.details,
+            },
+            422,
+          );
         }
         if (e instanceof RestrictError) {
-          set.status = 409;
-          return {
-            error: `Batch failed at request ${results.length}: ${e.message}`,
-            code: 409,
-            details: e.details,
-          };
+          return c.json(
+            {
+              error: `Batch failed at request ${results.length}: ${e.message}`,
+              code: 409,
+              details: e.details,
+            },
+            409,
+          );
         }
         if (e instanceof ReadOnlyCollectionError) {
-          set.status = 405;
-          return { error: `Batch failed at request ${results.length}: ${e.message}`, code: 405 };
+          return c.json(
+            { error: `Batch failed at request ${results.length}: ${e.message}`, code: 405 },
+            405,
+          );
         }
         const msg = e instanceof Error ? e.message : String(e);
-        set.status = 500;
-        return { error: `Batch failed at request ${results.length}: ${msg}`, code: 500 };
+        return c.json(
+          { error: `Batch failed at request ${results.length}: ${msg}`, code: 500 },
+          500,
+        );
       }
-    },
-    {
-      body: t.Object({
-        requests: t.Array(
-          t.Object({
-            method: t.String(),
-            url: t.String(),
-            body: t.Optional(t.Any()),
-          }),
-        ),
-      }),
     },
   );
 }

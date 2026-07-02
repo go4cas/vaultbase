@@ -1,7 +1,9 @@
 /**
  * /api/v1/admin/webhooks/* — admin CRUD + delivery log + manual test fire.
  */
-import Elysia, { t } from "elysia";
+import { Hono } from "hono";
+import { Type as t } from "@sinclair/typebox";
+import { jsonBody } from "./validator.ts";
 import { and, desc, eq, gte } from "drizzle-orm";
 import { getDb } from "../db/client.ts";
 import { webhooks, webhookDeliveries } from "../db/schema.ts";
@@ -22,43 +24,53 @@ function generateSecret(): string {
 
 export function makeWebhooksPlugin(jwtSecret: string) {
   return (
-    new Elysia({ name: "webhooks" })
-      .get("/admin/webhooks", async ({ request, set }) => {
-        if (!(await requireAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+    new Hono()
+      .get("/admin/webhooks", async (c) => {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const rows = await getDb().select().from(webhooks).orderBy(desc(webhooks.created_at));
-        return { data: rows };
+        return c.json({ data: rows });
       })
 
-      .get("/admin/webhooks/:id", async ({ request, params, set }) => {
-        if (!(await requireAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+      .get("/admin/webhooks/:id", async (c) => {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const rows = await getDb()
           .select()
           .from(webhooks)
-          .where(eq(webhooks.id, params.id))
+          .where(eq(webhooks.id, c.req.param("id")))
           .limit(1);
         if (rows.length === 0) {
-          set.status = 404;
-          return { error: "Webhook not found", code: 404 };
+          return c.json({ error: "Webhook not found", code: 404 }, 404);
         }
-        return { data: rows[0] };
+        return c.json({ data: rows[0] });
       })
 
       .post(
         "/admin/webhooks",
-        async ({ request, body, set }) => {
-          if (!(await requireAdmin(request, jwtSecret))) {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
+        jsonBody(
+          t.Object({
+            name: t.Optional(t.String()),
+            url: t.String(),
+            events: t.Optional(t.Array(t.String())),
+            secret: t.Optional(t.String()),
+            enabled: t.Optional(t.Boolean()),
+            retry_max: t.Optional(t.Number()),
+            retry_backoff: t.Optional(t.Union([t.Literal("exponential"), t.Literal("fixed")])),
+            retry_delay_ms: t.Optional(t.Number()),
+            timeout_ms: t.Optional(t.Number()),
+            custom_headers: t.Optional(t.Record(t.String(), t.String())),
+          }),
+        ),
+        async (c) => {
+          if (!(await requireAdmin(c.req.raw, jwtSecret))) {
+            return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
+          const body = c.req.valid("json");
           if (!body.url || !/^https?:\/\//i.test(body.url)) {
-            set.status = 422;
-            return { error: "url must be http(s)://", code: 422 };
+            return c.json({ error: "url must be http(s)://", code: 422 }, 422);
           }
           const id = crypto.randomUUID();
           const now = Math.floor(Date.now() / 1000);
@@ -80,12 +92,16 @@ export function makeWebhooksPlugin(jwtSecret: string) {
               updated_at: now,
             });
           const fresh = await getDb().select().from(webhooks).where(eq(webhooks.id, id)).limit(1);
-          return { data: fresh[0] };
+          return c.json({ data: fresh[0] });
         },
-        {
-          body: t.Object({
+      )
+
+      .patch(
+        "/admin/webhooks/:id",
+        jsonBody(
+          t.Object({
             name: t.Optional(t.String()),
-            url: t.String(),
+            url: t.Optional(t.String()),
             events: t.Optional(t.Array(t.String())),
             secret: t.Optional(t.String()),
             enabled: t.Optional(t.Boolean()),
@@ -95,19 +111,14 @@ export function makeWebhooksPlugin(jwtSecret: string) {
             timeout_ms: t.Optional(t.Number()),
             custom_headers: t.Optional(t.Record(t.String(), t.String())),
           }),
-        },
-      )
-
-      .patch(
-        "/admin/webhooks/:id",
-        async ({ request, params, body, set }) => {
-          if (!(await requireAdmin(request, jwtSecret))) {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
+        ),
+        async (c) => {
+          if (!(await requireAdmin(c.req.raw, jwtSecret))) {
+            return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
+          const body = c.req.valid("json");
           if (body.url !== undefined && !/^https?:\/\//i.test(body.url)) {
-            set.status = 422;
-            return { error: "url must be http(s)://", code: 422 };
+            return c.json({ error: "url must be http(s)://", code: 422 }, 422);
           }
           const patch: Record<string, unknown> = { updated_at: Math.floor(Date.now() / 1000) };
           if (body.name !== undefined) patch.name = body.name;
@@ -121,64 +132,47 @@ export function makeWebhooksPlugin(jwtSecret: string) {
           if (body.timeout_ms !== undefined) patch.timeout_ms = body.timeout_ms;
           if (body.custom_headers !== undefined)
             patch.custom_headers = JSON.stringify(body.custom_headers);
-          await getDb().update(webhooks).set(patch).where(eq(webhooks.id, params.id));
+          await getDb()
+            .update(webhooks)
+            .set(patch)
+            .where(eq(webhooks.id, c.req.param("id")));
           const fresh = await getDb()
             .select()
             .from(webhooks)
-            .where(eq(webhooks.id, params.id))
+            .where(eq(webhooks.id, c.req.param("id")))
             .limit(1);
           if (fresh.length === 0) {
-            set.status = 404;
-            return { error: "Webhook not found", code: 404 };
+            return c.json({ error: "Webhook not found", code: 404 }, 404);
           }
-          return { data: fresh[0] };
-        },
-        {
-          body: t.Object({
-            name: t.Optional(t.String()),
-            url: t.Optional(t.String()),
-            events: t.Optional(t.Array(t.String())),
-            secret: t.Optional(t.String()),
-            enabled: t.Optional(t.Boolean()),
-            retry_max: t.Optional(t.Number()),
-            retry_backoff: t.Optional(t.Union([t.Literal("exponential"), t.Literal("fixed")])),
-            retry_delay_ms: t.Optional(t.Number()),
-            timeout_ms: t.Optional(t.Number()),
-            custom_headers: t.Optional(t.Record(t.String(), t.String())),
-          }),
+          return c.json({ data: fresh[0] });
         },
       )
 
-      .delete("/admin/webhooks/:id", async ({ request, params, set }) => {
-        if (!(await requireAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+      .delete("/admin/webhooks/:id", async (c) => {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        await getDb().delete(webhooks).where(eq(webhooks.id, params.id));
-        return { data: { deleted: params.id } };
+        const id = c.req.param("id");
+        await getDb().delete(webhooks).where(eq(webhooks.id, id));
+        return c.json({ data: { deleted: id } });
       })
 
       // Fire a test event so the operator can confirm wiring without
       // touching real records.
-      .post("/admin/webhooks/:id/test", async ({ request, params, set }) => {
-        if (!(await requireAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+      .post("/admin/webhooks/:id/test", async (c) => {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        const rows = await getDb()
-          .select()
-          .from(webhooks)
-          .where(eq(webhooks.id, params.id))
-          .limit(1);
+        const id = c.req.param("id");
+        const rows = await getDb().select().from(webhooks).where(eq(webhooks.id, id)).limit(1);
         const w = rows[0];
         if (!w) {
-          set.status = 404;
-          return { error: "Webhook not found", code: 404 };
+          return c.json({ error: "Webhook not found", code: 404 }, 404);
         }
         // Synthesize a delivery scoped to this single webhook by temporarily
         // narrowing the event-match. Simplest: emit a synthetic event under
         // a name that only this webhook is subscribed to.
-        const event = `__test.${params.id}`;
+        const event = `__test.${id}`;
         // Force-subscribe by injecting `__test.<id>` into events temporarily.
         const events = JSON.parse(w.events) as string[];
         const updated = JSON.stringify(Array.from(new Set([...events, event])));
@@ -188,37 +182,28 @@ export function makeWebhooksPlugin(jwtSecret: string) {
         } finally {
           await getDb().update(webhooks).set({ events: w.events }).where(eq(webhooks.id, w.id));
         }
-        return { data: { ok: true } };
+        return c.json({ data: { ok: true } });
       })
 
       // Delivery log — per-webhook recent deliveries.
-      .get(
-        "/admin/webhooks/:id/deliveries",
-        async ({ request, params, query, set }) => {
-          if (!(await requireAdmin(request, jwtSecret))) {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
-          }
-          const limit = Math.min(200, Math.max(1, parseInt(query.limit ?? "50", 10)));
-          const sinceRaw = query.since ? parseInt(query.since, 10) : 0;
-          const conds =
-            sinceRaw > 0
-              ? and(
-                  eq(webhookDeliveries.webhook_id, params.id),
-                  gte(webhookDeliveries.created_at, sinceRaw),
-                )
-              : eq(webhookDeliveries.webhook_id, params.id);
-          const rows = await getDb()
-            .select()
-            .from(webhookDeliveries)
-            .where(conds)
-            .orderBy(desc(webhookDeliveries.created_at))
-            .limit(limit);
-          return { data: rows };
-        },
-        {
-          query: t.Object({ limit: t.Optional(t.String()), since: t.Optional(t.String()) }),
-        },
-      )
+      .get("/admin/webhooks/:id/deliveries", async (c) => {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
+        }
+        const id = c.req.param("id");
+        const limit = Math.min(200, Math.max(1, parseInt(c.req.query("limit") ?? "50", 10)));
+        const sinceRaw = c.req.query("since") ? parseInt(c.req.query("since")!, 10) : 0;
+        const conds =
+          sinceRaw > 0
+            ? and(eq(webhookDeliveries.webhook_id, id), gte(webhookDeliveries.created_at, sinceRaw))
+            : eq(webhookDeliveries.webhook_id, id);
+        const rows = await getDb()
+          .select()
+          .from(webhookDeliveries)
+          .where(conds)
+          .orderBy(desc(webhookDeliveries.created_at))
+          .limit(limit);
+        return c.json({ data: rows });
+      })
   );
 }

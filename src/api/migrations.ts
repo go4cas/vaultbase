@@ -1,4 +1,6 @@
-import Elysia, { t } from "elysia";
+import { Hono } from "hono";
+import { Type as t } from "@sinclair/typebox";
+import { jsonBody } from "./validator.ts";
 import { listCollections, parseFields } from "../core/collections.ts";
 import {
   applySnapshot,
@@ -26,86 +28,75 @@ export const _describeCollectionChanges = describeCollectionChanges;
 export { computeSnapshotDiff };
 
 export function makeMigrationsPlugin(jwtSecret: string) {
-  return new Elysia({ name: "migrations" })
-    .get("/admin/migrations/snapshot", async ({ request, set }) => {
-      if (!(await isAdmin(request, jwtSecret))) {
-        set.status = 401;
-        return { error: "Unauthorized", code: 401 };
+  return new Hono()
+    .get("/admin/migrations/snapshot", async (c) => {
+      if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        return c.json({ error: "Unauthorized", code: 401 }, 401);
       }
       const cols = await listCollections();
       const snapshot: Snapshot = {
         generated_at: new Date().toISOString(),
         version: 1,
-        collections: cols.map((c): CollectionSnapshot => {
+        collections: cols.map((col): CollectionSnapshot => {
           const out: CollectionSnapshot = {
-            name: c.name,
-            type: (c.type ?? "base") as "base" | "auth" | "view",
-            fields: parseFields(c.fields),
+            name: col.name,
+            type: (col.type ?? "base") as "base" | "auth" | "view",
+            fields: parseFields(col.fields),
           };
-          if (c.view_query !== null && c.view_query !== undefined) out.view_query = c.view_query;
-          if (c.list_rule !== null && c.list_rule !== undefined) out.list_rule = c.list_rule;
-          if (c.view_rule !== null && c.view_rule !== undefined) out.view_rule = c.view_rule;
-          if (c.create_rule !== null && c.create_rule !== undefined)
-            out.create_rule = c.create_rule;
-          if (c.update_rule !== null && c.update_rule !== undefined)
-            out.update_rule = c.update_rule;
-          if (c.delete_rule !== null && c.delete_rule !== undefined)
-            out.delete_rule = c.delete_rule;
+          if (col.view_query !== null && col.view_query !== undefined)
+            out.view_query = col.view_query;
+          if (col.list_rule !== null && col.list_rule !== undefined) out.list_rule = col.list_rule;
+          if (col.view_rule !== null && col.view_rule !== undefined) out.view_rule = col.view_rule;
+          if (col.create_rule !== null && col.create_rule !== undefined)
+            out.create_rule = col.create_rule;
+          if (col.update_rule !== null && col.update_rule !== undefined)
+            out.update_rule = col.update_rule;
+          if (col.delete_rule !== null && col.delete_rule !== undefined)
+            out.delete_rule = col.delete_rule;
           return out;
         }),
       };
-      set.headers["Content-Type"] = "application/json; charset=utf-8";
-      set.headers["Content-Disposition"] =
-        `attachment; filename="vaultbase-snapshot-${snapshot.generated_at.slice(0, 10)}.json"`;
-      return snapshot;
+      c.header(
+        "Content-Disposition",
+        `attachment; filename="vaultbase-snapshot-${snapshot.generated_at.slice(0, 10)}.json"`,
+      );
+      return c.json(snapshot);
+    })
+
+    .post("/admin/migrations/diff", jsonBody(t.Object({ snapshot: t.Any() })), async (c) => {
+      if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        return c.json({ error: "Unauthorized", code: 401 }, 401);
+      }
+      const body = c.req.valid("json");
+      if (!body.snapshot || typeof body.snapshot !== "object") {
+        return c.json({ error: "snapshot object required", code: 422 }, 422);
+      }
+      const snap = body.snapshot as Snapshot;
+      if (snap.version !== 1) {
+        return c.json({ error: `Unsupported snapshot version: ${snap.version}`, code: 422 }, 422);
+      }
+      if (!Array.isArray(snap.collections)) {
+        return c.json({ error: "snapshot.collections must be an array", code: 422 }, 422);
+      }
+      const data = await computeSnapshotDiff(snap);
+      return c.json({ data });
     })
 
     .post(
-      "/admin/migrations/diff",
-      async ({ request, body, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
-        }
-        if (!body.snapshot || typeof body.snapshot !== "object") {
-          set.status = 422;
-          return { error: "snapshot object required", code: 422 };
-        }
-        const snap = body.snapshot as Snapshot;
-        if (snap.version !== 1) {
-          set.status = 422;
-          return { error: `Unsupported snapshot version: ${snap.version}`, code: 422 };
-        }
-        if (!Array.isArray(snap.collections)) {
-          set.status = 422;
-          return { error: "snapshot.collections must be an array", code: 422 };
-        }
-        const data = await computeSnapshotDiff(snap);
-        return { data };
-      },
-      {
-        body: t.Object({
-          snapshot: t.Any(),
-        }),
-      },
-    )
-
-    .post(
       "/admin/migrations/apply",
-      async ({ request, body, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+      jsonBody(t.Object({ snapshot: t.Any(), mode: t.Optional(t.String()) })),
+      async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
+        const body = c.req.valid("json");
         if (!body.snapshot || typeof body.snapshot !== "object") {
-          set.status = 422;
-          return { error: "snapshot object required", code: 422 };
+          return c.json({ error: "snapshot object required", code: 422 }, 422);
         }
 
         const mode = (body.mode ?? "additive") as ApplyMode;
         if (mode !== "additive" && mode !== "sync") {
-          set.status = 422;
-          return { error: "mode must be 'additive' or 'sync'", code: 422 };
+          return c.json({ error: "mode must be 'additive' or 'sync'", code: 422 }, 422);
         }
 
         let result;
@@ -113,8 +104,7 @@ export function makeMigrationsPlugin(jwtSecret: string) {
           result = await applySnapshot(body.snapshot, { mode });
         } catch (e) {
           if (e instanceof SnapshotShapeError) {
-            set.status = 422;
-            return { error: e.message, code: 422 };
+            return c.json({ error: e.message, code: 422 }, 422);
           }
           throw e;
         }
@@ -122,20 +112,14 @@ export function makeMigrationsPlugin(jwtSecret: string) {
         // Preserve the existing HTTP response shape: callers expect
         // `{ created, updated, skipped, errors }` where `skipped` is the union
         // of "skipped because additive" + "unchanged because already in sync".
-        return {
+        return c.json({
           data: {
             created: result.created,
             updated: result.updated,
             skipped: [...result.skipped, ...result.unchanged],
             errors: result.errors,
           },
-        };
-      },
-      {
-        body: t.Object({
-          snapshot: t.Any(),
-          mode: t.Optional(t.String()),
-        }),
+        });
       },
     );
 }

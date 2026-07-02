@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
-import Elysia, { t } from "elysia";
+import { Hono } from "hono";
+import { Type as t } from "@sinclair/typebox";
+import { jsonBody } from "./validator.ts";
 import { getDb } from "../db/client.ts";
 import { hooks } from "../db/schema.ts";
 import { HOOK_EVENTS, invalidateHookCache } from "../core/hooks.ts";
@@ -13,26 +15,33 @@ async function isAdmin(request: Request, jwtSecret: string): Promise<boolean> {
 }
 
 export function makeHooksPlugin(jwtSecret: string) {
-  return new Elysia({ name: "hooks" })
-    .get("/admin/hooks", async ({ request, set }) => {
-      if (!(await isAdmin(request, jwtSecret))) {
-        set.status = 401;
-        return { error: "Unauthorized", code: 401 };
+  return new Hono()
+    .get("/admin/hooks", async (c) => {
+      if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        return c.json({ error: "Unauthorized", code: 401 }, 401);
       }
       const rows = await getDb().select().from(hooks);
-      return { data: rows };
+      return c.json({ data: rows });
     })
 
     .post(
       "/admin/hooks",
-      async ({ request, body, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+      jsonBody(
+        t.Object({
+          name: t.Optional(t.String()),
+          collection_name: t.Optional(t.String()),
+          event: t.String(),
+          code: t.Optional(t.String()),
+          enabled: t.Optional(t.Boolean()),
+        }),
+      ),
+      async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
+        const body = c.req.valid("json");
         if (!HOOK_EVENTS.includes(body.event as (typeof HOOK_EVENTS)[number])) {
-          set.status = 422;
-          return { error: `Invalid event: ${body.event}`, code: 422 };
+          return c.json({ error: `Invalid event: ${body.event}`, code: 422 }, 422);
         }
         const id = crypto.randomUUID();
         const now = Math.floor(Date.now() / 1000);
@@ -50,26 +59,26 @@ export function makeHooksPlugin(jwtSecret: string) {
           });
         invalidateHookCache();
         const row = await getDb().select().from(hooks).where(eq(hooks.id, id)).limit(1);
-        return { data: row[0] };
-      },
-      {
-        body: t.Object({
-          name: t.Optional(t.String()),
-          collection_name: t.Optional(t.String()),
-          event: t.String(),
-          code: t.Optional(t.String()),
-          enabled: t.Optional(t.Boolean()),
-        }),
+        return c.json({ data: row[0] });
       },
     )
 
     .patch(
       "/admin/hooks/:id",
-      async ({ request, params, body, set }) => {
-        if (!(await isAdmin(request, jwtSecret))) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+      jsonBody(
+        t.Object({
+          name: t.Optional(t.String()),
+          collection_name: t.Optional(t.String()),
+          event: t.Optional(t.String()),
+          code: t.Optional(t.String()),
+          enabled: t.Optional(t.Boolean()),
+        }),
+      ),
+      async (c) => {
+        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
+        const body = c.req.valid("json");
         const update: {
           name?: string;
           collection_name?: string;
@@ -84,40 +93,37 @@ export function makeHooksPlugin(jwtSecret: string) {
         if (body.collection_name !== undefined) update.collection_name = body.collection_name;
         if (body.event !== undefined) {
           if (!HOOK_EVENTS.includes(body.event as (typeof HOOK_EVENTS)[number])) {
-            set.status = 422;
-            return { error: `Invalid event: ${body.event}`, code: 422 };
+            return c.json({ error: `Invalid event: ${body.event}`, code: 422 }, 422);
           }
           update.event = body.event;
         }
         if (body.code !== undefined) update.code = body.code;
         if (body.enabled !== undefined) update.enabled = body.enabled ? 1 : 0;
-        await getDb().update(hooks).set(update).where(eq(hooks.id, params.id));
+        await getDb()
+          .update(hooks)
+          .set(update)
+          .where(eq(hooks.id, c.req.param("id")));
         invalidateHookCache();
-        const row = await getDb().select().from(hooks).where(eq(hooks.id, params.id)).limit(1);
+        const row = await getDb()
+          .select()
+          .from(hooks)
+          .where(eq(hooks.id, c.req.param("id")))
+          .limit(1);
         if (row.length === 0) {
-          set.status = 404;
-          return { error: "Hook not found", code: 404 };
+          return c.json({ error: "Hook not found", code: 404 }, 404);
         }
-        return { data: row[0] };
-      },
-      {
-        body: t.Object({
-          name: t.Optional(t.String()),
-          collection_name: t.Optional(t.String()),
-          event: t.Optional(t.String()),
-          code: t.Optional(t.String()),
-          enabled: t.Optional(t.Boolean()),
-        }),
+        return c.json({ data: row[0] });
       },
     )
 
-    .delete("/admin/hooks/:id", async ({ request, params, set }) => {
-      if (!(await isAdmin(request, jwtSecret))) {
-        set.status = 401;
-        return { error: "Unauthorized", code: 401 };
+    .delete("/admin/hooks/:id", async (c) => {
+      if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        return c.json({ error: "Unauthorized", code: 401 }, 401);
       }
-      await getDb().delete(hooks).where(eq(hooks.id, params.id));
+      await getDb()
+        .delete(hooks)
+        .where(eq(hooks.id, c.req.param("id")));
       invalidateHookCache();
-      return { data: null };
+      return c.json({ data: null });
     });
 }
