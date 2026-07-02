@@ -87,7 +87,7 @@ describe("DELETE /api/auth/:collection/oauth2/:provider/unlink", () => {
 
     const app = makeAuthPlugin(JWT_SECRET);
     const token = await userJwt(userId, col.name);
-    const res = await app.handle(unlinkRequest(token, col.name, "google"));
+    const res = await app.request(unlinkRequest(token, col.name, "google"));
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data?: unknown; error?: string; code?: number };
     expect(body).toEqual({ data: null });
@@ -107,7 +107,7 @@ describe("DELETE /api/auth/:collection/oauth2/:provider/unlink", () => {
 
     const app = makeAuthPlugin(JWT_SECRET);
     const token = await userJwt(userId, col.name);
-    const res = await app.handle(unlinkRequest(token, col.name, "google"));
+    const res = await app.request(unlinkRequest(token, col.name, "google"));
     expect(res.status).toBe(404);
     const body = (await res.json()) as { data?: unknown; error?: string; code?: number };
     expect(body.code).toBe(404);
@@ -121,7 +121,7 @@ describe("DELETE /api/auth/:collection/oauth2/:provider/unlink", () => {
 
     const app = makeAuthPlugin(JWT_SECRET);
     const token = await userJwt(userId, col.name);
-    const res = await app.handle(unlinkRequest(token, col.name, "google"));
+    const res = await app.request(unlinkRequest(token, col.name, "google"));
     expect(res.status).toBe(409);
     const body = (await res.json()) as { data?: unknown; error?: string; code?: number };
     expect(body).toEqual({ error: "Cannot unlink — would leave you locked out", code: 409 });
@@ -146,7 +146,7 @@ describe("DELETE /api/auth/:collection/oauth2/:provider/unlink", () => {
     const adminToken = await userJwt(adminUserId, col.name);
 
     // Admin unlinks their OWN google link — succeeds.
-    const ownRes = await app.handle(unlinkRequest(adminToken, col.name, "google"));
+    const ownRes = await app.request(unlinkRequest(adminToken, col.name, "google"));
     expect(ownRes.status).toBe(200);
 
     // The OTHER user's google link is untouched (the endpoint resolves user_id

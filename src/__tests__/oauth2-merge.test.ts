@@ -94,7 +94,7 @@ describe("oauth2 merge-confirm", () => {
     const mergeToken = await stagePendingMerge(userId, col.id, "alice@example.test");
 
     const app = makeAuthPlugin(JWT_SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       confirmReq(null, {
         merge_token: mergeToken,
         password: "correct-horse-battery-staple",
@@ -124,7 +124,7 @@ describe("oauth2 merge-confirm", () => {
     const userJwt = await signUserJwt(userId, "bob@example.test");
 
     const app = makeAuthPlugin(JWT_SECRET);
-    const res = await app.handle(confirmReq(userJwt, { merge_token: mergeToken }));
+    const res = await app.request(confirmReq(userJwt, { merge_token: mergeToken }));
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { linked_provider: string } };
     expect(body.data.linked_provider).toBe(PROVIDER);
@@ -136,7 +136,7 @@ describe("oauth2 merge-confirm", () => {
     const mergeToken = await stagePendingMerge(userId, col.id, "carol@example.test");
 
     const app = makeAuthPlugin(JWT_SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       confirmReq(null, {
         merge_token: mergeToken,
         password: "wrong",
@@ -156,7 +156,7 @@ describe("oauth2 merge-confirm", () => {
     const wrongJwt = await signUserJwt(otherId, "eve@example.test");
 
     const app = makeAuthPlugin(JWT_SECRET);
-    const res = await app.handle(confirmReq(wrongJwt, { merge_token: mergeToken }));
+    const res = await app.request(confirmReq(wrongJwt, { merge_token: mergeToken }));
     expect(res.status).toBe(401);
   });
 
@@ -183,7 +183,7 @@ describe("oauth2 merge-confirm", () => {
       });
 
     const app = makeAuthPlugin(JWT_SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       confirmReq(null, {
         merge_token: mergeToken,
         password: "pw",
@@ -198,9 +198,9 @@ describe("oauth2 merge-confirm", () => {
     const mergeToken = await stagePendingMerge(userId, col.id, "grace@example.test");
 
     const app = makeAuthPlugin(JWT_SECRET);
-    const first = await app.handle(confirmReq(null, { merge_token: mergeToken, password: "pw" }));
+    const first = await app.request(confirmReq(null, { merge_token: mergeToken, password: "pw" }));
     expect(first.status).toBe(200);
-    const second = await app.handle(confirmReq(null, { merge_token: mergeToken, password: "pw" }));
+    const second = await app.request(confirmReq(null, { merge_token: mergeToken, password: "pw" }));
     expect(second.status).toBe(401);
   });
 
@@ -219,7 +219,7 @@ describe("oauth2 merge-confirm", () => {
     const mergeToken = await stagePendingMerge(userId, col.id, "henry@example.test");
 
     const app = makeAuthPlugin(JWT_SECRET);
-    const res = await app.handle(confirmReq(null, { merge_token: mergeToken, password: "pw" }));
+    const res = await app.request(confirmReq(null, { merge_token: mergeToken, password: "pw" }));
     expect(res.status).toBe(200);
 
     const links = await getDb()

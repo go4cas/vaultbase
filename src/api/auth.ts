@@ -1,5 +1,7 @@
 import { and, eq, isNull } from "drizzle-orm";
-import Elysia, { t } from "elysia";
+import { Hono } from "hono";
+import { Type as t } from "@sinclair/typebox";
+import { jsonBody } from "./validator.ts";
 import { log } from "../core/log.ts";
 import * as jose from "jose";
 import { getDb } from "../db/client.ts";
@@ -265,22 +267,24 @@ async function issueOtpAndSend(
 
 export function makeAuthPlugin(jwtSecret: string) {
   return (
-    new Elysia({ name: "auth" })
-      .get("/admin/setup/status", async () => {
+    new Hono()
+      .get("/admin/setup/status", async (c) => {
         const db = getDb();
         const existing = await db.select().from(admin).limit(1);
-        return { data: { has_admin: existing.length > 0 } };
+        return c.json({ data: { has_admin: existing.length > 0 } });
       })
       .post(
         "/admin/setup",
-        async ({ body, request, set }) => {
+        jsonBody(t.Object({ email: t.String(), password: t.String() })),
+        async (c) => {
+          const request = c.req.raw;
+          const body = c.req.valid("json");
           {
             const pwErr = await validatePassword(
               typeof body.password === "string" ? body.password : "",
             );
             if (pwErr) {
-              set.status = 422;
-              return { error: pwErr, code: 422 };
+              return c.json({ error: pwErr, code: 422 }, 422);
             }
           }
           // Optional setup-key gate. When `VAULTBASE_SETUP_KEY` is set, the
@@ -290,8 +294,7 @@ export function makeAuthPlugin(jwtSecret: string) {
           if (expected) {
             const provided = request.headers.get("x-setup-key");
             if (!provided || provided !== expected) {
-              set.status = 401;
-              return { error: "Setup key required", code: 401 };
+              return c.json({ error: "Setup key required", code: 401 }, 401);
             }
           }
           const db = getDb();
@@ -308,24 +311,24 @@ export function makeAuthPlugin(jwtSecret: string) {
               created_at: now,
             });
           } catch {
-            set.status = 400;
-            return { error: "Admin already set up", code: 400 };
+            return c.json({ error: "Admin already set up", code: 400 }, 400);
           }
           // Confirm we're still the only admin — if a concurrent setup landed,
           // delete our row to keep the install clean and refuse.
           const all = await db.select().from(admin);
           if (all.length > 1) {
             await db.delete(admin).where(eq(admin.id, id));
-            set.status = 400;
-            return { error: "Admin already set up", code: 400 };
+            return c.json({ error: "Admin already set up", code: 400 }, 400);
           }
-          return { data: { id, email: body.email } };
+          return c.json({ data: { id, email: body.email } });
         },
-        { body: t.Object({ email: t.String(), password: t.String() }) },
       )
       .post(
         "/admin/auth/login",
-        async ({ body, request }) => {
+        jsonBody(t.Object({ email: t.String(), password: t.String() })),
+        async (c) => {
+          const request = c.req.raw;
+          const body = c.req.valid("json");
           const ip = clientIpForLockout(request);
           // Lockout gate runs *before* password verify so a successful attempt
           // by a different account from the same IP doesn't leak signal.
@@ -380,51 +383,45 @@ export function makeAuthPlugin(jwtSecret: string) {
             },
           );
         },
-        { body: t.Object({ email: t.String(), password: t.String() }) },
       )
-      .get("/admin/auth/me", async ({ request, set }) => {
+      .get("/admin/auth/me", async (c) => {
+        const request = c.req.raw;
         const token = request.headers.get("authorization")?.replace("Bearer ", "");
         if (!token) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const ctx = await verifyAuthToken(token, jwtSecret, { audience: "admin" });
         if (!ctx) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        return { data: { id: ctx.id, email: ctx.email ?? "", aud: "admin", exp: ctx.exp } };
+        return c.json({ data: { id: ctx.id, email: ctx.email ?? "", aud: "admin", exp: ctx.exp } });
       })
       // Admin recovery: clear a user's TOTP secret + recovery codes. Records
       // flow `PATCH` strips auth-system columns, so this dedicated endpoint
       // exists for the "user lost their authenticator" admin operation.
-      .post("/admin/users/:collection/:id/disable-mfa", async ({ params, request, set }) => {
+      .post("/admin/users/:collection/:id/disable-mfa", async (c) => {
+        const request = c.req.raw;
         const token = request.headers.get("authorization")?.replace("Bearer ", "");
         if (!token) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const ctx = await verifyAuthToken(token, jwtSecret, { audience: "admin" });
         if (!ctx) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        const col = await getCollection(params.collection);
+        const col = await getCollection(c.req.param("collection"));
         if (!col) {
-          set.status = 404;
-          return { error: "Collection not found", code: 404 };
+          return c.json({ error: "Collection not found", code: 404 }, 404);
         }
         if (col.type !== "auth") {
-          set.status = 422;
-          return { error: `'${col.name}' is not an auth collection`, code: 422 };
+          return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
         }
-        const u = findUserById(col, params.id);
+        const u = findUserById(col, c.req.param("id"));
         if (!u) {
-          set.status = 404;
-          return { error: "User not found", code: 404 };
+          return c.json({ error: "User not found", code: 404 }, 404);
         }
         const now = Math.floor(Date.now() / 1000);
-        await updateUserById(col, params.id, {
+        await updateUserById(col, c.req.param("id"), {
           totp_enabled: 0,
           totp_secret: null,
           updated_at: now,
@@ -434,31 +431,32 @@ export function makeAuthPlugin(jwtSecret: string) {
           .delete(mfaRecoveryCodes)
           .where(
             and(
-              eq(mfaRecoveryCodes.user_id, params.id),
+              eq(mfaRecoveryCodes.user_id, c.req.param("id")),
               eq(mfaRecoveryCodes.collection_id, col.id),
             ),
           );
-        return { data: { disabled: true } };
+        return c.json({ data: { disabled: true } });
       })
       .post(
         "/auth/:collection/register",
-        async ({ params, body, set }) => {
-          const col = await getCollection(params.collection);
+        jsonBody(
+          t.Object({ email: t.String(), password: t.String() }, { additionalProperties: true }),
+        ),
+        async (c) => {
+          const body = c.req.valid("json");
+          const col = await getCollection(c.req.param("collection"));
           if (!col) {
-            set.status = 404;
-            return { error: "Collection not found", code: 404 };
+            return c.json({ error: "Collection not found", code: 404 }, 404);
           }
           if (col.type !== "auth") {
-            set.status = 422;
-            return { error: `'${col.name}' is not an auth collection`, code: 422 };
+            return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
           }
           {
             const pwErr = await validatePassword(
               typeof body.password === "string" ? body.password : "",
             );
             if (pwErr) {
-              set.status = 422;
-              return { error: pwErr, code: 422 };
+              return c.json({ error: pwErr, code: 422 }, 422);
             }
           }
           // v0.11: per-collection email uniqueness via vb_<col> + legacy
@@ -487,14 +485,13 @@ export function makeAuthPlugin(jwtSecret: string) {
             // Return the same shape as a fresh-success path so a network observer
             // can't tell the two cases apart. `id` is the existing user's id —
             // not a leak: knowing the id alone gives no access without auth.
-            return { data: { id: existing.id, email: body.email } };
+            return c.json({ data: { id: existing.id, email: body.email } });
           }
           try {
             await validateAuthRegister(col, body as Record<string, unknown>);
           } catch (e) {
             if (e instanceof ValidationError) {
-              set.status = 422;
-              return { error: "Validation failed", code: 422, details: e.details };
+              return c.json({ error: "Validation failed", code: 422, details: e.details }, 422);
             }
             throw e;
           }
@@ -518,8 +515,7 @@ export function makeAuthPlugin(jwtSecret: string) {
             });
           } catch (e) {
             if (e instanceof ValidationError) {
-              set.status = 422;
-              return { error: "Validation failed", code: 422, details: e.details };
+              return c.json({ error: "Validation failed", code: 422, details: e.details }, 422);
             }
             throw e;
           }
@@ -556,26 +552,20 @@ export function makeAuthPlugin(jwtSecret: string) {
               });
             });
           }
-          return { data: { id, email } };
-        },
-        {
-          body: t.Object(
-            { email: t.String(), password: t.String() },
-            { additionalProperties: true },
-          ),
+          return c.json({ data: { id, email } });
         },
       )
       .post(
         "/auth/:collection/login",
-        async ({ params, body, set }) => {
-          const col = await getCollection(params.collection);
+        jsonBody(t.Object({ email: t.String(), password: t.String() })),
+        async (c) => {
+          const body = c.req.valid("json");
+          const col = await getCollection(c.req.param("collection"));
           if (!col) {
-            set.status = 404;
-            return { error: "Collection not found", code: 404 };
+            return c.json({ error: "Collection not found", code: 404 }, 404);
           }
           if (col.type !== "auth") {
-            set.status = 422;
-            return { error: `'${col.name}' is not an auth collection`, code: 422 };
+            return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
           }
           // Per-collection email lookup (vb_<col> first, legacy fallback).
           const u = findUserByEmail(col, body.email);
@@ -583,8 +573,7 @@ export function makeAuthPlugin(jwtSecret: string) {
           const hashToCheck = u?.password_hash ?? dummyPasswordHash();
           const valid = await Bun.password.verify(body.password, hashToCheck).catch(() => false);
           if (!u || !valid) {
-            set.status = 401;
-            return { error: "Invalid credentials", code: 401 };
+            return c.json({ error: "Invalid credentials", code: 401 }, 401);
           }
 
           const db = getDb();
@@ -598,40 +587,47 @@ export function makeAuthPlugin(jwtSecret: string) {
               purpose: "mfa_ticket",
               expires_at: now + MFA_TICKET_TTL_SECONDS,
             });
-            return { data: { mfa_required: true, mfa_token: ticket } };
+            return c.json({ data: { mfa_required: true, mfa_token: ticket } });
           }
 
           const { token } = await signAuthToken({
-            payload: { id: u.id, email: u.email, collection: params.collection },
+            payload: { id: u.id, email: u.email, collection: c.req.param("collection") },
             audience: "user",
             expiresInSeconds: tokenWindowSeconds("user"),
             jwtSecret,
           });
-          return { data: { token, record: { id: u.id, email: u.email } } };
+          return c.json({ data: { token, record: { id: u.id, email: u.email } } });
         },
-        { body: t.Object({ email: t.String(), password: t.String() }) },
       )
       // Step-2 of MFA login: trade the mfa_token + a valid TOTP code (or a
       // single-use recovery code) for a full JWT. Exactly one of `code` /
       // `recovery_code` must be supplied.
       .post(
         "/auth/:collection/login/mfa",
-        async ({ params, body, set }) => {
-          const col = await getCollection(params.collection);
+        jsonBody(
+          t.Object({
+            mfa_token: t.String(),
+            code: t.Optional(t.String()),
+            recovery_code: t.Optional(t.String()),
+          }),
+        ),
+        async (c) => {
+          const body = c.req.valid("json");
+          const col = await getCollection(c.req.param("collection"));
           if (!col) {
-            set.status = 404;
-            return { error: "Collection not found", code: 404 };
+            return c.json({ error: "Collection not found", code: 404 }, 404);
           }
           if (col.type !== "auth") {
-            set.status = 422;
-            return { error: `'${col.name}' is not an auth collection`, code: 422 };
+            return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
           }
           const hasCode = typeof body.code === "string" && body.code.length > 0;
           const hasRecovery =
             typeof body.recovery_code === "string" && body.recovery_code.length > 0;
           if (hasCode === hasRecovery) {
-            set.status = 422;
-            return { error: "Provide exactly one of code or recovery_code", code: 422 };
+            return c.json(
+              { error: "Provide exactly one of code or recovery_code", code: 422 },
+              422,
+            );
           }
           const db = getDb();
           const rows = await db
@@ -647,13 +643,11 @@ export function makeAuthPlugin(jwtSecret: string) {
             tok.used_at ||
             tok.expires_at < now
           ) {
-            set.status = 400;
-            return { error: "Invalid or expired MFA ticket", code: 400 };
+            return c.json({ error: "Invalid or expired MFA ticket", code: 400 }, 400);
           }
           const u = findUserById(col, tok.user_id);
           if (!u?.totp_secret) {
-            set.status = 400;
-            return { error: "MFA not configured for this account", code: 400 };
+            return c.json({ error: "MFA not configured for this account", code: 400 }, 400);
           }
           if (hasCode) {
             if (!verifyTotpCode(u.totp_secret, body.code!)) {
@@ -663,8 +657,7 @@ export function makeAuthPlugin(jwtSecret: string) {
               if (attempts >= MAX_OTP_ATTEMPTS) {
                 await db.update(authTokens).set({ used_at: now }).where(eq(authTokens.id, tok.id));
               }
-              set.status = 401;
-              return { error: "Invalid code", code: 401 };
+              return c.json({ error: "Invalid code", code: 401 }, 401);
             }
           } else {
             // O(1) HMAC lookup; the actual hash is still argon2id (defense in depth).
@@ -701,8 +694,7 @@ export function makeAuthPlugin(jwtSecret: string) {
               if (attempts >= MAX_OTP_ATTEMPTS) {
                 await db.update(authTokens).set({ used_at: now }).where(eq(authTokens.id, tok.id));
               }
-              set.status = 401;
-              return { error: "Invalid recovery code", code: 401 };
+              return c.json({ error: "Invalid recovery code", code: 401 }, 401);
             }
             await db
               .update(mfaRecoveryCodes)
@@ -717,35 +709,25 @@ export function makeAuthPlugin(jwtSecret: string) {
             expiresInSeconds: tokenWindowSeconds("user"),
             jwtSecret,
           });
-          return { data: { token, record: { id: u.id, email: u.email } } };
-        },
-        {
-          body: t.Object({
-            mfa_token: t.String(),
-            code: t.Optional(t.String()),
-            recovery_code: t.Optional(t.String()),
-          }),
+          return c.json({ data: { token, record: { id: u.id, email: u.email } } });
         },
       )
       // Mint 10 fresh recovery codes (replaces all existing). Returns plaintext.
-      .post("/auth/:collection/totp/recovery/regenerate", async ({ params, request, set }) => {
-        const col = await getCollection(params.collection);
+      .post("/auth/:collection/totp/recovery/regenerate", async (c) => {
+        const request = c.req.raw;
+        const col = await getCollection(c.req.param("collection"));
         if (!col) {
-          set.status = 404;
-          return { error: "Collection not found", code: 404 };
+          return c.json({ error: "Collection not found", code: 404 }, 404);
         }
         if (col.type !== "auth") {
-          set.status = 422;
-          return { error: `'${col.name}' is not an auth collection`, code: 422 };
+          return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
         }
         if (!isAuthFeatureEnabled("mfa")) {
-          set.status = 422;
-          return { error: "MFA is disabled", code: 422 };
+          return c.json({ error: "MFA is disabled", code: 422 }, 422);
         }
         const token = request.headers.get("authorization")?.replace("Bearer ", "");
         if (!token) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         let userId: string;
         try {
@@ -755,34 +737,30 @@ export function makeAuthPlugin(jwtSecret: string) {
           userId = String(payload.id ?? "");
           if (!userId) throw new Error("missing id");
         } catch {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const _db = getDb();
         const u = findUserById(col, userId);
         if (!u) {
-          set.status = 404;
-          return { error: "User not found", code: 404 };
+          return c.json({ error: "User not found", code: 404 }, 404);
         }
         const codes = await generateRecoveryCodesFor(u.id, col.id, jwtSecret);
-        return { data: { codes } };
+        return c.json({ data: { codes } });
       })
       // Counts of recovery codes (never plaintext). Used by the UI to nag users
       // to regenerate when they're running low.
-      .get("/auth/:collection/totp/recovery/status", async ({ params, request, set }) => {
-        const col = await getCollection(params.collection);
+      .get("/auth/:collection/totp/recovery/status", async (c) => {
+        const request = c.req.raw;
+        const col = await getCollection(c.req.param("collection"));
         if (!col) {
-          set.status = 404;
-          return { error: "Collection not found", code: 404 };
+          return c.json({ error: "Collection not found", code: 404 }, 404);
         }
         if (col.type !== "auth") {
-          set.status = 422;
-          return { error: `'${col.name}' is not an auth collection`, code: 422 };
+          return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
         }
         const token = request.headers.get("authorization")?.replace("Bearer ", "");
         if (!token) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         let userId: string;
         try {
@@ -792,8 +770,7 @@ export function makeAuthPlugin(jwtSecret: string) {
           userId = String(payload.id ?? "");
           if (!userId) throw new Error("missing id");
         } catch {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const db = getDb();
         const rows = await db
@@ -804,37 +781,34 @@ export function makeAuthPlugin(jwtSecret: string) {
           );
         const total = rows.length;
         const remaining = rows.filter((r) => r.used_at === null).length;
-        return { data: { total, remaining } };
+        return c.json({ data: { total, remaining } });
       })
-      .get("/auth/me", async ({ request, set }) => {
+      .get("/auth/me", async (c) => {
+        const request = c.req.raw;
         const token = request.headers.get("authorization")?.replace("Bearer ", "");
         if (!token) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const ctx = await verifyAuthToken(token, jwtSecret, { audience: "user" });
         if (!ctx) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        return { data: { id: ctx.id, email: ctx.email ?? "", aud: "user", exp: ctx.exp } };
+        return c.json({ data: { id: ctx.id, email: ctx.email ?? "", aud: "user", exp: ctx.exp } });
       })
       // ── Email verification ──────────────────────────────────────────────────
       // Authenticated user requests a fresh verification email for their address.
-      .post("/auth/:collection/request-verify", async ({ params, request, set }) => {
-        const col = await getCollection(params.collection);
+      .post("/auth/:collection/request-verify", async (c) => {
+        const request = c.req.raw;
+        const col = await getCollection(c.req.param("collection"));
         if (!col) {
-          set.status = 404;
-          return { error: "Collection not found", code: 404 };
+          return c.json({ error: "Collection not found", code: 404 }, 404);
         }
         if (col.type !== "auth") {
-          set.status = 422;
-          return { error: `'${col.name}' is not an auth collection`, code: 422 };
+          return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
         }
         const token = request.headers.get("authorization")?.replace("Bearer ", "");
         if (!token) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         let userId: string;
         try {
@@ -844,40 +818,36 @@ export function makeAuthPlugin(jwtSecret: string) {
           userId = String(payload.id ?? "");
           if (!userId) throw new Error("missing id");
         } catch {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const _db = getDb();
         const u = findUserById(col, userId);
         if (!u) {
-          set.status = 404;
-          return { error: "User not found", code: 404 };
+          return c.json({ error: "User not found", code: 404 }, 404);
         }
-        if (u.email_verified) return { data: { sent: false, alreadyVerified: true } };
+        if (u.email_verified) return c.json({ data: { sent: false, alreadyVerified: true } });
         if (!isSmtpConfigured()) {
-          set.status = 422;
-          return { error: "SMTP not configured", code: 422 };
+          return c.json({ error: "SMTP not configured", code: 422 }, 422);
         }
         try {
           await issueAndSend("verify", { id: u.id, email: u.email }, col.id, col.name);
-          return { data: { sent: true } };
+          return c.json({ data: { sent: true } });
         } catch (e) {
-          set.status = 500;
-          return { error: e instanceof Error ? e.message : String(e), code: 500 };
+          return c.json({ error: e instanceof Error ? e.message : String(e), code: 500 }, 500);
         }
       })
       // Anyone with a valid token can confirm their email.
       .post(
         "/auth/:collection/verify-email",
-        async ({ params, body, set }) => {
-          const col = await getCollection(params.collection);
+        jsonBody(t.Object({ token: t.String() })),
+        async (c) => {
+          const body = c.req.valid("json");
+          const col = await getCollection(c.req.param("collection"));
           if (!col) {
-            set.status = 404;
-            return { error: "Collection not found", code: 404 };
+            return c.json({ error: "Collection not found", code: 404 }, 404);
           }
           if (col.type !== "auth") {
-            set.status = 422;
-            return { error: `'${col.name}' is not an auth collection`, code: 422 };
+            return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
           }
           const db = getDb();
           const rows = await db
@@ -893,32 +863,29 @@ export function makeAuthPlugin(jwtSecret: string) {
             tok.used_at ||
             tok.expires_at < now
           ) {
-            set.status = 400;
-            return { error: "Invalid or expired token", code: 400 };
+            return c.json({ error: "Invalid or expired token", code: 400 }, 400);
           }
           await updateUserById(col, tok.user_id, { email_verified: 1, updated_at: now });
           await db.update(authTokens).set({ used_at: now }).where(eq(authTokens.id, tok.id));
-          return { data: { verified: true } };
+          return c.json({ data: { verified: true } });
         },
-        { body: t.Object({ token: t.String() }) },
       )
       // ── Password reset ──────────────────────────────────────────────────────
       // Always returns 200 to avoid leaking which emails are registered.
       .post(
         "/auth/:collection/request-password-reset",
-        async ({ params, body, set }) => {
-          const col = await getCollection(params.collection);
+        jsonBody(t.Object({ email: t.String() })),
+        async (c) => {
+          const body = c.req.valid("json");
+          const col = await getCollection(c.req.param("collection"));
           if (!col) {
-            set.status = 404;
-            return { error: "Collection not found", code: 404 };
+            return c.json({ error: "Collection not found", code: 404 }, 404);
           }
           if (col.type !== "auth") {
-            set.status = 422;
-            return { error: `'${col.name}' is not an auth collection`, code: 422 };
+            return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
           }
           if (!isSmtpConfigured()) {
-            set.status = 422;
-            return { error: "SMTP not configured", code: 422 };
+            return c.json({ error: "SMTP not configured", code: 422 }, 422);
           }
           const u = findUserByEmail(col, body.email);
           if (u) {
@@ -932,29 +899,27 @@ export function makeAuthPlugin(jwtSecret: string) {
               });
             }
           }
-          return { data: { sent: true } };
+          return c.json({ data: { sent: true } });
         },
-        { body: t.Object({ email: t.String() }) },
       )
       .post(
         "/auth/:collection/confirm-password-reset",
-        async ({ params, body, set }) => {
-          const col = await getCollection(params.collection);
+        jsonBody(t.Object({ token: t.String(), password: t.String() })),
+        async (c) => {
+          const body = c.req.valid("json");
+          const col = await getCollection(c.req.param("collection"));
           if (!col) {
-            set.status = 404;
-            return { error: "Collection not found", code: 404 };
+            return c.json({ error: "Collection not found", code: 404 }, 404);
           }
           if (col.type !== "auth") {
-            set.status = 422;
-            return { error: `'${col.name}' is not an auth collection`, code: 422 };
+            return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
           }
           {
             const pwErr = await validatePassword(
               typeof body.password === "string" ? body.password : "",
             );
             if (pwErr) {
-              set.status = 422;
-              return { error: pwErr, code: 422 };
+              return c.json({ error: pwErr, code: 422 }, 422);
             }
           }
           const db = getDb();
@@ -971,38 +936,34 @@ export function makeAuthPlugin(jwtSecret: string) {
             tok.used_at ||
             tok.expires_at < now
           ) {
-            set.status = 400;
-            return { error: "Invalid or expired token", code: 400 };
+            return c.json({ error: "Invalid or expired token", code: 400 }, 400);
           }
           const hash = await hashPassword(body.password);
           await updateUserById(col, tok.user_id, { password_hash: hash, updated_at: now });
           await db.update(authTokens).set({ used_at: now }).where(eq(authTokens.id, tok.id));
-          return { data: { reset: true } };
+          return c.json({ data: { reset: true } });
         },
-        { body: t.Object({ token: t.String(), password: t.String() }) },
       )
       // ── OTP / magic link ────────────────────────────────────────────────────
       // Always returns 200 (no enumeration). Issues both a long token (link) and
       // a 6-digit code; either can be used to authenticate.
       .post(
         "/auth/:collection/otp/request",
-        async ({ params, body, set }) => {
-          const col = await getCollection(params.collection);
+        jsonBody(t.Object({ email: t.String() })),
+        async (c) => {
+          const body = c.req.valid("json");
+          const col = await getCollection(c.req.param("collection"));
           if (!col) {
-            set.status = 404;
-            return { error: "Collection not found", code: 404 };
+            return c.json({ error: "Collection not found", code: 404 }, 404);
           }
           if (col.type !== "auth") {
-            set.status = 422;
-            return { error: `'${col.name}' is not an auth collection`, code: 422 };
+            return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
           }
           if (!isAuthFeatureEnabled("otp")) {
-            set.status = 422;
-            return { error: "OTP login is disabled", code: 422 };
+            return c.json({ error: "OTP login is disabled", code: 422 }, 422);
           }
           if (!isSmtpConfigured()) {
-            set.status = 422;
-            return { error: "SMTP not configured", code: 422 };
+            return c.json({ error: "SMTP not configured", code: 422 }, 422);
           }
           const u = findUserByEmail(col, body.email);
           if (u && u.is_anonymous !== 1) {
@@ -1016,13 +977,13 @@ export function makeAuthPlugin(jwtSecret: string) {
               });
             }
           }
-          return { data: { sent: true } };
+          return c.json({ data: { sent: true } });
         },
-        { body: t.Object({ email: t.String() }) },
       )
       // Auth via OTP — accepts either the long token OR the short code.
       // Logout — revokes the bearer token's `jti` and clears any auth cookies.
-      .post("/auth/logout", async ({ request }) => {
+      .post("/auth/logout", async (c) => {
+        const request = c.req.raw;
         const { extractBearer, revokeToken } = await import("../core/sec.ts");
         const token = extractBearer(request);
         if (token) {
@@ -1044,23 +1005,27 @@ export function makeAuthPlugin(jwtSecret: string) {
       })
       .post(
         "/auth/:collection/otp/auth",
-        async ({ params, body, set }) => {
-          const col = await getCollection(params.collection);
+        jsonBody(
+          t.Object({
+            token: t.Optional(t.String()),
+            code: t.Optional(t.String()),
+            email: t.Optional(t.String()),
+          }),
+        ),
+        async (c) => {
+          const body = c.req.valid("json");
+          const col = await getCollection(c.req.param("collection"));
           if (!col) {
-            set.status = 404;
-            return { error: "Collection not found", code: 404 };
+            return c.json({ error: "Collection not found", code: 404 }, 404);
           }
           if (col.type !== "auth") {
-            set.status = 422;
-            return { error: `'${col.name}' is not an auth collection`, code: 422 };
+            return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
           }
           if (!isAuthFeatureEnabled("otp")) {
-            set.status = 422;
-            return { error: "OTP login is disabled", code: 422 };
+            return c.json({ error: "OTP login is disabled", code: 422 }, 422);
           }
           if (!body.token && !body.code) {
-            set.status = 422;
-            return { error: "Provide token or code", code: 422 };
+            return c.json({ error: "Provide token or code", code: 422 }, 422);
           }
           const db = getDb();
           const now = Math.floor(Date.now() / 1000);
@@ -1076,13 +1041,11 @@ export function makeAuthPlugin(jwtSecret: string) {
             // Code lookups need the email too — codes alone are 6 digits and
             // cross-user collisions during the 10-minute window are realistic.
             if (!body.email) {
-              set.status = 422;
-              return { error: "code requires email", code: 422 };
+              return c.json({ error: "code requires email", code: 422 }, 422);
             }
             const userByEmail = findUserByEmail(col, body.email);
             if (!userByEmail) {
-              set.status = 400;
-              return { error: "Invalid or expired code", code: 400 };
+              return c.json({ error: "Invalid or expired code", code: 400 }, 400);
             }
             const tokenRows = await db
               .select()
@@ -1103,13 +1066,11 @@ export function makeAuthPlugin(jwtSecret: string) {
             tok.used_at ||
             tok.expires_at < now
           ) {
-            set.status = 400;
-            return { error: "Invalid or expired code", code: 400 };
+            return c.json({ error: "Invalid or expired code", code: 400 }, 400);
           }
           if ((tok.attempts ?? 0) >= MAX_OTP_ATTEMPTS) {
             await db.update(authTokens).set({ used_at: now }).where(eq(authTokens.id, tok.id));
-            set.status = 400;
-            return { error: "Invalid or expired code", code: 400 };
+            return c.json({ error: "Invalid or expired code", code: 400 }, 400);
           }
           const u = findUserById(col, tok.user_id);
           if (!u) {
@@ -1117,8 +1078,7 @@ export function makeAuthPlugin(jwtSecret: string) {
               .update(authTokens)
               .set({ attempts: (tok.attempts ?? 0) + 1 })
               .where(eq(authTokens.id, tok.id));
-            set.status = 400;
-            return { error: "User not found", code: 400 };
+            return c.json({ error: "User not found", code: 400 }, 400);
           }
 
           await db.update(authTokens).set({ used_at: now }).where(eq(authTokens.id, tok.id));
@@ -1137,7 +1097,7 @@ export function makeAuthPlugin(jwtSecret: string) {
               purpose: "mfa_ticket",
               expires_at: now + MFA_TICKET_TTL_SECONDS,
             });
-            return { data: { mfa_required: true, mfa_token: ticket } };
+            return c.json({ data: { mfa_required: true, mfa_token: ticket } });
           }
           const { token: jwt } = await signAuthToken({
             payload: { id: u.id, email: u.email, collection: col.name },
@@ -1145,36 +1105,26 @@ export function makeAuthPlugin(jwtSecret: string) {
             expiresInSeconds: tokenWindowSeconds("user"),
             jwtSecret,
           });
-          return { data: { token: jwt, record: { id: u.id, email: u.email } } };
-        },
-        {
-          body: t.Object({
-            token: t.Optional(t.String()),
-            code: t.Optional(t.String()),
-            email: t.Optional(t.String()),
-          }),
+          return c.json({ data: { token: jwt, record: { id: u.id, email: u.email } } });
         },
       )
       // ── TOTP ────────────────────────────────────────────────────────────────
       // Step 1: generate a fresh secret + otpauth URL. Doesn't enable MFA yet.
-      .post("/auth/:collection/totp/setup", async ({ params, request, set }) => {
-        const col = await getCollection(params.collection);
+      .post("/auth/:collection/totp/setup", async (c) => {
+        const request = c.req.raw;
+        const col = await getCollection(c.req.param("collection"));
         if (!col) {
-          set.status = 404;
-          return { error: "Collection not found", code: 404 };
+          return c.json({ error: "Collection not found", code: 404 }, 404);
         }
         if (col.type !== "auth") {
-          set.status = 422;
-          return { error: `'${col.name}' is not an auth collection`, code: 422 };
+          return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
         }
         if (!isAuthFeatureEnabled("mfa")) {
-          set.status = 422;
-          return { error: "MFA is disabled", code: 422 };
+          return c.json({ error: "MFA is disabled", code: 422 }, 422);
         }
         const token = request.headers.get("authorization")?.replace("Bearer ", "");
         if (!token) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         let userId: string;
         try {
@@ -1184,14 +1134,12 @@ export function makeAuthPlugin(jwtSecret: string) {
           userId = String(payload.id ?? "");
           if (!userId) throw new Error("missing id");
         } catch {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const _db = getDb();
         const u = findUserById(col, userId);
         if (!u) {
-          set.status = 404;
-          return { error: "User not found", code: 404 };
+          return c.json({ error: "User not found", code: 404 }, 404);
         }
         const secret = generateSecret();
         // Stash the pending secret on the user; gets activated on /confirm.
@@ -1204,29 +1152,28 @@ export function makeAuthPlugin(jwtSecret: string) {
           accountName: u.email,
           issuer: getAppUrl() || "Vaultbase",
         });
-        return { data: { secret, otpauth_url: otpauthUrl } };
+        return c.json({ data: { secret, otpauth_url: otpauthUrl } });
       })
       // Step 2: confirm by submitting a code from the authenticator app — flips totp_enabled.
       .post(
         "/auth/:collection/totp/confirm",
-        async ({ params, request, body, set }) => {
-          const col = await getCollection(params.collection);
+        jsonBody(t.Object({ code: t.String() })),
+        async (c) => {
+          const request = c.req.raw;
+          const body = c.req.valid("json");
+          const col = await getCollection(c.req.param("collection"));
           if (!col) {
-            set.status = 404;
-            return { error: "Collection not found", code: 404 };
+            return c.json({ error: "Collection not found", code: 404 }, 404);
           }
           if (col.type !== "auth") {
-            set.status = 422;
-            return { error: `'${col.name}' is not an auth collection`, code: 422 };
+            return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
           }
           if (!isAuthFeatureEnabled("mfa")) {
-            set.status = 422;
-            return { error: "MFA is disabled", code: 422 };
+            return c.json({ error: "MFA is disabled", code: 422 }, 422);
           }
           const token = request.headers.get("authorization")?.replace("Bearer ", "");
           if (!token) {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
+            return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
           let userId: string;
           try {
@@ -1236,48 +1183,43 @@ export function makeAuthPlugin(jwtSecret: string) {
             userId = String(payload.id ?? "");
             if (!userId) throw new Error("missing id");
           } catch {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
+            return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
           const _db = getDb();
           const u = findUserById(col, userId);
           if (!u) {
-            set.status = 404;
-            return { error: "User not found", code: 404 };
+            return c.json({ error: "User not found", code: 404 }, 404);
           }
           if (!u.totp_secret) {
-            set.status = 400;
-            return { error: "Run /totp/setup first", code: 400 };
+            return c.json({ error: "Run /totp/setup first", code: 400 }, 400);
           }
           if (!verifyTotpCode(u.totp_secret, body.code)) {
-            set.status = 401;
-            return { error: "Invalid code", code: 401 };
+            return c.json({ error: "Invalid code", code: 401 }, 401);
           }
           await updateUserById(col, u.id, {
             totp_enabled: 1,
             updated_at: Math.floor(Date.now() / 1000),
           });
-          return { data: { enabled: true } };
+          return c.json({ data: { enabled: true } });
         },
-        { body: t.Object({ code: t.String() }) },
       )
       // Disable MFA. Requires the current code to prevent hijacked sessions from disabling it.
       .post(
         "/auth/:collection/totp/disable",
-        async ({ params, request, body, set }) => {
-          const col = await getCollection(params.collection);
+        jsonBody(t.Object({ code: t.String() })),
+        async (c) => {
+          const request = c.req.raw;
+          const body = c.req.valid("json");
+          const col = await getCollection(c.req.param("collection"));
           if (!col) {
-            set.status = 404;
-            return { error: "Collection not found", code: 404 };
+            return c.json({ error: "Collection not found", code: 404 }, 404);
           }
           if (col.type !== "auth") {
-            set.status = 422;
-            return { error: `'${col.name}' is not an auth collection`, code: 422 };
+            return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
           }
           const token = request.headers.get("authorization")?.replace("Bearer ", "");
           if (!token) {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
+            return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
           let userId: string;
           try {
@@ -1287,22 +1229,18 @@ export function makeAuthPlugin(jwtSecret: string) {
             userId = String(payload.id ?? "");
             if (!userId) throw new Error("missing id");
           } catch {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
+            return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
           const db = getDb();
           const u = findUserById(col, userId);
           if (!u) {
-            set.status = 404;
-            return { error: "User not found", code: 404 };
+            return c.json({ error: "User not found", code: 404 }, 404);
           }
           if (!u.totp_secret) {
-            set.status = 400;
-            return { error: "MFA not configured", code: 400 };
+            return c.json({ error: "MFA not configured", code: 400 }, 400);
           }
           if (!verifyTotpCode(u.totp_secret, body.code)) {
-            set.status = 401;
-            return { error: "Invalid code", code: 401 };
+            return c.json({ error: "Invalid code", code: 401 }, 401);
           }
           await updateUserById(col, u.id, {
             totp_enabled: 0,
@@ -1316,26 +1254,22 @@ export function makeAuthPlugin(jwtSecret: string) {
             .where(
               and(eq(mfaRecoveryCodes.user_id, u.id), eq(mfaRecoveryCodes.collection_id, col.id)),
             );
-          return { data: { enabled: false } };
+          return c.json({ data: { enabled: false } });
         },
-        { body: t.Object({ code: t.String() }) },
       )
       // ── Anonymous ──────────────────────────────────────────────────────────
       // Mints a guest user with a synthetic email. The returned JWT is a regular
       // user token — caller can later "promote" by setting email + password via PATCH.
-      .post("/auth/:collection/anonymous", async ({ params, set }) => {
-        const col = await getCollection(params.collection);
+      .post("/auth/:collection/anonymous", async (c) => {
+        const col = await getCollection(c.req.param("collection"));
         if (!col) {
-          set.status = 404;
-          return { error: "Collection not found", code: 404 };
+          return c.json({ error: "Collection not found", code: 404 }, 404);
         }
         if (col.type !== "auth") {
-          set.status = 422;
-          return { error: `'${col.name}' is not an auth collection`, code: 422 };
+          return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
         }
         if (!isAuthFeatureEnabled("anonymous")) {
-          set.status = 422;
-          return { error: "Anonymous auth is disabled", code: 422 };
+          return c.json({ error: "Anonymous auth is disabled", code: 422 }, 422);
         }
         const id = crypto.randomUUID();
         const email = `anon_${id.replace(/-/g, "").slice(0, 16)}@anonymous.invalid`;
@@ -1369,7 +1303,7 @@ export function makeAuthPlugin(jwtSecret: string) {
           expiresInSeconds: tokenWindowSeconds("anonymous"),
           jwtSecret,
         });
-        return { data: { token: jwt, record: { id, email, anonymous: true } } };
+        return c.json({ data: { token: jwt, record: { id, email, anonymous: true } } });
       })
       // ── Anonymous → real account promotion ─────────────────────────────────
       // Caller must be holding an anonymous user JWT; supplies a real email +
@@ -1378,20 +1312,22 @@ export function makeAuthPlugin(jwtSecret: string) {
       // schema (so a min-length on `email` still applies).
       .post(
         "/auth/:collection/promote",
-        async ({ params, request, body, set }) => {
-          const col = await getCollection(params.collection);
+        jsonBody(
+          t.Object({ email: t.String(), password: t.String() }, { additionalProperties: true }),
+        ),
+        async (c) => {
+          const request = c.req.raw;
+          const body = c.req.valid("json");
+          const col = await getCollection(c.req.param("collection"));
           if (!col) {
-            set.status = 404;
-            return { error: "Collection not found", code: 404 };
+            return c.json({ error: "Collection not found", code: 404 }, 404);
           }
           if (col.type !== "auth") {
-            set.status = 422;
-            return { error: `'${col.name}' is not an auth collection`, code: 422 };
+            return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
           }
           const token = request.headers.get("authorization")?.replace("Bearer ", "");
           if (!token) {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
+            return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
           let userId: string;
           let isAnon = false;
@@ -1403,46 +1339,39 @@ export function makeAuthPlugin(jwtSecret: string) {
             if (!userId) throw new Error("missing id");
             isAnon = payload.anonymous === true;
           } catch {
-            set.status = 401;
-            return { error: "Unauthorized", code: 401 };
+            return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
           if (!isAnon) {
-            set.status = 422;
-            return { error: "Only anonymous accounts can be promoted", code: 422 };
+            return c.json({ error: "Only anonymous accounts can be promoted", code: 422 }, 422);
           }
           const _db = getDb();
           const u = findUserById(col, userId);
           if (!u) {
-            set.status = 404;
-            return { error: "User not found", code: 404 };
+            return c.json({ error: "User not found", code: 404 }, 404);
           }
           if (u.is_anonymous !== 1) {
-            set.status = 422;
-            return { error: "Only anonymous accounts can be promoted", code: 422 };
+            return c.json({ error: "Only anonymous accounts can be promoted", code: 422 }, 422);
           }
           // Validate against the collection's schema (implicit + user fields).
           try {
             await validateAuthRegister(col, body as Record<string, unknown>);
           } catch (e) {
             if (e instanceof ValidationError) {
-              set.status = 422;
-              return { error: "Validation failed", code: 422, details: e.details };
+              return c.json({ error: "Validation failed", code: 422, details: e.details }, 422);
             }
             throw e;
           }
           // Email uniqueness within the collection (excluding self).
           const dup = findUserByEmail(col, body.email);
           if (dup && dup.id !== u.id) {
-            set.status = 409;
-            return { error: "Email already in use", code: 409 };
+            return c.json({ error: "Email already in use", code: 409 }, 409);
           }
           {
             const pwErr = await validatePassword(
               typeof body.password === "string" ? body.password : "",
             );
             if (pwErr) {
-              set.status = 422;
-              return { error: pwErr, code: 422 };
+              return c.json({ error: pwErr, code: 422 }, 422);
             }
           }
           const hash = await hashPassword(body.password);
@@ -1466,23 +1395,17 @@ export function makeAuthPlugin(jwtSecret: string) {
             expiresInSeconds: tokenWindowSeconds("user"),
             jwtSecret,
           });
-          return { data: { token: jwt, record: { id: u.id, email: email as string } } };
-        },
-        {
-          body: t.Object(
-            { email: t.String(), password: t.String() },
-            { additionalProperties: true },
-          ),
+          return c.json({ data: { token: jwt, record: { id: u.id, email: email as string } } });
         },
       )
       // ── Admin impersonation ────────────────────────────────────────────────
       // Admin mints a short-lived user JWT for support purposes. JWT carries
       // `impersonated_by` so audit logs can attribute actions to the admin.
-      .post("/admin/impersonate/:collection/:userId", async ({ params, request, set }) => {
+      .post("/admin/impersonate/:collection/:userId", async (c) => {
+        const request = c.req.raw;
         const adminToken = request.headers.get("authorization")?.replace("Bearer ", "");
         if (!adminToken) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         let adminId: string;
         try {
@@ -1491,26 +1414,21 @@ export function makeAuthPlugin(jwtSecret: string) {
           });
           adminId = String(payload.id ?? "");
         } catch {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         if (!isAuthFeatureEnabled("impersonation")) {
-          set.status = 422;
-          return { error: "Impersonation is disabled", code: 422 };
+          return c.json({ error: "Impersonation is disabled", code: 422 }, 422);
         }
-        const col = await getCollection(params.collection);
+        const col = await getCollection(c.req.param("collection"));
         if (!col) {
-          set.status = 404;
-          return { error: "Collection not found", code: 404 };
+          return c.json({ error: "Collection not found", code: 404 }, 404);
         }
         if (col.type !== "auth") {
-          set.status = 422;
-          return { error: `'${col.name}' is not an auth collection`, code: 422 };
+          return c.json({ error: `'${col.name}' is not an auth collection`, code: 422 }, 422);
         }
-        const u = findUserById(col, params.userId);
+        const u = findUserById(col, c.req.param("userId"));
         if (!u) {
-          set.status = 404;
-          return { error: "User not found", code: 404 };
+          return c.json({ error: "User not found", code: 404 }, 404);
         }
         const { token: jwt } = await signAuthToken({
           payload: { id: u.id, email: u.email, collection: col.name, impersonated_by: adminId },
@@ -1518,27 +1436,25 @@ export function makeAuthPlugin(jwtSecret: string) {
           expiresInSeconds: tokenWindowSeconds("impersonate"),
           jwtSecret,
         });
-        return {
+        return c.json({
           data: { token: jwt, record: { id: u.id, email: u.email }, impersonated_by: adminId },
-        };
+        });
       })
       // OAuth2 routes — see ./auth-oauth2.ts
-      .use(makeAuthOauth2Plugin(jwtSecret))
+      .route("/", makeAuthOauth2Plugin(jwtSecret))
       // Token refresh — re-validates that the principal still exists.
-      .post("/auth/refresh", async ({ request, set }) => {
+      .post("/auth/refresh", async (c) => {
+        const request = c.req.raw;
         const token = request.headers.get("authorization")?.replace("Bearer ", "");
         if (!token) {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const ctx = await verifyAuthToken(token, jwtSecret);
         if (!ctx) {
-          set.status = 401;
-          return { error: "Token expired or invalid", code: 401 };
+          return c.json({ error: "Token expired or invalid", code: 401 }, 401);
         }
         if (ctx.type !== "user" && ctx.type !== "admin") {
-          set.status = 401;
-          return { error: "Unauthorized", code: 401 };
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const claims: jose.JWTPayload = { id: ctx.id };
         if (ctx.email) claims.email = ctx.email;
@@ -1548,7 +1464,7 @@ export function makeAuthPlugin(jwtSecret: string) {
           expiresInSeconds: tokenWindowSeconds("refresh"),
           jwtSecret,
         });
-        return { data: { token: newToken } };
+        return c.json({ data: { token: newToken } });
       })
   );
 }

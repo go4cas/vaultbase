@@ -88,7 +88,7 @@ describe("auth signup hook lifecycle", () => {
     );
 
     const app = makeAuthPlugin(SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       new Request("http://localhost/auth/users/register", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -126,7 +126,7 @@ describe("auth signup hook lifecycle", () => {
     );
 
     const app = makeAuthPlugin(SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       new Request("http://localhost/auth/users/anonymous", { method: "POST" }),
     );
     expect(res.status).toBe(200);
@@ -149,7 +149,7 @@ describe("auth signup hook lifecycle", () => {
     );
 
     const app = makeAuthPlugin(SECRET);
-    await app.handle(
+    await app.request(
       new Request("http://localhost/auth/users/register", {
         method: "POST",
         headers: { "content-type": "application/json" },

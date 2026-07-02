@@ -40,7 +40,7 @@ describe("POST /api/auth/:collection/register runs validateRecord", () => {
     });
     const app = makeAuthPlugin(SECRET);
     // 7-char email passes the email regex but fails min=8
-    const res = await app.handle(
+    const res = await app.request(
       authReq("POST", "/auth/users/register", null, {
         email: "a@b.com",
         password: "hunter2!!hunter2!!",
@@ -66,7 +66,7 @@ describe("POST /api/auth/:collection/register runs validateRecord", () => {
       ]),
     });
     const app = makeAuthPlugin(SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       authReq("POST", "/auth/users/register", null, {
         email: "alice@test.local",
         password: "hunter2!!hunter2!!",
@@ -93,7 +93,7 @@ describe("POST /api/auth/:collection/register runs validateRecord", () => {
       ]),
     });
     const app = makeAuthPlugin(SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       authReq("POST", "/auth/users/register", null, {
         email: "alice@test.local",
         password: "hunter2!!hunter2!!",

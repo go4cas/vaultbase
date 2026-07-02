@@ -15,7 +15,7 @@ afterEach(() => closeDb());
 
 async function getStatus(): Promise<{ has_admin: boolean }> {
   const app = makeAuthPlugin(SECRET);
-  const res = await app.handle(new Request("http://localhost/admin/setup/status"));
+  const res = await app.request(new Request("http://localhost/admin/setup/status"));
   expect(res.status).toBe(200);
   const body = (await res.json()) as { data: { has_admin: boolean } };
   return body.data;
@@ -23,7 +23,7 @@ async function getStatus(): Promise<{ has_admin: boolean }> {
 
 async function postSetup(email: string, password: string): Promise<Response> {
   const app = makeAuthPlugin(SECRET);
-  return app.handle(
+  return app.request(
     new Request("http://localhost/admin/setup", {
       method: "POST",
       headers: { "content-type": "application/json" },
