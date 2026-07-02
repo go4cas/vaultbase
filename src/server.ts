@@ -364,6 +364,21 @@ export function createServer(config: Config) {
       .ws("/realtime", {
         async open(ws) {
           const req = (ws.data as { request?: Request } | undefined)?.request;
+          // Mint a stable per-connection id and stash it in Bun's persistent
+          // `ws.data` slot. The realtime manager keys subscriptions by this
+          // id, not by the `ws` object reference — Bun/Elysia hands different
+          // wrappers to `open` vs `message`, so identity-based keying drops
+          // unsubscribe + disconnectAll on the floor.
+          //
+          // This MUST happen before the origin gate below: rejecting an origin
+          // calls ws.close(), and Bun still fires the `close` handler, whose
+          // disconnectAll() reads ws.data.connId — without an id it throws.
+          const wsAny = ws as unknown as { data: { connId?: string } | undefined };
+          if (!wsAny.data || typeof wsAny.data !== "object") {
+            (wsAny as { data: object }).data = { connId: crypto.randomUUID() };
+          } else {
+            wsAny.data.connId = crypto.randomUUID();
+          }
           if (req) {
             const origin = req.headers.get("origin");
             // requireOrigin: true — browsers always send Origin on WS upgrades.
@@ -372,17 +387,6 @@ export function createServer(config: Config) {
               ws.close();
               return;
             }
-          }
-          // Mint a stable per-connection id and stash it in Bun's persistent
-          // `ws.data` slot. The realtime manager keys subscriptions by this
-          // id, not by the `ws` object reference — Bun/Elysia hands different
-          // wrappers to `open` vs `message`, so identity-based keying drops
-          // unsubscribe + disconnectAll on the floor.
-          const wsAny = ws as unknown as { data: { connId?: string } | undefined };
-          if (!wsAny.data || typeof wsAny.data !== "object") {
-            (wsAny as { data: object }).data = { connId: crypto.randomUUID() };
-          } else {
-            wsAny.data.connId = crypto.randomUUID();
           }
           // Auth via {type:"auth", token} message. Tokens in the URL query are
           // no longer accepted (logs/Referer leak risk).
