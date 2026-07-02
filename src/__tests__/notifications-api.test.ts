@@ -127,14 +127,14 @@ async function makeServiceAccountJson(): Promise<string> {
 describe("auth", () => {
   it("admin endpoints require admin token", async () => {
     const app = makeNotificationsPlugin(JWT_SECRET);
-    const res = await app.handle(adminReq("GET", "/admin/notifications/providers", null));
+    const res = await app.request(adminReq("GET", "/admin/notifications/providers", null));
     expect(res.status).toBe(401);
   });
 
   it("user device endpoint rejects admin token", async () => {
     const { token } = await seedAdmin();
     const app = makeNotificationsPlugin(JWT_SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       adminReq("POST", "/notifications/devices", token, {
         token: "x",
         provider: "fcm",
@@ -152,7 +152,7 @@ describe("GET providers", () => {
   it("returns disabled-empty by default with secrets unset", async () => {
     const { token } = await seedAdmin();
     const app = makeNotificationsPlugin(JWT_SECRET);
-    const res = await app.handle(adminReq("GET", "/admin/notifications/providers", token));
+    const res = await app.request(adminReq("GET", "/admin/notifications/providers", token));
     expect(res.status).toBe(200);
     const body = (await res.json()) as any;
     expect(body.data.onesignal.enabled).toBe(false);
@@ -168,7 +168,7 @@ describe("GET providers", () => {
 
     const { token } = await seedAdmin();
     const app = makeNotificationsPlugin(JWT_SECRET);
-    const res = await app.handle(adminReq("GET", "/admin/notifications/providers", token));
+    const res = await app.request(adminReq("GET", "/admin/notifications/providers", token));
     const body = (await res.json()) as any;
     const text = JSON.stringify(body);
     expect(text).not.toContain("TOTALLY-SECRET-KEY");
@@ -188,7 +188,7 @@ describe("PATCH provider", () => {
   it("updates OneSignal credentials", async () => {
     const { token } = await seedAdmin();
     const app = makeNotificationsPlugin(JWT_SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       adminReq("PATCH", "/admin/notifications/providers/onesignal", token, {
         enabled: true,
         app_id: "app-1",
@@ -205,7 +205,7 @@ describe("PATCH provider", () => {
   it("rejects FCM enable=true without service_account", async () => {
     const { token } = await seedAdmin();
     const app = makeNotificationsPlugin(JWT_SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       adminReq("PATCH", "/admin/notifications/providers/fcm", token, { enabled: true }),
     );
     expect(res.status).toBe(422);
@@ -216,7 +216,7 @@ describe("PATCH provider", () => {
   it("rejects FCM service_account that isn't valid JSON", async () => {
     const { token } = await seedAdmin();
     const app = makeNotificationsPlugin(JWT_SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       adminReq("PATCH", "/admin/notifications/providers/fcm", token, {
         enabled: true,
         service_account: "not json",
@@ -229,7 +229,7 @@ describe("PATCH provider", () => {
     const sa = await makeServiceAccountJson();
     const { token } = await seedAdmin();
     const app = makeNotificationsPlugin(JWT_SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       adminReq("PATCH", "/admin/notifications/providers/fcm", token, {
         enabled: true,
         project_id: "explicit-proj",
@@ -245,7 +245,7 @@ describe("PATCH provider", () => {
   it("rejects fields wrong for the provider (api_key under fcm)", async () => {
     const { token } = await seedAdmin();
     const app = makeNotificationsPlugin(JWT_SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       adminReq("PATCH", "/admin/notifications/providers/fcm", token, { api_key: "wrong-place" }),
     );
     expect(res.status).toBe(422);
@@ -256,7 +256,7 @@ describe("PATCH provider", () => {
   it("404 on unknown provider name", async () => {
     const { token } = await seedAdmin();
     const app = makeNotificationsPlugin(JWT_SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       adminReq("PATCH", "/admin/notifications/providers/twilio", token, { enabled: true }),
     );
     expect(res.status).toBe(404);
@@ -277,7 +277,7 @@ describe("POST test-connection", () => {
       })) as unknown as typeof fetch;
     const { token } = await seedAdmin();
     const app = makeNotificationsPlugin(JWT_SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       adminReq("POST", "/admin/notifications/providers/onesignal/test-connection", token),
     );
     expect(res.status).toBe(200);
@@ -291,7 +291,7 @@ describe("POST test-connection", () => {
       new Response("nope", { status: 401 })) as unknown as typeof fetch;
     const { token } = await seedAdmin();
     const app = makeNotificationsPlugin(JWT_SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       adminReq("POST", "/admin/notifications/providers/onesignal/test-connection", token),
     );
     expect(res.status).toBe(422);
@@ -308,7 +308,7 @@ describe("POST test-connection", () => {
       })) as unknown as typeof fetch;
     const { token } = await seedAdmin();
     const app = makeNotificationsPlugin(JWT_SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       adminReq("POST", "/admin/notifications/providers/fcm/test-connection", token),
     );
     expect(res.status).toBe(200);
@@ -325,7 +325,7 @@ describe("POST admin/notifications/test", () => {
 
     const { token } = await seedAdmin();
     const app = makeNotificationsPlugin(JWT_SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       adminReq("POST", "/admin/notifications/test", token, { userId: "user-123" }),
     );
     expect(res.status).toBe(200);
@@ -344,7 +344,7 @@ describe("POST admin/notifications/test", () => {
 
     const { token } = await seedAdmin();
     const app = makeNotificationsPlugin(JWT_SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       adminReq("POST", "/admin/notifications/test", token, {
         userId: "user-123",
         providers: ["onesignal"],
@@ -371,7 +371,7 @@ describe("POST notifications/devices", () => {
   it("upserts a new token", async () => {
     const user = await seedUserToken();
     const app = makeNotificationsPlugin(JWT_SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       adminReq("POST", "/notifications/devices", user.token, {
         token: "fcm-token-1",
         provider: "fcm",
@@ -397,7 +397,7 @@ describe("POST notifications/devices", () => {
     const userB = await seedUserToken("user-b");
     const app = makeNotificationsPlugin(JWT_SECRET);
 
-    await app.handle(
+    await app.request(
       adminReq("POST", "/notifications/devices", userA.token, {
         token: "shared-device",
         provider: "fcm",
@@ -405,8 +405,8 @@ describe("POST notifications/devices", () => {
       }),
     );
     // User A logs out (enabled=0 via DELETE — exercised below); then User B logs in on same device.
-    await app.handle(adminReq("DELETE", `/notifications/devices/shared-device`, userA.token));
-    await app.handle(
+    await app.request(adminReq("DELETE", `/notifications/devices/shared-device`, userA.token));
+    await app.request(
       adminReq("POST", "/notifications/devices", userB.token, {
         token: "shared-device",
         provider: "fcm",
@@ -425,7 +425,7 @@ describe("POST notifications/devices", () => {
   it("rejects unknown provider", async () => {
     const user = await seedUserToken();
     const app = makeNotificationsPlugin(JWT_SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       adminReq("POST", "/notifications/devices", user.token, {
         token: "x",
         provider: "onesignal",
@@ -440,7 +440,7 @@ describe("POST notifications/devices", () => {
     client.exec(`DROP TABLE vb_device_tokens`);
     const user = await seedUserToken();
     const app = makeNotificationsPlugin(JWT_SECRET);
-    const res = await app.handle(
+    const res = await app.request(
       adminReq("POST", "/notifications/devices", user.token, {
         token: "x",
         provider: "fcm",
@@ -482,7 +482,7 @@ describe("DELETE notifications/devices/:token", () => {
 
     const app = makeNotificationsPlugin(JWT_SECRET);
     // user-a tries to delete user-b's token
-    await app.handle(adminReq("DELETE", `/notifications/devices/tok-b`, user.token));
+    await app.request(adminReq("DELETE", `/notifications/devices/tok-b`, user.token));
     // user-b's token is untouched
     const rowB = client
       .prepare(`SELECT enabled FROM vb_device_tokens WHERE token=?`)
@@ -490,7 +490,7 @@ describe("DELETE notifications/devices/:token", () => {
     expect(rowB.enabled).toBe(1);
 
     // user-b deletes their own token — works
-    await app.handle(adminReq("DELETE", `/notifications/devices/tok-b`, other.token));
+    await app.request(adminReq("DELETE", `/notifications/devices/tok-b`, other.token));
     const rowB2 = client
       .prepare(`SELECT enabled FROM vb_device_tokens WHERE token=?`)
       .get("tok-b") as { enabled: number };
