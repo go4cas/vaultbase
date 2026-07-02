@@ -287,7 +287,6 @@ export function createServer(config: Config) {
         .use(makeMcpAdminPlugin(config.jwtSecret))
         .use(makeSqlPlugin(config.jwtSecret, config.dbPath))
         .use(makeSecurityPlugin(config.jwtSecret, config.encryptionKey))
-        .use(makeThemePlugin())
         .use(makeFlagsPlugin(config.jwtSecret))
         .use(makeWebhooksPlugin(config.jwtSecret))
         .use(makeNotificationsPlugin(config.jwtSecret))
@@ -369,6 +368,20 @@ export function createServer(config: Config) {
   // when Elysia is empty it's deleted. (WS must live on Hono because a mounted
   // Elysia can't perform the Bun upgrade.)
   const app = new Hono();
+
+  // Plugins already migrated to native Hono. A mounted handler bypasses Elysia's
+  // lifecycle, so this sub-app re-applies the security headers the Elysia
+  // `onAfterHandle` adds. Migrated routes are matched before the Elysia mount.
+  const migrated = new Hono();
+  migrated.use("*", async (c, next) => {
+    await next();
+    const isApi = c.req.path.startsWith("/api/");
+    for (const [k, v] of Object.entries(securityHeaders({ isApi }))) {
+      if (!c.res.headers.has(k)) c.res.headers.set(k, v);
+    }
+  });
+  migrated.route("/api/v1", makeThemePlugin());
+  app.route("/", migrated);
 
   // The realtime manager keys subscriptions by `ws.data.connId` on a `WSLike
   // {send}`. Hono hands a fresh WSContext per event, so we key a stable adapter
