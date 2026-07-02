@@ -2,6 +2,8 @@
 
 Self-hosted backend in a single binary — collections, REST API, auth, realtime, file uploads, server-side hooks. TypeScript on Bun.
 
+> **This is a fork** of [vaultbase-sh/vaultbase](https://github.com/vaultbase-sh/vaultbase), originally created by **Khalid M. Sheet** ([@khalidsheet](https://github.com/khalidsheet)) — all credit for the original project goes to him. This fork's main divergence is a migration of the server framework from Elysia to [Hono](https://hono.dev).
+
 ## Quick start
 
 ```bash
@@ -33,7 +35,7 @@ bun run build           # compiles admin + binary → ./vaultbase[.exe]
 ## Stack
 
 - **Runtime**: Bun
-- **Framework**: Elysia
+- **Framework**: Hono
 - **DB**: SQLite (`bun:sqlite`)
 - **ORM**: Drizzle
 - **Admin UI**: React 19 + Vite + React Router v7 + Zustand + PrimeReact + Monaco + Quill
