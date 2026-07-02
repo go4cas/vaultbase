@@ -1,4 +1,4 @@
-import Elysia from "elysia";
+import { Hono } from "hono";
 import { gunzipSync } from "node:zlib";
 import { join } from "node:path";
 import { embedAdminFiles } from "./embed.ts" with { type: "macro" };
@@ -45,8 +45,8 @@ function decodeFile(key: string, b64: string): Uint8Array {
 export function makeAdminPlugin() {
   const distDir = join(import.meta.dir, "../../admin/dist");
 
-  return new Elysia({ name: "admin-ui" }).get("/_/*", async ({ request, set }) => {
-    const url = new URL(request.url);
+  return new Hono().get("/_/*", async (c) => {
+    const url = new URL(c.req.url);
     let pathname = url.pathname.replace(/^\/_\//, "");
     if (pathname === "" || pathname.endsWith("/")) pathname += "index.html";
 
@@ -55,11 +55,9 @@ export function makeAdminPlugin() {
       const key = EMBEDDED[pathname] ? pathname : "index.html";
       const b64 = EMBEDDED[key];
       if (!b64) {
-        set.status = 404;
-        return "Not found";
+        return c.text("Not found", 404);
       }
-      set.headers["Content-Type"] = mimeType(key);
-      return new Response(decodeFile(key, b64));
+      return new Response(decodeFile(key, b64), { headers: { "Content-Type": mimeType(key) } });
     }
 
     // 2) Dev mode: serve from filesystem
@@ -74,7 +72,6 @@ export function makeAdminPlugin() {
       return new Response(index, { headers: { "Content-Type": "text/html" } });
     }
 
-    set.status = 404;
-    return "Admin UI not built. Run: bun run build:admin";
+    return c.text("Admin UI not built. Run: bun run build:admin", 404);
   });
 }

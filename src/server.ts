@@ -215,21 +215,13 @@ export function createServer(config: Config) {
           },
         },
       }),
-    )
-    // Cross-cutting concerns (perf timer, CORS preflight/headers, custom
-    // routes, rate limit, security headers, access log, audit log, API-token
-    // telemetry) used to live here as Elysia global hooks. They now run on the
-    // Hono root `app` (see `coreMiddleware` + the `app.use(...)` chain below) so
-    // they wrap BOTH native Hono routes AND this mounted Elysia app.
-    // ── Versioned API surface ───────────────────────────────────────────
-    // Every plugin route is declared without the `/api/...` prefix; the
-    // group below adds `/api/v1`. Future v2 lives in a sibling group.
-    // Admin SPA + auth HTML pages — the remaining non-`/api` surface. Records,
-    // health, and the realtime SSE routes are now native Hono (registered on
-    // the root `app` below); everything under `/api/v1` that's still here has
-    // been migrated out.
-    .use(makeAdminPlugin())
-    .use(makeAuthPagesPlugin());
+    );
+  // Every other route (records, auth, files, admin SPA, auth pages, realtime,
+  // health, …) is now native Hono. Cross-cutting concerns that used to be
+  // Elysia global hooks (perf timer, CORS, custom routes, rate limit, security
+  // headers, access log, audit log, API-token telemetry) run on the Hono root
+  // `app` (see `coreMiddleware` + the `app.use(...)` chain below), wrapping BOTH
+  // native routes and this mounted Elysia. Only `/openapi` remains on Elysia.
 
   // ── Hono root ──────────────────────────────────────────────────────────
   // Hono owns Bun.serve + the WebSocket; every HTTP request it doesn't have a
@@ -400,6 +392,10 @@ export function createServer(config: Config) {
     unregisterSSEClient(c.req.param("clientId"));
     return c.json({ data: null });
   });
+  // Admin SPA (`/_/*`) + auth HTML pages (`/auth/reset|verify|otp`) — the
+  // non-`/api` surface. Static `/_/health` above out-prioritises `/_/*`.
+  migrated.route("/", makeAdminPlugin());
+  migrated.route("/", makeAuthPagesPlugin());
   // Records LAST: its greedy `/:collection` + `/:collection/:id` catch-alls
   // must not shadow any static route. Hono prioritises static routes over
   // params, so the sibling plugins/routes above win.

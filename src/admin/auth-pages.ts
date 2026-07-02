@@ -1,4 +1,4 @@
-import Elysia from "elysia";
+import { Hono } from "hono";
 
 /**
  * Built-in HTML pages for the email-link auth flows: password reset, email
@@ -329,26 +329,20 @@ function otpPage(token: string, collection: string): string {
 }
 
 export function makeAuthPagesPlugin() {
-  return new Elysia({ name: "auth-pages" })
-    .get("/auth/reset", ({ query, set }) => {
-      const token = String(query.token ?? "");
-      const collection = String(query.collection ?? "users");
-      set.headers["content-type"] = "text/html; charset=utf-8";
-      set.headers["cache-control"] = "no-store";
-      return resetPage(token, collection);
+  return new Hono()
+    .get("/auth/reset", (c) => {
+      const token = String(c.req.query("token") ?? "");
+      const collection = String(c.req.query("collection") ?? "users");
+      return c.html(resetPage(token, collection), 200, { "cache-control": "no-store" });
     })
-    .get("/auth/verify", ({ query, set }) => {
-      const token = String(query.token ?? "");
-      const collection = String(query.collection ?? "users");
-      set.headers["content-type"] = "text/html; charset=utf-8";
-      set.headers["cache-control"] = "no-store";
-      return verifyPage(token, collection);
+    .get("/auth/verify", (c) => {
+      const token = String(c.req.query("token") ?? "");
+      const collection = String(c.req.query("collection") ?? "users");
+      return c.html(verifyPage(token, collection), 200, { "cache-control": "no-store" });
     })
-    .get("/auth/otp", ({ query, set }) => {
-      const token = String(query.token ?? "");
-      const collection = String(query.collection ?? "users");
-      set.headers["content-type"] = "text/html; charset=utf-8";
-      set.headers["cache-control"] = "no-store";
-      return otpPage(token, collection);
+    .get("/auth/otp", (c) => {
+      const token = String(c.req.query("token") ?? "");
+      const collection = String(c.req.query("collection") ?? "users");
+      return c.html(otpPage(token, collection), 200, { "cache-control": "no-store" });
     });
 }
