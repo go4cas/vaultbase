@@ -572,7 +572,16 @@ export async function updateRecord(
 
   const fields = parseFields(col.fields);
   const userFields = fields.filter((f) => !f.system && !f.implicit);
-  const now = Math.floor(Date.now() / 1000);
+  // Strictly-monotonic `updated_at`: guarantees a fresh weak-ETag on every write
+  // so the optimistic-concurrency (If-Match) guard has no same-second blind spot
+  // (two PATCHes within one wall-clock second used to share an ETag → lost
+  // update). ponytail: bumps at most +1s per write, so a record hammered with
+  // sustained sub-second writes can drift slightly ahead of wall-clock (it
+  // self-corrects the moment writes slow). A dedicated `version` column would
+  // remove the drift entirely — the upgrade path if hot-record timestamps matter.
+  const nowSec = Math.floor(Date.now() / 1000);
+  const prevUpdated = Number((existing as { updated?: number }).updated ?? 0);
+  const now = nowSec > prevUpdated ? nowSec : prevUpdated + 1;
 
   // Apply autodate onUpdate
   for (const f of userFields) {

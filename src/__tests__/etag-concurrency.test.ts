@@ -126,6 +126,43 @@ describe("If-Match precondition", () => {
   });
 });
 
+describe("same-second lost-update guard (P0-8)", () => {
+  it("two updates within one wall-clock second get strictly increasing updated_at", async () => {
+    await withCollection();
+    const { updateRecord } = await import("../core/records.ts");
+    const r = await createRecord("posts", { title: "v1" }, null);
+    // No wait — both writes land in the same second; updated_at must still advance.
+    const a = (await updateRecord("posts", r.id, { title: "v2" }, null)) as { updated: number };
+    const b = (await updateRecord("posts", r.id, { title: "v3" }, null)) as { updated: number };
+    expect(b.updated).toBeGreaterThan(a.updated);
+  });
+
+  it("a same-second prior version's If-Match is rejected (412) — no lost update", async () => {
+    await withCollection();
+    const r = await createRecord("posts", { title: "v1" }, null);
+    const app = makeRecordsPlugin(SECRET);
+    const patch = (title: string, ifMatch?: string) =>
+      app.request(
+        new Request(`http://localhost/posts/${r.id}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            ...(ifMatch ? { "If-Match": ifMatch } : {}),
+          },
+          body: JSON.stringify({ title }),
+        }),
+      );
+    // Client A writes and holds its resulting version.
+    const resA = await patch("A");
+    const etagA = resA.headers.get("etag")!;
+    // Client B writes in the SAME second → advances the version.
+    await patch("B");
+    // Client A, still holding the pre-B version, must be rejected as stale.
+    const resC = await patch("C", etagA);
+    expect(resC.status).toBe(412);
+  });
+});
+
 describe("If-None-Match (cheap conditional GET)", () => {
   it("returns 304 when ETag matches", async () => {
     await withCollection();
