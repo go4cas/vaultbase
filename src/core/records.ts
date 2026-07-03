@@ -11,6 +11,7 @@ import {
   type FieldDef,
 } from "./collections.ts";
 import { parseFilter, type CollectionLookup } from "./filter.ts";
+import { ftsMatchPredicate } from "./fts.ts";
 import { maybeRecordHistory } from "./record-history.ts";
 
 /**
@@ -159,6 +160,8 @@ export interface ListOptions {
   skipTotal?: boolean;
   accessRule?: string;
   auth?: AuthContext | null;
+  /** Full-text query (FTS5 MATCH) — applied when the collection has searchable fields. */
+  search?: string;
 }
 
 export interface ListResult {
@@ -323,6 +326,20 @@ export async function listRecords(
       whereParams.push(...(compiled.params as Binding[]));
     }
   }
+  // Full-text search (FTS5). Composes with filter + access-rule via AND, so we
+  // never match rows the caller can't see. If `search` is set but the
+  // collection has no searchable fields, force an empty result rather than
+  // silently returning everything (which would misrepresent a search).
+  if (opts.search?.trim() && col.type !== "view") {
+    const pred = ftsMatchPredicate(col.name, fields, tableRef, opts.search);
+    if (pred) {
+      whereParts.push(pred.sql);
+      whereParams.push(pred.param);
+    } else {
+      whereParts.push("1 = 0");
+    }
+  }
+
   const whereSql = whereParts.length > 0 ? `WHERE ${whereParts.join(" AND ")}` : "";
 
   // Build ORDER BY. View collections don't necessarily expose created_at /

@@ -128,6 +128,7 @@ export function makeRecordsPlugin(jwtSecret: string) {
         const page = c.req.query("page");
         const perPage = c.req.query("perPage");
         const filter = c.req.query("filter");
+        const search = c.req.query("search");
         const sort = c.req.query("sort");
         const expand = c.req.query("expand");
         const fields = c.req.query("fields");
@@ -143,6 +144,7 @@ export function makeRecordsPlugin(jwtSecret: string) {
           auth,
         };
         if (filter) opts.filter = filter;
+        if (search) opts.search = search;
         if (sort) opts.sort = sort;
         if (expand) opts.expand = expand;
         if (fields) opts.fields = fields;
