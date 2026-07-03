@@ -23,6 +23,88 @@ export type ThumbFit = "contain" | "cover" | "crop";
 const MIN_DIM = 1;
 const MAX_DIM = 4096;
 
+// Max SOURCE pixels we'll decode for a thumbnail. Decoding is width×height×4
+// bytes of RGBA in-process, so an uncapped 20000×20000 PNG (which can be a tiny
+// file — a decompression bomb) allocates ~1.6 GB and can OOM the worker. 40 MP
+// comfortably covers real camera photos; larger sources skip thumbnailing and
+// the original (byte-small for a bomb) is served instead.
+const MAX_SOURCE_PIXELS = 40_000_000;
+
+/** Raised when a source image's declared pixel count exceeds the decode budget. */
+export class ImageTooLargeError extends Error {}
+
+/**
+ * Read pixel dimensions from a raster header WITHOUT a full decode, so we can
+ * reject decompression bombs before allocating. Returns null when the format's
+ * size can't be cheaply determined (VP8/VP8L WebP, AVIF) — those fall through to
+ * the decoder, which for jsquash has its own bounds.
+ */
+function probeDimensions(bytes: Uint8Array, format: ThumbFormat): { w: number; h: number } | null {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  try {
+    if (format === "png") {
+      // 8-byte signature, then IHDR: length(4) type(4) width(4) height(4) — big-endian.
+      if (bytes.length < 24) return null;
+      return { w: dv.getUint32(16), h: dv.getUint32(20) };
+    }
+    if (format === "gif") {
+      // signature(6) + logical-screen width(2) height(2) — little-endian.
+      if (bytes.length < 10) return null;
+      return { w: dv.getUint16(6, true), h: dv.getUint16(8, true) };
+    }
+    if (format === "jpeg") {
+      // Scan for a Start-Of-Frame marker (0xFFC0–0xFFCF, excluding C4/C8/CC).
+      let o = 2;
+      while (o + 9 < bytes.length) {
+        if (bytes[o] !== 0xff) {
+          o++;
+          continue;
+        }
+        const marker = bytes[o + 1]!;
+        if (
+          marker >= 0xc0 &&
+          marker <= 0xcf &&
+          marker !== 0xc4 &&
+          marker !== 0xc8 &&
+          marker !== 0xcc
+        ) {
+          return { h: dv.getUint16(o + 5), w: dv.getUint16(o + 7) };
+        }
+        o += 2 + dv.getUint16(o + 2); // skip this segment
+      }
+      return null;
+    }
+    if (format === "webp") {
+      // Only the extended 'VP8X' chunk carries an explicit 24-bit canvas size.
+      if (
+        bytes.length >= 30 &&
+        bytes[12] === 0x56 &&
+        bytes[13] === 0x50 &&
+        bytes[14] === 0x38 &&
+        bytes[15] === 0x58
+      ) {
+        const w = 1 + (dv.getUint8(24) | (dv.getUint8(25) << 8) | (dv.getUint8(26) << 16));
+        const h = 1 + (dv.getUint8(27) | (dv.getUint8(28) << 8) | (dv.getUint8(29) << 16));
+        return { w, h };
+      }
+      return null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/** Throw if the source's declared dimensions exceed the decode pixel budget. */
+function assertDecodable(bytes: Uint8Array, format: ThumbFormat): void {
+  const d = probeDimensions(bytes, format);
+  if (d && d.w > 0 && d.h > 0 && d.w * d.h > MAX_SOURCE_PIXELS) {
+    throw new ImageTooLargeError(
+      `source image ${d.w}×${d.h} exceeds the ${MAX_SOURCE_PIXELS}px thumbnail budget`,
+    );
+  }
+}
+
 export interface ThumbSpec {
   width: number;
   height: number;
@@ -254,6 +336,8 @@ export async function generateThumbnail(
   spec: ThumbSpec,
   format: ThumbFormat,
 ): Promise<Uint8Array> {
+  // Reject decompression bombs before any decoder allocates full RGBA.
+  assertDecodable(bytes, format);
   if (format === "webp") return await thumbnailWebp(bytes, spec);
   if (format === "avif") return await thumbnailAvif(bytes, spec);
   if (format === "gif") return await thumbnailGif(bytes, spec);

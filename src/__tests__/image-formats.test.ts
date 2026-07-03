@@ -3,7 +3,13 @@ import { Image, GIF, Frame } from "imagescript";
 import { decode as webpDecode, encode as webpEncode } from "@jsquash/webp";
 import { decode as avifDecode, encode as avifEncode } from "@jsquash/avif";
 
-import { detectFormat, generateThumbnail, thumbMime, type ThumbFormat } from "../core/image.ts";
+import {
+  detectFormat,
+  generateThumbnail,
+  ImageTooLargeError,
+  thumbMime,
+  type ThumbFormat,
+} from "../core/image.ts";
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -216,5 +222,30 @@ describe("generateThumbnail — static GIF", () => {
     const decoded = await Image.decode(out);
     expect(decoded.width).toBe(20);
     expect(decoded.height).toBe(20);
+  });
+});
+
+describe("decompression-bomb guard (P0-7)", () => {
+  it("rejects a source declaring dimensions over the pixel budget before decoding", async () => {
+    // 24-byte PNG: signature + IHDR declaring 20000×20000 (400 MP) — a tiny file
+    // that would allocate ~1.6 GB of RGBA if decoded. probeDimensions catches it
+    // from the header, so no decode is attempted.
+    const png = new Uint8Array(24);
+    png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+    png.set([0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52], 8);
+    const dv = new DataView(png.buffer);
+    dv.setUint32(16, 20000);
+    dv.setUint32(20, 20000);
+    expect(detectFormat(png)).toBe("png");
+    await expect(
+      generateThumbnail(png, { width: 100, height: 100, fit: "contain" }, "png"),
+    ).rejects.toThrow(ImageTooLargeError);
+  });
+
+  it("allows a normal-sized image through the guard", async () => {
+    const png = await makePng(200, 150);
+    // Should not throw the size guard (it decodes + thumbnails normally).
+    const out = await generateThumbnail(png, { width: 50, height: 50, fit: "contain" }, "png");
+    expect(out.length).toBeGreaterThan(0);
   });
 });
