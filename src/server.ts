@@ -4,6 +4,7 @@ import { Type as t } from "@sinclair/typebox";
 import { jsonBody } from "./api/validator.ts";
 import { upgradeWebSocket, websocket as bunWebsocket } from "hono/bun";
 import type { Config } from "./config.ts";
+import { getRawClient } from "./db/client.ts";
 import { COGWORKS_VERSION } from "./core/version.ts";
 import { securityHeaders, verifyAuthToken } from "./core/sec.ts";
 import { getAllSettings } from "./api/settings.ts";
@@ -377,6 +378,34 @@ export function createServer(config: Config) {
       },
     }),
   );
+  // Readiness probe — distinct from liveness (`/_/health`). Ready = the DB is
+  // reachable AND migrations have stamped `cogworks_schema`. Lets a k8s / LB
+  // readiness gate hold traffic off a pod whose DB isn't migrated/available yet
+  // (e.g. mid rolling deploy), while liveness stays green so it isn't killed.
+  // 503 (not 500) on failure so probes read it as "not ready", not "crashed".
+  migrated.get("/_/ready", (c) => {
+    try {
+      const row = getRawClient()
+        .query("SELECT version FROM cogworks_schema WHERE id = 1")
+        .get() as { version: string } | null;
+      if (!row) {
+        return c.json({ data: { ready: false, reason: "migrations not applied" } }, 503);
+      }
+      return c.json({
+        data: {
+          ready: true,
+          schema_version: row.version,
+          readonly:
+            process.env.COGWORKS_READONLY === "1" || process.env.COGWORKS_READONLY === "true",
+          worker_id: process.env.COGWORKS_WORKER_ID ?? null,
+          uptime_s: Math.floor(process.uptime()),
+        },
+      });
+    } catch (e) {
+      // DB not initialized / connection gone → not ready.
+      return c.json({ data: { ready: false, reason: (e as Error).message } }, 503);
+    }
+  });
   // SSE fallback for clients that can't open WebSockets. Pairs with
   // `POST /api/v1/realtime` for setting subscriptions.
   migrated.get("/api/v1/realtime", (c) => {

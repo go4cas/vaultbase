@@ -178,8 +178,13 @@ The parent process spawns N workers, all sharing port `COGWORKS_PORT` via
 connections across workers. Workers run identical code; SQLite WAL handles
 concurrent readers natively.
 
-**Health check:** `GET /_/health` returns the responding worker's id + pid +
-uptime — useful to verify load balancing.
+**Health check:** `GET /_/health` (liveness) returns the responding worker's id +
+pid + uptime — useful to verify load balancing.
+
+**Readiness:** `GET /_/ready` returns `200` once the DB is reachable and
+migrations are applied, `503` otherwise — point a k8s/LB *readiness* gate here
+(and *liveness* at `/_/health`) so traffic holds off a pod until its schema is
+migrated during a rolling deploy.
 
 **Graceful shutdown:** `SIGTERM` / `SIGINT` to the parent broadcasts to
 workers; each drains its log buffer and closes its DB handle. 30s timeout,
