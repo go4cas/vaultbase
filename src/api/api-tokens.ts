@@ -21,20 +21,7 @@ import {
   mintApiToken,
   revokeApiToken,
 } from "../core/api-tokens.ts";
-import { extractBearer, verifyAuthToken } from "../core/sec.ts";
-
-interface AdminCtx {
-  id: string;
-  email: string;
-}
-
-async function getAdmin(request: Request, jwtSecret: string): Promise<AdminCtx | null> {
-  const token = extractBearer(request);
-  if (!token) return null;
-  const ctx = await verifyAuthToken(token, jwtSecret, { audience: "admin" });
-  if (!ctx) return null;
-  return { id: ctx.id, email: ctx.email ?? "" };
-}
+import { extractBearer, getAdmin, verifyAuthToken } from "../core/sec.ts";
 
 /** Sanitised row for the wire — never includes a token value. */
 function rowForWire(r: Awaited<ReturnType<typeof getApiToken>>) {

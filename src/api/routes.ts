@@ -6,15 +6,8 @@ import { log } from "../core/log.ts";
 import { getDb } from "../db/client.ts";
 import { routes } from "../db/schema.ts";
 import { ROUTE_METHODS, dispatchCustomRoute, invalidateRoutesCache } from "../core/routes.ts";
-import { verifyAuthToken } from "../core/sec.ts";
+import { requireAdmin } from "../core/sec.ts";
 import { customInnerPath } from "../core/api-paths.ts";
-
-async function isAdmin(request: Request, jwtSecret: string): Promise<boolean> {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) return false;
-  // Centralized verifier — fixes N-1 admin-token-bypass.
-  return (await verifyAuthToken(token, jwtSecret, { audience: "admin" })) !== null;
-}
 
 function validatePath(path: string): string | null {
   if (!path) return "path required";
@@ -65,7 +58,7 @@ export async function tryDispatchCustom(
 export function makeRoutesPlugin(jwtSecret: string) {
   return new Hono()
     .get("/admin/routes", async (c) => {
-      if (!(await isAdmin(c.req.raw, jwtSecret))) {
+      if (!(await requireAdmin(c.req.raw, jwtSecret))) {
         return c.json({ error: "Unauthorized", code: 401 }, 401);
       }
       const rows = await getDb().select().from(routes);
@@ -84,7 +77,7 @@ export function makeRoutesPlugin(jwtSecret: string) {
         }),
       ),
       async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const body = c.req.valid("json");
@@ -128,7 +121,7 @@ export function makeRoutesPlugin(jwtSecret: string) {
         }),
       ),
       async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const body = c.req.valid("json");
@@ -177,7 +170,7 @@ export function makeRoutesPlugin(jwtSecret: string) {
     )
 
     .delete("/admin/routes/:id", async (c) => {
-      if (!(await isAdmin(c.req.raw, jwtSecret))) {
+      if (!(await requireAdmin(c.req.raw, jwtSecret))) {
         return c.json({ error: "Unauthorized", code: 401 }, 401);
       }
       await getDb()

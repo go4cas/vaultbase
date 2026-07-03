@@ -11,14 +11,7 @@ import {
   type CollectionSnapshot,
   type Snapshot,
 } from "../core/migrations.ts";
-import { verifyAuthToken } from "../core/sec.ts";
-
-async function isAdmin(request: Request, jwtSecret: string): Promise<boolean> {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) return false;
-  // Centralized verifier — fixes N-1 admin-token-bypass.
-  return (await verifyAuthToken(token, jwtSecret, { audience: "admin" })) !== null;
-}
+import { requireAdmin } from "../core/sec.ts";
 
 /**
  * Re-exported for tests / older imports — the canonical home is now
@@ -30,7 +23,7 @@ export { computeSnapshotDiff };
 export function makeMigrationsPlugin(jwtSecret: string) {
   return new Hono()
     .get("/admin/migrations/snapshot", async (c) => {
-      if (!(await isAdmin(c.req.raw, jwtSecret))) {
+      if (!(await requireAdmin(c.req.raw, jwtSecret))) {
         return c.json({ error: "Unauthorized", code: 401 }, 401);
       }
       const cols = await listCollections();
@@ -64,7 +57,7 @@ export function makeMigrationsPlugin(jwtSecret: string) {
     })
 
     .post("/admin/migrations/diff", jsonBody(t.Object({ snapshot: t.Any() })), async (c) => {
-      if (!(await isAdmin(c.req.raw, jwtSecret))) {
+      if (!(await requireAdmin(c.req.raw, jwtSecret))) {
         return c.json({ error: "Unauthorized", code: 401 }, 401);
       }
       const body = c.req.valid("json");
@@ -86,7 +79,7 @@ export function makeMigrationsPlugin(jwtSecret: string) {
       "/admin/migrations/apply",
       jsonBody(t.Object({ snapshot: t.Any(), mode: t.Optional(t.String()) })),
       async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const body = c.req.valid("json");

@@ -5,19 +5,12 @@ import { jsonBody } from "./validator.ts";
 import { getDb } from "../db/client.ts";
 import { hooks } from "../db/schema.ts";
 import { HOOK_EVENTS, invalidateHookCache } from "../core/hooks.ts";
-import { verifyAuthToken } from "../core/sec.ts";
-
-async function isAdmin(request: Request, jwtSecret: string): Promise<boolean> {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) return false;
-  // Centralized verifier — fixes N-1 admin-token-bypass.
-  return (await verifyAuthToken(token, jwtSecret, { audience: "admin" })) !== null;
-}
+import { requireAdmin } from "../core/sec.ts";
 
 export function makeHooksPlugin(jwtSecret: string) {
   return new Hono()
     .get("/admin/hooks", async (c) => {
-      if (!(await isAdmin(c.req.raw, jwtSecret))) {
+      if (!(await requireAdmin(c.req.raw, jwtSecret))) {
         return c.json({ error: "Unauthorized", code: 401 }, 401);
       }
       const rows = await getDb().select().from(hooks);
@@ -36,7 +29,7 @@ export function makeHooksPlugin(jwtSecret: string) {
         }),
       ),
       async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const body = c.req.valid("json");
@@ -75,7 +68,7 @@ export function makeHooksPlugin(jwtSecret: string) {
         }),
       ),
       async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const body = c.req.valid("json");
@@ -117,7 +110,7 @@ export function makeHooksPlugin(jwtSecret: string) {
     )
 
     .delete("/admin/hooks/:id", async (c) => {
-      if (!(await isAdmin(c.req.raw, jwtSecret))) {
+      if (!(await requireAdmin(c.req.raw, jwtSecret))) {
         return c.json({ error: "Unauthorized", code: 401 }, 401);
       }
       await getDb()

@@ -2,14 +2,7 @@ import { existsSync, renameSync } from "node:fs";
 import { Hono } from "hono";
 import { closeDb, initDb } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
-import { verifyAuthToken } from "../core/sec.ts";
-
-async function isAdmin(request: Request, jwtSecret: string): Promise<boolean> {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) return false;
-  // Centralized verifier — fixes N-1 admin-token-bypass.
-  return (await verifyAuthToken(token, jwtSecret, { audience: "admin" })) !== null;
-}
+import { requireAdmin } from "../core/sec.ts";
 
 // SQLite magic header — used to verify uploads
 const SQLITE_MAGIC = "SQLite format 3\0";
@@ -18,7 +11,7 @@ export function makeBackupPlugin(jwtSecret: string, dbPath: string) {
   return (
     new Hono()
       .get("/admin/backup", async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         if (!existsSync(dbPath)) {
@@ -36,7 +29,7 @@ export function makeBackupPlugin(jwtSecret: string, dbPath: string) {
 
       // Restore from uploaded SQLite file
       .post("/admin/restore", async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
 

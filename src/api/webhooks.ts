@@ -7,14 +7,8 @@ import { jsonBody } from "./validator.ts";
 import { and, desc, eq, gte } from "drizzle-orm";
 import { getDb } from "../db/client.ts";
 import { webhooks, webhookDeliveries } from "../db/schema.ts";
-import { verifyAuthToken } from "../core/sec.ts";
+import { requireAdmin } from "../core/sec.ts";
 import { dispatchEvent } from "../core/webhooks.ts";
-
-async function requireAdmin(request: Request, jwtSecret: string): Promise<boolean> {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) return false;
-  return (await verifyAuthToken(token, jwtSecret, { audience: "admin" })) !== null;
-}
 
 function generateSecret(): string {
   const bytes = new Uint8Array(32);

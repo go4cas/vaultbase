@@ -1,15 +1,8 @@
 import { Hono } from "hono";
 import { globalMetrics, STEPS } from "../core/perf-metrics.ts";
 import { getRawClient } from "../db/client.ts";
-import { verifyAuthToken } from "../core/sec.ts";
+import { requireAdmin } from "../core/sec.ts";
 import { getSetting } from "./settings.ts";
-
-async function isAdmin(request: Request, jwtSecret: string): Promise<boolean> {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) return false;
-  // Centralized verifier — fixes N-1 admin-token-bypass.
-  return (await verifyAuthToken(token, jwtSecret, { audience: "admin" })) !== null;
-}
 
 interface SqliteSnapshot {
   page_count: number;
@@ -42,7 +35,7 @@ export function makeMetricsPlugin(jwtSecret: string) {
   return (
     new Hono()
       .get("/_/metrics", async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         return c.json({
@@ -51,7 +44,7 @@ export function makeMetricsPlugin(jwtSecret: string) {
         });
       })
       .post("/_/metrics/reset", async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         globalMetrics.reset();

@@ -20,7 +20,7 @@ import {
   stopUpdateCheckScheduler,
 } from "../core/update-check.ts";
 import { isAuthWindowKey, validateWindowSeconds } from "../core/auth-tokens.ts";
-import { verifyAuthToken } from "../core/sec.ts";
+import { requireAdmin } from "../core/sec.ts";
 import {
   encryptValueSync,
   decryptValueSync,
@@ -142,25 +142,18 @@ export function getAllSettings(): Record<string, string> {
   return out;
 }
 
-async function isAdmin(request: Request, jwtSecret: string): Promise<boolean> {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) return false;
-  // Centralized verifier — fixes N-1 admin-token-bypass.
-  return (await verifyAuthToken(token, jwtSecret, { audience: "admin" })) !== null;
-}
-
 export function makeSettingsPlugin(jwtSecret: string) {
   return (
     new Hono()
       .get("/admin/settings", async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         return c.json({ data: getAllSettings() });
       })
       // Update settings (partial — keys not in body are left alone)
       .patch("/admin/settings", jsonBody(t.Record(t.String(), t.Any())), async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const body = c.req.valid("json");
@@ -195,7 +188,7 @@ export function makeSettingsPlugin(jwtSecret: string) {
       })
       // Send test email — verifies + delivers a one-line message
       .post("/admin/settings/smtp/test", jsonBody(t.Object({ to: t.String() })), async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const body = c.req.valid("json");
@@ -219,7 +212,7 @@ export function makeSettingsPlugin(jwtSecret: string) {
       })
       // Storage round-trip test: write probe object → read back → delete
       .post("/admin/settings/storage/test", async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const result = await testStorage();
@@ -230,20 +223,20 @@ export function makeSettingsPlugin(jwtSecret: string) {
       })
       // Storage status — what driver is in use, plus relevant identifiers
       .get("/admin/settings/storage/status", async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         return c.json({ data: getStorageStatus() });
       })
       // Update checker — current vs latest GitHub release.
       .get("/admin/update-status", async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         return c.json({ data: getUpdateStatus() });
       })
       .post("/admin/update-status/check", async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         await runUpdateCheck();

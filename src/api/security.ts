@@ -2,20 +2,13 @@
  * /api/v1/admin/security/* — backs the **Settings → Security** tab.
  */
 import { Hono } from "hono";
-import { verifyAuthToken } from "../core/sec.ts";
-import { securityHeaders } from "../core/sec.ts";
+import { requireAdmin, securityHeaders } from "../core/sec.ts";
 import {
   listAdminSessions,
   revokeAdminSession,
   forceLogoutAllAdmins,
   shortFingerprint,
 } from "../core/security.ts";
-
-async function requireAdmin(request: Request, jwtSecret: string): Promise<boolean> {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) return false;
-  return (await verifyAuthToken(token, jwtSecret, { audience: "admin" })) !== null;
-}
 
 export function makeSecurityPlugin(jwtSecret: string, encryptionKey: string | undefined) {
   return new Hono()

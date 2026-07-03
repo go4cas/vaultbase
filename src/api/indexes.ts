@@ -4,19 +4,12 @@ import { Type as t } from "@sinclair/typebox";
 import { jsonBody } from "./validator.ts";
 import { getDb } from "../db/client.ts";
 import { getCollection, parseFields, userTableName } from "../core/collections.ts";
-import { verifyAuthToken } from "../core/sec.ts";
+import { requireAdmin } from "../core/sec.ts";
 
 interface IndexInfo {
   name: string;
   field: string;
   unique: boolean;
-}
-
-async function isAdmin(request: Request, jwtSecret: string): Promise<boolean> {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) return false;
-  // Centralized verifier — fixes N-1 admin-token-bypass.
-  return (await verifyAuthToken(token, jwtSecret, { audience: "admin" })) !== null;
 }
 
 function rawClient(): Database {
@@ -64,7 +57,7 @@ export function makeIndexesPlugin(jwtSecret: string) {
   return (
     new Hono()
       .get("/admin/collections/:name/indexes", async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const col = await getCollection(c.req.param("name"));
@@ -84,7 +77,7 @@ export function makeIndexesPlugin(jwtSecret: string) {
         "/admin/collections/:name/indexes",
         jsonBody(t.Object({ field: t.String(), unique: t.Optional(t.Boolean()) })),
         async (c) => {
-          if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          if (!(await requireAdmin(c.req.raw, jwtSecret))) {
             return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
           const col = await getCollection(c.req.param("name"));
@@ -124,7 +117,7 @@ export function makeIndexesPlugin(jwtSecret: string) {
 
       // Drop index
       .delete("/admin/collections/:name/indexes/:indexName", async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const idxName = c.req.param("indexName");

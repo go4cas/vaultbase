@@ -4,7 +4,7 @@ import { Type as t } from "@sinclair/typebox";
 import { jsonBody } from "./validator.ts";
 import * as jose from "jose";
 import { timeFor } from "../core/perf-metrics.ts";
-import { verifyAuthToken } from "../core/sec.ts";
+import { requireAdmin } from "../core/sec.ts";
 import { isAdminApiPath } from "../core/api-paths.ts";
 import {
   appendLogEntry,
@@ -195,13 +195,6 @@ export function accessLogMiddleware(jwtSecret: string): MiddlewareHandler {
       }
     }
   };
-}
-
-async function requireAdmin(request: Request, jwtSecret: string): Promise<boolean> {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) return false;
-  // Centralized verifier — fixes N-1 admin-token-bypass.
-  return (await verifyAuthToken(token, jwtSecret, { audience: "admin" })) !== null;
 }
 
 export function makeLogsPlugin(jwtSecret: string) {

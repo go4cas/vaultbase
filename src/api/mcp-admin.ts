@@ -11,24 +11,11 @@
  */
 
 import { Hono } from "hono";
-import { extractBearer, verifyAuthToken } from "../core/sec.ts";
+import { getAdmin } from "../core/sec.ts";
 import { listMcpEventClients } from "../mcp/events.ts";
 import { buildRegistry } from "../mcp/server.ts";
 import { listResources, listResourceTemplates } from "../mcp/resources.ts";
 import { listPrompts } from "../mcp/prompts.ts";
-
-interface AdminCtx {
-  id: string;
-  email: string;
-}
-
-async function getAdmin(request: Request, jwtSecret: string): Promise<AdminCtx | null> {
-  const token = extractBearer(request);
-  if (!token) return null;
-  const ctx = await verifyAuthToken(token, jwtSecret, { audience: "admin" });
-  if (!ctx) return null;
-  return { id: ctx.id, email: ctx.email ?? "" };
-}
 
 export function makeMcpAdminPlugin(jwtSecret: string) {
   return new Hono()

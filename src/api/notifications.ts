@@ -18,7 +18,7 @@ import { Type as t } from "@sinclair/typebox";
 import { jsonBody } from "./validator.ts";
 import { getDb } from "../db/client.ts";
 import { setSetting, getAllSettings } from "./settings.ts";
-import { verifyAuthToken } from "../core/sec.ts";
+import { requireAdmin, verifyAuthToken } from "../core/sec.ts";
 import {
   loadProviderConfigs,
   testOneSignalConnection,
@@ -32,12 +32,6 @@ import {
 
 function rawClient(): Database {
   return (getDb() as unknown as { $client: Database }).$client;
-}
-
-async function isAdmin(request: Request, jwtSecret: string): Promise<boolean> {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) return false;
-  return (await verifyAuthToken(token, jwtSecret, { audience: "admin" })) !== null;
 }
 
 async function authedUser(
@@ -159,7 +153,7 @@ export function makeNotificationsPlugin(jwtSecret: string) {
     new Hono()
       // ── Admin: list provider config (secrets masked) ───────────────────────
       .get("/admin/notifications/providers", async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const reveal = c.req.query("reveal") === "1" || c.req.query("reveal") === "true";
@@ -167,7 +161,7 @@ export function makeNotificationsPlugin(jwtSecret: string) {
       })
       // ── Admin: patch one provider's config ─────────────────────────────────
       .patch("/admin/notifications/providers/:name", jsonBody(PATCH_BODY), async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const name = c.req.param("name");
@@ -226,7 +220,7 @@ export function makeNotificationsPlugin(jwtSecret: string) {
       })
       // ── Admin: test connection (no message sent) ───────────────────────────
       .post("/admin/notifications/providers/:name/test-connection", async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const name = c.req.param("name");
@@ -256,7 +250,7 @@ export function makeNotificationsPlugin(jwtSecret: string) {
           }),
         ),
         async (c) => {
-          if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          if (!(await requireAdmin(c.req.raw, jwtSecret))) {
             return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
           const body = c.req.valid("json");

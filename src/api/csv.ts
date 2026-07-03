@@ -3,14 +3,7 @@ import { encodeRow, parseCsvToObjects } from "../core/csv.ts";
 import { getCollection, parseFields, type FieldDef } from "../core/collections.ts";
 import { createRecord, listRecords, type RecordWithMeta } from "../core/records.ts";
 import { ValidationError } from "../core/validate.ts";
-import { verifyAuthToken } from "../core/sec.ts";
-
-async function isAdmin(request: Request, jwtSecret: string): Promise<boolean> {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) return false;
-  // Centralized verifier — fixes N-1 admin-token-bypass.
-  return (await verifyAuthToken(token, jwtSecret, { audience: "admin" })) !== null;
-}
+import { requireAdmin } from "../core/sec.ts";
 
 /**
  * Coerce a CSV cell back to the right JS type for createRecord. Empty strings
@@ -135,7 +128,7 @@ export function makeCsvPlugin(jwtSecret: string) {
       .get("/admin/export/:collection", async (c) => {
         // Atomic auth/rule check — runs synchronously before we hand back a Response
         // so unauthorized callers get a plain JSON error, never a stream.
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Forbidden", code: 403 }, 403);
         }
         const col = await getCollection(c.req.param("collection"));
@@ -225,7 +218,7 @@ export function makeCsvPlugin(jwtSecret: string) {
 
       // Import CSV rows into a base collection.
       .post("/admin/import/:collection", async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Forbidden", code: 403 }, 403);
         }
         const col = await getCollection(c.req.param("collection"));

@@ -20,7 +20,7 @@
 import { Hono } from "hono";
 import { Type as t } from "@sinclair/typebox";
 import { jsonBody } from "./validator.ts";
-import { verifyAuthToken } from "../core/sec.ts";
+import { requireAdmin } from "../core/sec.ts";
 import {
   listFlags,
   getFlag,
@@ -47,12 +47,6 @@ function pushFlagDelta(payload: { type: "flag_changed" | "flag_deleted"; key: st
   } catch {
     /* swallow */
   }
-}
-
-async function requireAdmin(request: Request, jwtSecret: string): Promise<boolean> {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) return false;
-  return (await verifyAuthToken(token, jwtSecret, { audience: "admin" })) !== null;
 }
 
 export function makeFlagsPlugin(jwtSecret: string) {

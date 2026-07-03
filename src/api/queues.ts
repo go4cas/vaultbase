@@ -12,14 +12,7 @@ import {
   queueStats,
   type JobStatus,
 } from "../core/queues.ts";
-import { verifyAuthToken } from "../core/sec.ts";
-
-async function isAdmin(request: Request, jwtSecret: string): Promise<boolean> {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) return false;
-  // Centralized verifier — fixes N-1 admin-token-bypass.
-  return (await verifyAuthToken(token, jwtSecret, { audience: "admin" })) !== null;
-}
+import { requireAdmin } from "../core/sec.ts";
 
 const VALID_BACKOFF = new Set(["exponential", "fixed"]);
 const VALID_STATUS = new Set<JobStatus>(["queued", "running", "succeeded", "failed", "dead"]);
@@ -34,7 +27,7 @@ export function makeQueuesPlugin(jwtSecret: string) {
   return (
     new Hono()
       .get("/admin/workers", async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const rows = await getDb().select().from(workers);
@@ -56,7 +49,7 @@ export function makeQueuesPlugin(jwtSecret: string) {
           }),
         ),
         async (c) => {
-          if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          if (!(await requireAdmin(c.req.raw, jwtSecret))) {
             return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
           const body = c.req.valid("json");
@@ -106,7 +99,7 @@ export function makeQueuesPlugin(jwtSecret: string) {
           }),
         ),
         async (c) => {
-          if (!(await isAdmin(c.req.raw, jwtSecret))) {
+          if (!(await requireAdmin(c.req.raw, jwtSecret))) {
             return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
           const body = c.req.valid("json");
@@ -149,7 +142,7 @@ export function makeQueuesPlugin(jwtSecret: string) {
       )
 
       .delete("/admin/workers/:id", async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         await getDb()
@@ -161,7 +154,7 @@ export function makeQueuesPlugin(jwtSecret: string) {
 
       // ── Jobs log + admin actions ──────────────────────────────────────────
       .get("/admin/queues/jobs", async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const opts: Parameters<typeof listJobsLog>[0] = {};
@@ -184,7 +177,7 @@ export function makeQueuesPlugin(jwtSecret: string) {
       })
 
       .post("/admin/queues/jobs/:id/retry", async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const ok = await retryJob(c.req.param("id"));
@@ -195,7 +188,7 @@ export function makeQueuesPlugin(jwtSecret: string) {
       })
 
       .delete("/admin/queues/jobs/:id", async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const ok = await discardJob(c.req.param("id"));
@@ -206,7 +199,7 @@ export function makeQueuesPlugin(jwtSecret: string) {
       })
 
       .get("/admin/queues/stats", async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const data = await queueStats();

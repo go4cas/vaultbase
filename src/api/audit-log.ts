@@ -1,19 +1,8 @@
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import { listAuditEntries, recordAuditEntry } from "../core/audit-log.ts";
-import { verifyAuthToken } from "../core/sec.ts";
+import { getAdmin } from "../core/sec.ts";
 import { isAdminApiPath } from "../core/api-paths.ts";
-
-async function getAdmin(
-  request: Request,
-  jwtSecret: string,
-): Promise<{ id: string; email: string } | null> {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) return null;
-  const ctx = await verifyAuthToken(token, jwtSecret, { audience: "admin" });
-  if (!ctx) return null;
-  return { id: ctx.id, email: ctx.email ?? "" };
-}
 
 /**
  * Root-level Hono middleware: capture every state-changing `/api/v1/admin/*`

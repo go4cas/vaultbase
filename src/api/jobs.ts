@@ -5,7 +5,7 @@ import { jsonBody } from "./validator.ts";
 import { getDb } from "../db/client.ts";
 import { jobs } from "../db/schema.ts";
 import { invalidateJobsCache, nextRunFromCron, runJob, validateCron } from "../core/jobs.ts";
-import { verifyAuthToken } from "../core/sec.ts";
+import { requireAdmin } from "../core/sec.ts";
 
 function validateMode(mode: string): string | null {
   if (mode === "inline") return null;
@@ -14,17 +14,10 @@ function validateMode(mode: string): string | null {
   return null;
 }
 
-async function isAdmin(request: Request, jwtSecret: string): Promise<boolean> {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) return false;
-  // Centralized verifier — fixes N-1 admin-token-bypass.
-  return (await verifyAuthToken(token, jwtSecret, { audience: "admin" })) !== null;
-}
-
 export function makeJobsPlugin(jwtSecret: string) {
   return new Hono()
     .get("/admin/jobs", async (c) => {
-      if (!(await isAdmin(c.req.raw, jwtSecret))) {
+      if (!(await requireAdmin(c.req.raw, jwtSecret))) {
         return c.json({ error: "Unauthorized", code: 401 }, 401);
       }
       const rows = await getDb().select().from(jobs);
@@ -43,7 +36,7 @@ export function makeJobsPlugin(jwtSecret: string) {
         }),
       ),
       async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const body = c.req.valid("json");
@@ -93,7 +86,7 @@ export function makeJobsPlugin(jwtSecret: string) {
         }),
       ),
       async (c) => {
-        if (!(await isAdmin(c.req.raw, jwtSecret))) {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const body = c.req.valid("json");
@@ -144,7 +137,7 @@ export function makeJobsPlugin(jwtSecret: string) {
     )
 
     .delete("/admin/jobs/:id", async (c) => {
-      if (!(await isAdmin(c.req.raw, jwtSecret))) {
+      if (!(await requireAdmin(c.req.raw, jwtSecret))) {
         return c.json({ error: "Unauthorized", code: 401 }, 401);
       }
       await getDb()
@@ -155,7 +148,7 @@ export function makeJobsPlugin(jwtSecret: string) {
     })
 
     .post("/admin/jobs/:id/run", async (c) => {
-      if (!(await isAdmin(c.req.raw, jwtSecret))) {
+      if (!(await requireAdmin(c.req.raw, jwtSecret))) {
         return c.json({ error: "Unauthorized", code: 401 }, 401);
       }
       const result = await runJob(c.req.param("id"));
