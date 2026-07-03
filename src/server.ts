@@ -44,6 +44,7 @@ import {
 } from "./core/api-tokens.ts";
 import { makeSecurityPlugin } from "./api/security.ts";
 import { makeThemePlugin } from "./api/theme.ts";
+import { makeOpenApiPlugin } from "./api/openapi.ts";
 import { makeFlagsPlugin } from "./api/flags.ts";
 import { makeWebhooksPlugin } from "./api/webhooks.ts";
 import { makeNotificationsPlugin } from "./api/notifications.ts";
@@ -356,6 +357,7 @@ export function createServer(config: Config) {
   // Every route below is native Hono (no Elysia mount remains). Matched in
   // static-over-dynamic priority within this one router — see the records note.
   const migrated = new Hono();
+  migrated.route("/api/v1", makeOpenApiPlugin());
   migrated.route("/api/v1", makeThemePlugin());
   migrated.route("/api/v1", makeMetricsPlugin(config.jwtSecret));
   migrated.route("/api/v1", makeBackupPlugin(config.jwtSecret, config.dbPath));

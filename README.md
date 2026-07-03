@@ -29,6 +29,7 @@ bun run build           # compiles admin + binary → ./cogworks[.exe]
 - **Hooks page** — record event hooks (before/after × Create/Update/Delete), custom HTTP routes (`/api/custom/*`), cron jobs (UTC, with cronstrue + crontab.guru link). Monaco editor with ctx IntelliSense
 - **Logs** — JSONL files per UTC day, never deleted. JSONPath search
 - **Tracing** — opt-in OTLP/HTTP trace export (set `otel.endpoint`); per-request phase spans to any OpenTelemetry collector (Jaeger, Tempo, …). No SDK, no native deps
+- **API docs** — auto-generated OpenAPI 3.0 spec at `/api/v1/openapi.json` (derived from your collections) + a rendered reference at `/api/v1/docs`. Toggle with the `docs.enabled` setting
 - **Rate limiting** — per-IP token bucket, per-rule (path + action + audience). Editable from Settings
 - **SMTP** — full config + test button. `helpers.email()` available in hooks/routes/jobs
 - **Encrypted fields** — AES-GCM via `COGWORKS_ENCRYPTION_KEY`
