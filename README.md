@@ -255,4 +255,5 @@ CI is unaffected (every workflow run installs fresh).
 
 ## License
 
-MIT.
+MIT — see [LICENSE](LICENSE). This fork retains the original Vaultbase copyright
+(Khalid M. Sheet / vaultbase-sh contributors) alongside the fork's own.
