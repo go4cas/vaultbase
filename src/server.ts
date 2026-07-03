@@ -167,28 +167,16 @@ export function createServer(config: Config) {
   // so the first scheduler tick finds it. Idempotent on re-call (cluster
   // workers each call createServer).
   registerNotificationsWorker();
-  startScheduler();
+
+  // ── Per-worker background loops (safe / required in every cluster worker) ──
+  // The queue scheduler competes for jobs via an atomic claim (claimAndRun), so
+  // running it everywhere just adds throughput. The API-token usage flusher
+  // drains a PER-WORKER in-memory buffer, so it must run in every worker.
   startQueueScheduler();
-  startUpdateCheckScheduler();
-  startWebhookDispatcher();
-  startFileTokenUsesPrune();
   startApiTokenUsageFlusher();
-  // Prune expired/long-revoked API token rows once a day.
-  setTimeout(
-    () => {
-      void pruneExpiredApiTokens();
-    },
-    5 * 60 * 1000,
-  ).unref?.();
-  setInterval(
-    () => {
-      void pruneExpiredApiTokens();
-    },
-    24 * 60 * 60 * 1000,
-  ).unref?.();
-  // Sweep idle SQL sandboxes hourly. They're per-admin, so a forgotten
-  // tab snapshots the DB and never resets — the prune keeps disk usage
-  // bounded.
+  // Sweep idle SQL sandboxes hourly. `_sandboxes` is a PER-WORKER in-memory map
+  // of open bun:sqlite handles, so every worker must prune its own or it leaks
+  // connections (not a shared-DB op — must NOT be leader-gated).
   setInterval(
     () => {
       try {
@@ -199,6 +187,34 @@ export function createServer(config: Config) {
     },
     60 * 60 * 1000,
   ).unref?.();
+
+  // ── Singleton background loops (leader only) ──────────────────────────────
+  // Cluster mode spawns N worker processes with no IPC; they coordinate only
+  // through the shared DB. These loops have NO atomic claim, so running them in
+  // every worker fires them N times (N× cron runs, N× webhook deliveries, N×
+  // prunes/update-checks). Gate them to a single leader — worker 0 under cluster,
+  // and always-true for the single-process deployment (no VAULTBASE_WORKER_ID).
+  const workerId = process.env.VAULTBASE_WORKER_ID;
+  const isSchedulerLeader = !workerId || workerId === "0";
+  if (isSchedulerLeader) {
+    startScheduler();
+    startUpdateCheckScheduler();
+    startWebhookDispatcher();
+    startFileTokenUsesPrune();
+    // Prune expired/long-revoked API token rows once a day.
+    setTimeout(
+      () => {
+        void pruneExpiredApiTokens();
+      },
+      5 * 60 * 1000,
+    ).unref?.();
+    setInterval(
+      () => {
+        void pruneExpiredApiTokens();
+      },
+      24 * 60 * 60 * 1000,
+    ).unref?.();
+  }
   // Every route (records, auth, files, admin SPA, auth pages, realtime, health,
   // …) is now native Hono — Elysia has been fully removed. Cross-cutting
   // concerns that used to be Elysia global hooks (perf timer, CORS, custom
