@@ -1,9 +1,10 @@
 import type { RecordWithMeta } from "../core/records.ts";
 import { evaluateRule, type AuthContext } from "../core/rules.ts";
-import { publishRecord, publishSystem } from "./cluster-bus.ts";
+import { publishRecord, publishSystem, maxEventSeq, readEventsSince } from "./cluster-bus.ts";
 
 export interface WSLike {
-  send(data: string): void;
+  /** `id` (optional) is the event's global seq — SSE emits it as `id:` for resume. */
+  send(data: string, id?: number): void;
 }
 
 export type RealtimeEvent =
@@ -186,9 +187,27 @@ function shouldSendTo(id: string, opts?: BroadcastOpts): boolean {
  * still filters per-subscriber on each worker.
  */
 export function broadcast(collection: string, event: RealtimeEvent, opts?: BroadcastOpts): void {
-  deliverRecordLocal(collection, event, opts);
-  // No-op in single-process mode.
-  publishRecord(collection, event, opts);
+  // Persist first to obtain the event's global seq, then deliver locally with it
+  // (so SSE clients get an `id:` for resume). Other workers deliver via the tail
+  // with the same seq. `?? undefined`: a failed persist just omits the id.
+  const seq = publishRecord(collection, event, opts) ?? undefined;
+  deliverRecordLocal(collection, event, opts, seq);
+}
+
+/** Topics a record event fans out to (shared by live delivery + resume replay). */
+function recordEventTargets(collection: string, event: RealtimeEvent): string[] {
+  const targets = [
+    collection,
+    WILDCARD,
+    `${collection}.${event.type}`,
+    `${WILDCARD}.${event.type}`,
+  ];
+  if (event.type === "create" || event.type === "update") {
+    targets.push(`${collection}/${event.record.id}`);
+  } else if (event.type === "delete") {
+    targets.push(`${collection}/${event.id}`);
+  }
+  return targets;
 }
 
 /**
@@ -203,18 +222,9 @@ export function deliverRecordLocal(
   collection: string,
   event: RealtimeEvent,
   opts?: BroadcastOpts,
+  seq?: number,
 ): void {
-  const targets: (string | undefined)[] = [
-    collection, // collection-level
-    WILDCARD, // global
-    `${collection}.${event.type}`, // event-typed per collection
-    `${WILDCARD}.${event.type}`, // event-typed global
-  ];
-  if (event.type === "create" || event.type === "update") {
-    targets.push(`${collection}/${event.record.id}`);
-  } else if (event.type === "delete") {
-    targets.push(`${collection}/${event.id}`);
-  }
+  const targets = recordEventTargets(collection, event);
   const payload = JSON.stringify(event);
   // Dedup: a connection subscribed to both "posts" and "*" should still receive
   // the event once.
@@ -228,7 +238,7 @@ export function deliverRecordLocal(
       sent.add(id);
       if (!shouldSendTo(id, opts)) continue;
       try {
-        ws.send(payload);
+        ws.send(payload, seq);
       } catch {
         inner.delete(id);
       }
@@ -244,19 +254,18 @@ export function deliverRecordLocal(
  * collide with a user-defined collection. Cross-worker under cluster mode.
  */
 export function broadcastSystem(topic: string, message: object): void {
-  deliverSystemLocal(topic, message);
-  // No-op in single-process mode.
-  publishSystem(topic, message);
+  const seq = publishSystem(topic, message) ?? undefined;
+  deliverSystemLocal(topic, message, seq);
 }
 
 /** Deliver a system message to subscribers of `topic` ON THIS WORKER ONLY. */
-export function deliverSystemLocal(topic: string, message: object): void {
+export function deliverSystemLocal(topic: string, message: object, seq?: number): void {
   const inner = subs.get(topic);
   if (!inner) return;
   const payload = JSON.stringify(message);
   for (const [id, ws] of inner) {
     try {
-      ws.send(payload);
+      ws.send(payload, seq);
     } catch {
       inner.delete(id);
     }
@@ -272,13 +281,16 @@ export function deliverSystemLocal(topic: string, message: object): void {
 
 const sseClients = new Map<string, WSLike>();
 
-export function registerSSEClient(clientId: string, adapter: WSLike): void {
+export function registerSSEClient(clientId: string, adapter: WSLike, lastEventId?: number): void {
   // Mirror the WS contract: every adapter must carry a stable `data.connId`
   // so subscribe / unsubscribe / disconnectAll have a real key. SSE adapters
   // typically don't carry `data`, so we attach it here.
-  const a = adapter as unknown as { data?: { connId?: string } };
+  const a = adapter as unknown as { data?: { connId?: string; replaySince?: number } };
   if (!a.data || typeof a.data !== "object") a.data = { connId: clientId };
   else if (typeof a.data.connId !== "string") a.data.connId = clientId;
+  // Reconnect with `Last-Event-ID` → replay from there once the client (re)sets
+  // its topics (SSE subscriptions arrive on a separate POST).
+  if (typeof lastEventId === "number" && lastEventId >= 0) a.data.replaySince = lastEventId;
   sseClients.set(clientId, adapter);
 }
 
@@ -299,10 +311,60 @@ export function setSSESubscriptions(clientId: string, topics: string[]): boolean
   const adapter = sseClients.get(clientId);
   if (!adapter) return false;
   const id = connId(adapter);
+  const data = (adapter as unknown as { data?: { replaySince?: number } }).data;
+  // Capture the replay upper bound BEFORE subscribing so live events (seq >
+  // upTo) are strictly newer than anything replayed → no dup, no gap.
+  const replayUpTo = maxEventSeq();
   // Remove from every topic, then re-add the new set.
   for (const inner of subs.values()) inner.delete(id);
   subscribe(adapter, topics);
+  // On a resumed connection, replay the missed window once against the new topics.
+  if (data && typeof data.replaySince === "number") {
+    const since = data.replaySince;
+    delete data.replaySince; // replay only once per reconnect
+    replayToClient(adapter, topics, since, replayUpTo);
+  }
   return true;
+}
+
+/**
+ * Replay persisted events in `(since, upTo]` that match `topics` to a single
+ * client, oldest first, each tagged with its seq. Re-applies the same topic +
+ * view_rule filtering as live delivery so a resume never leaks a row the client
+ * couldn't see live.
+ */
+function replayToClient(adapter: WSLike, topics: string[], since: number, upTo: number): void {
+  if (upTo <= since) return;
+  const topicSet = new Set(
+    topics.map((t) => normalizeTopic(t)).filter((t): t is string => t !== null),
+  );
+  if (topicSet.size === 0) return;
+  const id = connId(adapter);
+  for (const r of readEventsSince(since, upTo)) {
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(r.payload) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    try {
+      if (r.kind === "record") {
+        const event = data.event as RealtimeEvent;
+        const collection = data.collection as string;
+        const opts = (data.opts ?? undefined) as BroadcastOpts | undefined;
+        const targets = recordEventTargets(collection, event);
+        if (!targets.some((t) => topicSet.has(t))) continue;
+        if (!shouldSendTo(id, opts)) continue;
+        adapter.send(JSON.stringify(event), r.seq);
+      } else if (r.kind === "system") {
+        if (!topicSet.has(data.topic as string)) continue;
+        adapter.send(JSON.stringify(data.message), r.seq);
+      }
+    } catch {
+      /* client vanished mid-replay — stop quietly */
+      break;
+    }
+  }
 }
 
 export function _reset(): void {

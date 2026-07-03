@@ -21,8 +21,13 @@ export function isClusterWorker(): boolean {
 }
 
 let insertStmt: Statement | null = null;
-function publish(kind: "record" | "system", payload: string): void {
-  if (WORKER_ID === null) return;
+/**
+ * Append an event to the shared log and return its monotonic `seq`, or null on
+ * failure. Runs in single-process too (was cluster-only): the log is now also
+ * the SSE resume/replay buffer, so every broadcast is persisted — bounded by
+ * `pruneRealtimeEvents`. The tail (`startRealtimeTail`) stays cluster-only.
+ */
+function persist(kind: "record" | "system", payload: string): number | null {
   try {
     if (!insertStmt) {
       insertStmt = getRawClient().prepare(
@@ -30,25 +35,56 @@ function publish(kind: "record" | "system", payload: string): void {
          VALUES (?, ?, ?, unixepoch())`,
       );
     }
-    insertStmt.run(kind, payload, WORKER_ID);
+    const res = insertStmt.run(kind, payload, WORKER_ID);
+    return Number((res as unknown as { lastInsertRowid: number | bigint }).lastInsertRowid);
   } catch {
-    // Best-effort: realtime is not durable. A dropped cross-worker event is no
-    // worse than the pre-fix behavior (never delivered cross-worker at all).
+    // Best-effort: realtime is not durable. A dropped event just isn't replayable.
     insertStmt = null; // force re-prepare next time (e.g. after a DB reinit)
+    return null;
   }
 }
 
-export function publishRecord(collection: string, event: unknown, opts: unknown): void {
-  publish("record", JSON.stringify({ collection, event, opts: opts ?? null }));
+export function publishRecord(collection: string, event: unknown, opts: unknown): number | null {
+  return persist("record", JSON.stringify({ collection, event, opts: opts ?? null }));
 }
 
-export function publishSystem(topic: string, message: unknown): void {
-  publish("system", JSON.stringify({ topic, message }));
+export function publishSystem(topic: string, message: unknown): number | null {
+  return persist("system", JSON.stringify({ topic, message }));
+}
+
+/** Current max event seq (0 if none) — the replay upper bound captured pre-subscribe. */
+export function maxEventSeq(): number {
+  try {
+    const row = getRawClient()
+      .prepare(`SELECT COALESCE(MAX(seq), 0) AS m FROM cogworks_realtime_events`)
+      .get() as { m: number } | undefined;
+    return row?.m ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Persisted events in `(since, upTo]` for replay, oldest first. Capped. */
+export function readEventsSince(
+  since: number,
+  upTo: number,
+  limit = 1000,
+): Array<{ seq: number; kind: string; payload: string }> {
+  try {
+    return getRawClient()
+      .prepare(
+        `SELECT seq, kind, payload FROM cogworks_realtime_events
+         WHERE seq > ? AND seq <= ? ORDER BY seq LIMIT ?`,
+      )
+      .all(since, upTo, limit) as Array<{ seq: number; kind: string; payload: string }>;
+  } catch {
+    return [];
+  }
 }
 
 export interface TailHandlers {
-  onRecord(collection: string, event: unknown, opts: unknown): void;
-  onSystem(topic: string, message: unknown): void;
+  onRecord(collection: string, event: unknown, opts: unknown, seq: number): void;
+  onSystem(topic: string, message: unknown, seq: number): void;
 }
 
 const POLL_MS = 200;
@@ -87,9 +123,9 @@ export function startRealtimeTail(handlers: TailHandlers): void {
         try {
           const data = JSON.parse(r.payload) as Record<string, unknown>;
           if (r.kind === "record") {
-            handlers.onRecord(data.collection as string, data.event, data.opts ?? undefined);
+            handlers.onRecord(data.collection as string, data.event, data.opts ?? undefined, r.seq);
           } else if (r.kind === "system") {
-            handlers.onSystem(data.topic as string, data.message);
+            handlers.onSystem(data.topic as string, data.message, r.seq);
           }
         } catch {
           /* skip a malformed row */
@@ -109,9 +145,21 @@ export function stopRealtimeTail(): void {
   }
 }
 
-/** Delete events older than `retentionSec` (leader-only housekeeping). */
+/**
+ * Drop the cached insert statement + tail cursor. Call after the DB is
+ * re-initialized (e.g. a restore, or between tests) — a prepared statement
+ * bound to a closed Database throws on first reuse, which would otherwise lose
+ * one event before `persist` re-prepares against the new connection.
+ */
+export function resetRealtimeBus(): void {
+  insertStmt = null;
+  lastSeq = 0;
+  stopRealtimeTail();
+}
+
+/** Delete events older than `retentionSec`. Runs in single-process too now that
+ * the log doubles as the SSE replay buffer (bounds table growth). */
 export function pruneRealtimeEvents(retentionSec = 30): number {
-  if (WORKER_ID === null) return 0;
   try {
     const res = getRawClient()
       .prepare(`DELETE FROM cogworks_realtime_events WHERE created_at < unixepoch() - ?`)
