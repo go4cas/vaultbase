@@ -213,10 +213,12 @@ async function scheduleTick(): Promise<void> {
 
 export function startScheduler(): void {
   if (schedulerInterval) return;
-  // Run once at startup, then every 30s
-  void scheduleTick();
+  // Run once at startup, then every 30s. `.catch` so a tick that fires while the
+  // DB is briefly unavailable (graceful shutdown / restart, or a test closing
+  // the DB) is a no-op, not an unhandled rejection that crashes the process.
+  void scheduleTick().catch(() => {});
   schedulerInterval = setInterval(() => {
-    void scheduleTick();
+    void scheduleTick().catch(() => {});
   }, 30_000);
 }
 
