@@ -968,6 +968,7 @@ function describeField(f: FieldDef): string {
   }
   if (opts["unique"]) bits.push("unique");
   if (opts["encrypted"]) bits.push("encrypted");
+  if (opts["searchable"]) bits.push("searchable");
   return bits.join(" · ") || "—";
 }
 
@@ -1090,6 +1091,12 @@ function FieldOptionsBody({
             on={!!sel.options?.["encrypted"]}
             onChange={(v) => updateSelOptions({ encrypted: v })}
           />
+          <OptionRow
+            title="Full-text searchable"
+            hint={<>Index this field for full-text search. Query via <SchemaCode>?search=terms</SchemaCode> on the list endpoint.</>}
+            on={!!sel.options?.["searchable"]}
+            onChange={(v) => updateSelOptions({ searchable: v })}
+          />
         </>
       )}
       {sel.type === "json" && (
@@ -1126,16 +1133,24 @@ function FieldOptionsBody({
         </VbField>
       )}
       {sel.type === "editor" && (
-        <VbField label="Max length" hint="Stored as raw HTML. Sanitize on the client before rendering untrusted input.">
-          <VbInput
-            mono
-            type="number"
-            min={0}
-            value={(sel.options?.["max"] as number | undefined) ?? ""}
-            onChange={(e) => updateSelOptions({ max: numOrUndef(e.target.value) })}
-            placeholder="—"
+        <>
+          <VbField label="Max length" hint="Stored as raw HTML. Sanitize on the client before rendering untrusted input.">
+            <VbInput
+              mono
+              type="number"
+              min={0}
+              value={(sel.options?.["max"] as number | undefined) ?? ""}
+              onChange={(e) => updateSelOptions({ max: numOrUndef(e.target.value) })}
+              placeholder="—"
+            />
+          </VbField>
+          <OptionRow
+            title="Full-text searchable"
+            hint={<>Index this field for full-text search. Query via <SchemaCode>?search=terms</SchemaCode> on the list endpoint.</>}
+            on={!!sel.options?.["searchable"]}
+            onChange={(v) => updateSelOptions({ searchable: v })}
           />
-        </VbField>
+        </>
       )}
       {sel.type === "geoPoint" && (
         <div style={{

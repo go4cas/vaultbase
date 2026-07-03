@@ -3,6 +3,7 @@ import { eq, or } from "drizzle-orm";
 import { log } from "./log.ts";
 import { getDb } from "../db/client.ts";
 import { collections, type Collection, type NewCollection } from "../db/schema.ts";
+import { syncFts, dropFts } from "./fts.ts";
 
 export type FieldType =
   | "text"
@@ -32,6 +33,12 @@ export interface FieldOptions {
   mimeTypes?: string[];
   /** Encrypt at rest (text/json types only). Requires COGWORKS_ENCRYPTION_KEY. */
   encrypted?: boolean;
+  /**
+   * Text-like fields only (text/email/url/editor). Include this field in the
+   * collection's full-text search index (FTS5) so it's matchable via the
+   * `search=` list param. Toggling this rebuilds the collection's FTS index.
+   */
+  searchable?: boolean;
   /**
    * Relation-only. Behavior when the referenced target record is deleted:
    *   - "setNull"  (default): clear the foreign key column
@@ -622,6 +629,9 @@ export async function createCollection(
       // get the same shape via the boot migration in db/migrate.ts.
       ensureAuthColumns(row.name);
     }
+    // FTS companion (no-op unless a field opted into `searchable`). Runs last so
+    // auth columns (e.g. a searchable email) already exist on the base table.
+    syncFts(row.name, fields, type);
   }
 
   const created = await db.select().from(collections).where(eq(collections.id, id)).limit(1);
@@ -672,6 +682,9 @@ export async function updateCollection(
     const present = new Set(incoming.filter((f) => f.implicit).map((f) => f.name));
     const carryOver = oldFields.filter((f) => f.implicit && !present.has(f.name));
     const newFields = ensureImplicitFields(effectiveType, [...carryOver, ...incoming]);
+    // Drop FTS triggers BEFORE the DDL: SQLite refuses to DROP a column that a
+    // trigger references, and a searchable column may be getting removed here.
+    dropFts(before.name);
     // Real table only sees non-implicit fields.
     alterUserTable(
       before.name,
@@ -679,6 +692,9 @@ export async function updateCollection(
       newFields.filter((f) => !f.implicit),
     );
     data = { ...data, fields: JSON.stringify(newFields) };
+    // Rebuild the FTS companion to match the new searchable field set (backfills
+    // existing rows when a field is newly marked searchable).
+    syncFts(before.name, newFields, effectiveType);
   }
 
   await db
@@ -701,7 +717,10 @@ export async function deleteCollection(id: string): Promise<void> {
   const col = await getCollection(id);
   if (col) {
     if (col.type === "view") dropUserView(col.name);
-    else dropUserTable(col.name);
+    else {
+      dropUserTable(col.name); // drops the base table + its FTS triggers
+      dropFts(col.name); // drop the now-orphaned FTS virtual table
+    }
     cache.delete(col.id);
     cache.delete(col.name);
   }
