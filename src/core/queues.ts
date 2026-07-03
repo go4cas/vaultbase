@@ -213,10 +213,13 @@ const POLL_INTERVAL_MS = 500;
  */
 export function startQueueScheduler(): void {
   if (schedulerInterval) return;
+  // `.catch` so a tick firing while the DB is briefly unavailable (graceful
+  // shutdown / restart, or a test closing the DB) is a no-op rather than an
+  // unhandled rejection that crashes the process.
   schedulerInterval = setInterval(() => {
-    void tick();
+    void tick().catch(() => {});
   }, POLL_INTERVAL_MS);
-  void tick();
+  void tick().catch(() => {});
 }
 
 export function stopQueueScheduler(): void {

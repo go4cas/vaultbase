@@ -17,6 +17,10 @@ import { initDb, closeDb } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
 import { setLogsDir } from "../core/file-logger.ts";
 import { createServer } from "../server.ts";
+import { stopScheduler } from "../core/jobs.ts";
+import { stopQueueScheduler } from "../core/queues.ts";
+import { stopUpdateCheckScheduler } from "../core/update-check.ts";
+import { stopWebhookDispatcher } from "../core/webhooks.ts";
 
 let tmpDir: string;
 let fetch: (req: Request) => Response | Promise<Response>;
@@ -39,6 +43,12 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  // createServer() starts background schedulers; stop them BEFORE closing the DB
+  // so a tick can't fire against a closed connection and leak into later tests.
+  stopScheduler();
+  stopQueueScheduler();
+  stopUpdateCheckScheduler();
+  stopWebhookDispatcher();
   closeDb();
   try {
     rmSync(tmpDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
