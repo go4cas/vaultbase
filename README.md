@@ -149,7 +149,9 @@ AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... R2_ENDPOINT=https://<accountid>.
 
 Snapshots are atomic via SQLite's `VACUUM INTO` — concurrent writers are
 serialised but not blocked, and the resulting `.db` file is self-contained
-(no `*-wal` / `*-shm` sidecars to copy alongside). Cron-friendly:
+(no `*-wal` / `*-shm` sidecars to copy alongside). The HTTP `GET /api/admin/backup`
+download uses the same `VACUUM INTO` snapshot (streamed), so it captures
+un-checkpointed WAL commits and never reads a torn file. Cron-friendly:
 
 ```cron
 30 3 * * * cogworks /usr/local/bin/cogworks backup --to s3://bucket/vb/snap-$(date +\%F).db --gzip --quiet

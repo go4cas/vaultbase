@@ -1,8 +1,9 @@
-import { existsSync, renameSync } from "node:fs";
+import { existsSync, renameSync, rmSync, statSync } from "node:fs";
 import { Hono } from "hono";
 import { closeDb, initDb } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
 import { requireAdmin } from "../core/sec.ts";
+import { snapshotDb } from "../core/backup-snapshot.ts";
 
 // SQLite magic header — used to verify uploads
 const SQLITE_MAGIC = "SQLite format 3\0";
@@ -17,14 +18,60 @@ export function makeBackupPlugin(jwtSecret: string, dbPath: string) {
         if (!existsSync(dbPath)) {
           return c.json({ error: "Database file not found", code: 404 }, 404);
         }
-        const file = Bun.file(dbPath);
-        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-        return new Response(file, {
-          headers: {
-            "Content-Type": "application/octet-stream",
-            "Content-Disposition": `attachment; filename="cogworks-backup-${stamp}.db"`,
+        // Consistent snapshot via VACUUM INTO (WAL merged, never torn) rather
+        // than streaming the live file. Stream the temp snapshot straight from
+        // disk (bounded memory) and delete it once the response finishes.
+        let snap: string;
+        try {
+          snap = await snapshotDb(dbPath);
+        } catch (e) {
+          return c.json({ error: `Snapshot failed: ${(e as Error).message}`, code: 500 }, 500);
+        }
+        let size = 0;
+        try {
+          size = statSync(snap).size;
+        } catch {
+          /* stat best-effort */
+        }
+        const cleanup = () => {
+          try {
+            rmSync(snap);
+          } catch {
+            /* already gone / removed by a later sweep */
+          }
+        };
+        const reader = Bun.file(snap).stream().getReader();
+        const stream = new ReadableStream<Uint8Array>({
+          async pull(ctrl) {
+            try {
+              const { done, value } = await reader.read();
+              if (done) {
+                ctrl.close();
+                cleanup();
+                return;
+              }
+              ctrl.enqueue(value);
+            } catch (e) {
+              cleanup();
+              ctrl.error(e);
+            }
+          },
+          async cancel(reason) {
+            try {
+              await reader.cancel(reason);
+            } catch {
+              /* ignore */
+            }
+            cleanup();
           },
         });
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const headers: Record<string, string> = {
+          "Content-Type": "application/octet-stream",
+          "Content-Disposition": `attachment; filename="cogworks-backup-${stamp}.db"`,
+        };
+        if (size > 0) headers["Content-Length"] = String(size);
+        return new Response(stream, { headers });
       })
 
       // Restore from uploaded SQLite file

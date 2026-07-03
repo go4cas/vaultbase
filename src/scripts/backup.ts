@@ -31,6 +31,7 @@
 import { resolve, basename, dirname, extname } from "node:path";
 import { existsSync, mkdirSync, copyFileSync, statSync, unlinkSync } from "node:fs";
 import { gzipSync } from "node:zlib";
+import { snapshotDb as coreSnapshotDb } from "../core/backup-snapshot.ts";
 
 interface BackupOpts {
   to: string;
@@ -113,28 +114,13 @@ function parseDestination(to: string): DestSpec {
 }
 
 /**
- * Atomic snapshot via `VACUUM INTO`. Returns the path of the snapshot
- * (caller is responsible for cleanup).
+ * Atomic snapshot via `VACUUM INTO` (shared with the HTTP backup endpoint).
+ * Returns the snapshot path; caller cleans up. `die`s with a friendly message
+ * when the source is missing rather than surfacing a raw throw.
  */
 async function snapshotDb(dbPath: string): Promise<string> {
   if (!existsSync(dbPath)) die(`source DB not found: ${dbPath}`);
-  // Use a tmp path next to the source — same filesystem, so atomic rename
-  // is cheap on the local-file path.
-  const dir = dirname(dbPath);
-  const tmp = `${dir}/.cogworks-snap-${process.pid}-${Date.now()}.db`;
-  // Open the source READ-ONLY, run VACUUM INTO. SQLite's VACUUM INTO is
-  // a built-in atomic snapshot — it writes a new DB file with current
-  // committed state, no WAL sidecars needed.
-  const { Database } = await import("bun:sqlite");
-  const db = new Database(dbPath, { readonly: true });
-  try {
-    // SQLite escapes single quotes by doubling.
-    const escaped = tmp.replace(/'/g, "''");
-    db.exec(`VACUUM INTO '${escaped}'`);
-  } finally {
-    db.close();
-  }
-  return tmp;
+  return coreSnapshotDb(dbPath);
 }
 
 async function pushLocal(snapPath: string, destAbs: string, opts: BackupOpts): Promise<void> {
