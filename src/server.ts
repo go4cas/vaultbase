@@ -184,9 +184,14 @@ export function createServer(config: Config) {
   // record written on a sibling worker reaches this worker's WS/SSE subscribers.
   // No-op in single-process mode (self-gated on COGWORKS_WORKER_ID).
   startRealtimeTail({
-    onRecord: (collection, event, opts) =>
-      deliverRecordLocal(collection, event as RealtimeEvent, opts as BroadcastOpts | undefined),
-    onSystem: (topic, message) => deliverSystemLocal(topic, message as object),
+    onRecord: (collection, event, opts, seq) =>
+      deliverRecordLocal(
+        collection,
+        event as RealtimeEvent,
+        opts as BroadcastOpts | undefined,
+        seq,
+      ),
+    onSystem: (topic, message, seq) => deliverSystemLocal(topic, message as object, seq),
   });
   // Sweep idle SQL sandboxes hourly. `_sandboxes` is a PER-WORKER in-memory map
   // of open bun:sqlite handles, so every worker must prune its own or it leaks
@@ -215,11 +220,14 @@ export function createServer(config: Config) {
     startUpdateCheckScheduler();
     startWebhookDispatcher();
     startFileTokenUsesPrune();
-    // Prune consumed cross-worker realtime events (no-op in single-process).
-    // Retention comfortably exceeds the tail poll interval, so no worker misses
-    // an event it hasn't yet read.
+    // Prune the realtime event log (now also the SSE resume buffer, so this runs
+    // single-process too). `realtime.retention_sec` (default 30) bounds both the
+    // table size AND how far back a reconnecting client can resume; it
+    // comfortably exceeds the cluster tail poll interval so no worker misses an
+    // event it hasn't yet read.
     setInterval(() => {
-      pruneRealtimeEvents();
+      const n = parseInt(getAllSettings()["realtime.retention_sec"] ?? "30", 10);
+      pruneRealtimeEvents(Number.isFinite(n) && n > 0 ? n : 30);
     }, 30_000).unref?.();
     // Prune expired/long-revoked API token rows once a day.
     setTimeout(
@@ -415,7 +423,11 @@ export function createServer(config: Config) {
     if (!isOriginAllowed(origin)) {
       return c.json({ error: "Origin not allowed", code: 403 }, 403);
     }
-    const { response } = openSSEStream();
+    // Browsers auto-send Last-Event-ID on EventSource reconnect; a `?lastEventId=`
+    // query param covers non-browser clients. Present → replay missed events.
+    const rawLei = c.req.header("last-event-id") ?? c.req.query("lastEventId");
+    const lei = rawLei !== undefined ? parseInt(rawLei, 10) : Number.NaN;
+    const { response } = openSSEStream(Number.isFinite(lei) && lei >= 0 ? lei : undefined);
     response.headers.set("content-type", "text/event-stream; charset=utf-8");
     return response;
   });

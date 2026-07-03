@@ -13,8 +13,10 @@ import { registerSSEClient, unregisterSSEClient, type WSLike } from "./manager.t
 const HEARTBEAT_MS = 30_000;
 const encoder = new TextEncoder();
 
-function formatEvent(eventType: string | null, data: string): Uint8Array {
+function formatEvent(eventType: string | null, data: string, id?: number): Uint8Array {
   const lines: string[] = [];
+  // `id:` lets the browser track Last-Event-ID and auto-send it on reconnect.
+  if (id !== undefined) lines.push(`id: ${id}`);
   if (eventType) lines.push(`event: ${eventType}`);
   // Split data on newlines per the SSE spec (each line gets its own "data:" prefix).
   for (const line of data.split("\n")) lines.push(`data: ${line}`);
@@ -33,7 +35,7 @@ interface SSEHandle {
  * Open an SSE stream and register a client with the realtime manager.
  * Returns a Response whose body streams events until the client disconnects.
  */
-export function openSSEStream(): SSEHandle {
+export function openSSEStream(lastEventId?: number): SSEHandle {
   const clientId = crypto.randomUUID();
   let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
   let closed = false;
@@ -56,10 +58,10 @@ export function openSSEStream(): SSEHandle {
   };
 
   const adapter: WSLike = {
-    send(data: string) {
+    send(data: string, id?: number) {
       if (closed || !controller) throw new Error("SSE stream closed");
       try {
-        controller.enqueue(formatEvent("message", data));
+        controller.enqueue(formatEvent("message", data, id));
       } catch (e) {
         // Client disconnected mid-write — manager will catch the throw and
         // evict us from the topic set on its next iteration.
@@ -72,7 +74,7 @@ export function openSSEStream(): SSEHandle {
   const stream = new ReadableStream<Uint8Array>({
     start(c) {
       controller = c;
-      registerSSEClient(clientId, adapter);
+      registerSSEClient(clientId, adapter, lastEventId);
 
       // Initial frame carries the clientId so the caller can address it via
       // POST /api/v1/realtime { clientId, topics: [...] }.
