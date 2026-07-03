@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { Type as t } from "@sinclair/typebox";
 import { jsonBody } from "./validator.ts";
-import * as jose from "jose";
+import { requireAdmin } from "../core/sec.ts";
 import {
   CollectionValidationError,
   createCollection,
@@ -20,15 +20,10 @@ import { getRawClient } from "../db/client.ts";
 // Elysia's `t.Nullable(x)` → TypeBox `Union([x, Null])`.
 const nullableString = () => t.Union([t.String(), t.Null()]);
 
-function isAdmin(request: Request, jwtSecret: string): Promise<boolean> {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) return Promise.resolve(false);
-  const secret = new TextEncoder().encode(jwtSecret);
-  return jose
-    .jwtVerify(token, secret, { audience: "admin" })
-    .then(() => true)
-    .catch(() => false);
-}
+// Admin gate via the centralized verifier (jti revocation + password_reset_at).
+// Previously a local `jose.jwtVerify` that skipped revocation — a revoked admin
+// token could still create/patch/delete collections (N-1 admin-token-bypass).
+const isAdmin = requireAdmin;
 
 export function makeCollectionsPlugin(jwtSecret: string) {
   return (

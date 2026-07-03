@@ -100,6 +100,17 @@ describe("POST /api/auth/:collection/promote", () => {
 
   it("rejects a non-anonymous user token", async () => {
     await createCollection({ name: "users", type: "auth", fields: JSON.stringify([]) });
+    const col = await getCollection("users");
+    // A real, non-anonymous user must exist — the promote endpoint now verifies
+    // the token's principal (jti revocation + password_reset_at) before checking
+    // `is_anonymous`, so a token for a non-existent user is a 401, not a 422.
+    await insertUser(col!, {
+      id: "u1",
+      email: "real@test.local",
+      password_hash: "x",
+      created_at: 0,
+      updated_at: 0,
+    });
     // Sign a normal user JWT — no `anonymous: true` claim.
     const token = await new jose.SignJWT({
       id: "u1",
@@ -107,6 +118,7 @@ describe("POST /api/auth/:collection/promote", () => {
       collection: "users",
     })
       .setProtectedHeader({ alg: "HS256" })
+      .setIssuer("vaultbase")
       .setAudience("user")
       .setExpirationTime("1h")
       .sign(new TextEncoder().encode(SECRET));

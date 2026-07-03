@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { Type as t } from "@sinclair/typebox";
 import { jsonBody } from "./validator.ts";
 import { log } from "../core/log.ts";
-import * as jose from "jose";
+import type * as jose from "jose";
 import { getDb } from "../db/client.ts";
 import { admin, authTokens, mfaRecoveryCodes, mfaRecoveryLookup } from "../db/schema.ts";
 import { getCollection, parseFields } from "../core/collections.ts";
@@ -14,6 +14,7 @@ import { validateRecord, ValidationError } from "../core/validate.ts";
 import { tokenWindowSeconds } from "../core/auth-tokens.ts";
 import {
   dummyPasswordHash,
+  getAdmin,
   HASH_OPTS,
   hmacRecoveryCode,
   redactEmail,
@@ -45,10 +46,6 @@ function clientIpForLockout(request: Request): string | null {
   const xff = request.headers.get("x-forwarded-for");
   if (!xff) return null;
   return (xff.split(",")[0] ?? "").trim() || null;
-}
-
-function getSecret(secret: string): Uint8Array {
-  return new TextEncoder().encode(secret);
 }
 
 const TOKEN_TTL_SECONDS = 60 * 60; // 1 hour
@@ -729,16 +726,13 @@ export function makeAuthPlugin(jwtSecret: string) {
         if (!token) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        let userId: string;
-        try {
-          const { payload } = await jose.jwtVerify(token, getSecret(jwtSecret), {
-            audience: "user",
-          });
-          userId = String(payload.id ?? "");
-          if (!userId) throw new Error("missing id");
-        } catch {
+        // Centralized verifier — enforces jti revocation + password_reset_at
+        // (a raw jwtVerify here skipped both: logged-out/reset tokens still passed).
+        const authed = await verifyAuthToken(token, jwtSecret, { audience: "user" });
+        if (!authed) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
+        const userId = authed.id;
         const _db = getDb();
         const u = findUserById(col, userId);
         if (!u) {
@@ -762,16 +756,13 @@ export function makeAuthPlugin(jwtSecret: string) {
         if (!token) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        let userId: string;
-        try {
-          const { payload } = await jose.jwtVerify(token, getSecret(jwtSecret), {
-            audience: "user",
-          });
-          userId = String(payload.id ?? "");
-          if (!userId) throw new Error("missing id");
-        } catch {
+        // Centralized verifier — enforces jti revocation + password_reset_at
+        // (a raw jwtVerify here skipped both: logged-out/reset tokens still passed).
+        const authed = await verifyAuthToken(token, jwtSecret, { audience: "user" });
+        if (!authed) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
+        const userId = authed.id;
         const db = getDb();
         const rows = await db
           .select()
@@ -810,16 +801,13 @@ export function makeAuthPlugin(jwtSecret: string) {
         if (!token) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        let userId: string;
-        try {
-          const { payload } = await jose.jwtVerify(token, getSecret(jwtSecret), {
-            audience: "user",
-          });
-          userId = String(payload.id ?? "");
-          if (!userId) throw new Error("missing id");
-        } catch {
+        // Centralized verifier — enforces jti revocation + password_reset_at
+        // (a raw jwtVerify here skipped both: logged-out/reset tokens still passed).
+        const authed = await verifyAuthToken(token, jwtSecret, { audience: "user" });
+        if (!authed) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
+        const userId = authed.id;
         const _db = getDb();
         const u = findUserById(col, userId);
         if (!u) {
@@ -939,7 +927,14 @@ export function makeAuthPlugin(jwtSecret: string) {
             return c.json({ error: "Invalid or expired token", code: 400 }, 400);
           }
           const hash = await hashPassword(body.password);
-          await updateUserById(col, tok.user_id, { password_hash: hash, updated_at: now });
+          // Bump `password_reset_at` so every JWT issued before the reset is
+          // invalidated (verifyAuthToken rejects tokens with iat < this) — the
+          // whole point of "reset my password because it was compromised".
+          await updateUserById(col, tok.user_id, {
+            password_hash: hash,
+            password_reset_at: now,
+            updated_at: now,
+          });
           await db.update(authTokens).set({ used_at: now }).where(eq(authTokens.id, tok.id));
           return c.json({ data: { reset: true } });
         },
@@ -1126,16 +1121,13 @@ export function makeAuthPlugin(jwtSecret: string) {
         if (!token) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        let userId: string;
-        try {
-          const { payload } = await jose.jwtVerify(token, getSecret(jwtSecret), {
-            audience: "user",
-          });
-          userId = String(payload.id ?? "");
-          if (!userId) throw new Error("missing id");
-        } catch {
+        // Centralized verifier — enforces jti revocation + password_reset_at
+        // (a raw jwtVerify here skipped both: logged-out/reset tokens still passed).
+        const authed = await verifyAuthToken(token, jwtSecret, { audience: "user" });
+        if (!authed) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
+        const userId = authed.id;
         const _db = getDb();
         const u = findUserById(col, userId);
         if (!u) {
@@ -1175,16 +1167,13 @@ export function makeAuthPlugin(jwtSecret: string) {
           if (!token) {
             return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
-          let userId: string;
-          try {
-            const { payload } = await jose.jwtVerify(token, getSecret(jwtSecret), {
-              audience: "user",
-            });
-            userId = String(payload.id ?? "");
-            if (!userId) throw new Error("missing id");
-          } catch {
+          // Centralized verifier — enforces jti revocation + password_reset_at
+          // (a raw jwtVerify here skipped both: logged-out/reset tokens still passed).
+          const authed = await verifyAuthToken(token, jwtSecret, { audience: "user" });
+          if (!authed) {
             return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
+          const userId = authed.id;
           const _db = getDb();
           const u = findUserById(col, userId);
           if (!u) {
@@ -1221,16 +1210,13 @@ export function makeAuthPlugin(jwtSecret: string) {
           if (!token) {
             return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
-          let userId: string;
-          try {
-            const { payload } = await jose.jwtVerify(token, getSecret(jwtSecret), {
-              audience: "user",
-            });
-            userId = String(payload.id ?? "");
-            if (!userId) throw new Error("missing id");
-          } catch {
+          // Centralized verifier — enforces jti revocation + password_reset_at
+          // (a raw jwtVerify here skipped both: logged-out/reset tokens still passed).
+          const authed = await verifyAuthToken(token, jwtSecret, { audience: "user" });
+          if (!authed) {
             return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
+          const userId = authed.id;
           const db = getDb();
           const u = findUserById(col, userId);
           if (!u) {
@@ -1329,21 +1315,15 @@ export function makeAuthPlugin(jwtSecret: string) {
           if (!token) {
             return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
-          let userId: string;
-          let isAnon = false;
-          try {
-            const { payload } = await jose.jwtVerify(token, getSecret(jwtSecret), {
-              audience: "user",
-            });
-            userId = String(payload.id ?? "");
-            if (!userId) throw new Error("missing id");
-            isAnon = payload.anonymous === true;
-          } catch {
+          // Centralized verifier — enforces jti revocation + password_reset_at
+          // (a raw jwtVerify here skipped both). Anonymous-only is authoritatively
+          // enforced below via `u.is_anonymous`, so the token's `anonymous` claim
+          // is no longer consulted.
+          const authed = await verifyAuthToken(token, jwtSecret, { audience: "user" });
+          if (!authed) {
             return c.json({ error: "Unauthorized", code: 401 }, 401);
           }
-          if (!isAnon) {
-            return c.json({ error: "Only anonymous accounts can be promoted", code: 422 }, 422);
-          }
+          const userId = authed.id;
           const _db = getDb();
           const u = findUserById(col, userId);
           if (!u) {
@@ -1403,19 +1383,13 @@ export function makeAuthPlugin(jwtSecret: string) {
       // `impersonated_by` so audit logs can attribute actions to the admin.
       .post("/admin/impersonate/:collection/:userId", async (c) => {
         const request = c.req.raw;
-        const adminToken = request.headers.get("authorization")?.replace("Bearer ", "");
-        if (!adminToken) {
+        // Centralized admin verifier — enforces jti revocation + password_reset_at.
+        // A raw jwtVerify here let a revoked admin token mint impersonation JWTs.
+        const me = await getAdmin(request, jwtSecret);
+        if (!me) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
-        let adminId: string;
-        try {
-          const { payload } = await jose.jwtVerify(adminToken, getSecret(jwtSecret), {
-            audience: "admin",
-          });
-          adminId = String(payload.id ?? "");
-        } catch {
-          return c.json({ error: "Unauthorized", code: 401 }, 401);
-        }
+        const adminId = me.id;
         if (!isAuthFeatureEnabled("impersonation")) {
           return c.json({ error: "Impersonation is disabled", code: 422 }, 422);
         }

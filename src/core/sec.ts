@@ -198,6 +198,32 @@ export async function verifyAuthToken(
   }
 }
 
+/**
+ * Centralized admin gate. Returns the verified admin principal (or null) — and
+ * crucially routes through {@link verifyAuthToken}, so it enforces jti
+ * revocation + `password_reset_at` invalidation. Every admin endpoint should
+ * use this (or {@link requireAdmin}) rather than calling `jose.jwtVerify`
+ * directly, which skips those checks (the N-1 admin-token-bypass class).
+ *
+ * `viaApiToken` is surfaced so interactive-only endpoints (e.g. the raw SQL
+ * runner) can reject API-token principals.
+ */
+export async function getAdmin(
+  request: Request,
+  jwtSecret: string,
+): Promise<{ id: string; email: string; viaApiToken: boolean } | null> {
+  const token = extractBearer(request);
+  if (!token) return null;
+  const ctx = await verifyAuthToken(token, jwtSecret, { audience: "admin" });
+  if (!ctx) return null;
+  return { id: ctx.id, email: ctx.email ?? "", viaApiToken: !!ctx.viaApiToken };
+}
+
+/** Boolean form of {@link getAdmin} — true iff a valid, non-revoked admin token. */
+export async function requireAdmin(request: Request, jwtSecret: string): Promise<boolean> {
+  return (await getAdmin(request, jwtSecret)) !== null;
+}
+
 /** Mint a fresh signed JWT with `iss`, `jti`, and standard claims wired in. */
 export async function signAuthToken(opts: {
   payload: jose.JWTPayload;
