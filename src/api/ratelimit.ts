@@ -19,6 +19,16 @@ import { normalizeApiPath } from "../core/api-paths.ts";
  * Audience: `all` | `guest` (no auth header) | `auth` (auth header present).
  *
  * Skipped paths: admin UI assets, realtime WS, health, logs polling.
+ *
+ * ⚠ Cluster caveat: the token buckets are process-local. Under `vaultbase
+ * cluster` (N worker processes, no shared limiter state), a client spread
+ * across workers can reach up to N× a rule's `max` in aggregate. This is a
+ * deliberate trade-off — a shared cross-worker counter would put a DB write on
+ * the `/api/*` hot path. The security-critical path (auth brute-force) is NOT
+ * limited by this: it's backstopped by the DB-backed login lockout
+ * (`core/security.ts`, `recordLoginFailure`/`isLockedOut`), which is shared
+ * across workers. For strict per-IP API limits in cluster mode, rate-limit at
+ * the reverse proxy (nginx/Cloudflare) in front of the workers.
  */
 
 export type RuleAudience = "all" | "guest" | "auth";

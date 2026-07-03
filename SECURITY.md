@@ -87,6 +87,8 @@ Cross-origin API consumers should set `cors.origins` (and the rest of the `cors.
 
 Per-IP token-bucket rate limiting honors `X-Forwarded-For` only when the immediate peer is in the `VAULTBASE_TRUSTED_PROXIES` env (CIDR-equivalent, comma-separated). Otherwise the socket peer IP is used. **Set this env when running behind Cloudflare, AWS ALB, nginx, etc.** — leaving it unset means a hostile client cannot spoof XFF, but any proxy-derived IP also won't be honored.
 
+**Cluster mode:** rate-limit buckets are **per worker process**. Under `vaultbase cluster` (N workers), a client spread across workers can reach up to N× a rule's `max` in aggregate — a deliberate trade-off to keep a DB write off the `/api/*` hot path. Auth brute-force is unaffected: it is gated by the **DB-backed login lockout** (shared across workers), not the token-bucket limiter. For strict per-IP API limits across a cluster, enforce them at the reverse proxy in front of the workers.
+
 ## Setup hardening
 
 `POST /api/admin/setup` accepts the `X-Setup-Key` header when `VAULTBASE_SETUP_KEY` is set. Use this on first boot to close the race where an attacker reaches `/setup` before the operator on a public IP. Print the key from the operator's terminal (e.g., `openssl rand -hex 32`) and pass it on the request.
