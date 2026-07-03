@@ -23,6 +23,7 @@ bun run build           # compiles admin + binary → ./cogworks[.exe]
 - **REST API** — list/get/create/update/delete with filter, sort, expand (nested), field projection, skipTotal, batch
 - **Full-text search** — opt-in `searchable` flag on text/email/url/editor fields builds a SQLite FTS5 index (kept in sync by triggers); query via `?search=terms` on the list endpoint
 - **Auth** — email + password, JWT (admin + user), token refresh, multi-admin
+- **Passkeys / WebAuthn** — passwordless registration + login for auth-collection users (FIDO2), beside TOTP/MFA; per-user credential management
 - **Realtime** — WebSocket subscribe per collection, broadcast on CRUD
 - **Files** — local FS, size + MIME validation, multi-file fields
 - **Hooks page** — record event hooks (before/after × Create/Update/Delete), custom HTTP routes (`/api/custom/*`), cron jobs (UTC, with cronstrue + crontab.guru link). Monaco editor with ctx IntelliSense

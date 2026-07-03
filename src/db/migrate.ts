@@ -251,6 +251,27 @@ function applySchema(client: Database): void {
   );
 
   client.exec(`
+    CREATE TABLE IF NOT EXISTS cogworks_webauthn_credentials (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      collection_id TEXT NOT NULL,
+      credential_id TEXT NOT NULL,
+      public_key TEXT NOT NULL,
+      counter INTEGER NOT NULL DEFAULT 0,
+      transports TEXT,
+      device_name TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      last_used_at INTEGER
+    )
+  `);
+  client.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_cogworks_webauthn_credentials_credid ON cogworks_webauthn_credentials(credential_id)`,
+  );
+  client.exec(
+    `CREATE INDEX IF NOT EXISTS idx_cogworks_webauthn_credentials_user ON cogworks_webauthn_credentials(user_id, collection_id)`,
+  );
+
+  client.exec(`
     CREATE TABLE IF NOT EXISTS cogworks_oauth_links (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,

@@ -1,6 +1,6 @@
 import { getAllSettings } from "../api/settings.ts";
 
-export type AuthFeature = "otp" | "mfa" | "anonymous" | "impersonation";
+export type AuthFeature = "otp" | "mfa" | "anonymous" | "impersonation" | "webauthn";
 
 /** Defaults chosen for safety: opt-in for anything that broadens access. */
 const DEFAULTS: Record<AuthFeature, boolean> = {
@@ -8,6 +8,7 @@ const DEFAULTS: Record<AuthFeature, boolean> = {
   mfa: true,
   anonymous: false,
   impersonation: true,
+  webauthn: true,
 };
 
 export function isAuthFeatureEnabled(feature: AuthFeature): boolean {

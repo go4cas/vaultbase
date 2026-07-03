@@ -22,6 +22,7 @@ import {
   verifyAuthToken,
 } from "../core/sec.ts";
 import { makeAuthOauth2Plugin } from "./auth-oauth2.ts";
+import { makeAuthWebauthnPlugin } from "./auth-webauthn.ts";
 import {
   getAppUrl,
   getTemplate,
@@ -1416,6 +1417,8 @@ export function makeAuthPlugin(jwtSecret: string) {
       })
       // OAuth2 routes — see ./auth-oauth2.ts
       .route("/", makeAuthOauth2Plugin(jwtSecret))
+      // WebAuthn / passkey routes — see ./auth-webauthn.ts
+      .route("/", makeAuthWebauthnPlugin(jwtSecret))
       // Token refresh — re-validates that the principal still exists.
       .post("/auth/refresh", async (c) => {
         const request = c.req.raw;

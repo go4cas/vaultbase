@@ -191,6 +191,24 @@ export const mfaRecoveryCodes = sqliteTable("cogworks_mfa_recovery_codes", {
   created_at: integer("created_at").notNull().default(sql`(unixepoch())`),
 });
 
+export const webauthnCredentials = sqliteTable("cogworks_webauthn_credentials", {
+  id: text("id").primaryKey(),
+  user_id: text("user_id").notNull(),
+  collection_id: text("collection_id").notNull(),
+  /** Base64URL credential id from the authenticator (globally unique). */
+  credential_id: text("credential_id").notNull(),
+  /** Base64URL-encoded COSE public key. */
+  public_key: text("public_key").notNull(),
+  /** Signature counter for clone/replay detection (0 for many passkeys). */
+  counter: integer("counter").notNull().default(0),
+  /** JSON array of AuthenticatorTransport hints (e.g. ["internal","hybrid"]). */
+  transports: text("transports"),
+  /** User-supplied label ("MacBook Touch ID"). */
+  device_name: text("device_name"),
+  created_at: integer("created_at").notNull().default(sql`(unixepoch())`),
+  last_used_at: integer("last_used_at"),
+});
+
 export const oauthLinks = sqliteTable("cogworks_oauth_links", {
   id: text("id").primaryKey(),
   user_id: text("user_id").notNull(),
