@@ -229,9 +229,28 @@ export class RequestTimer {
   /** Per-step accumulated microseconds (a step can be recorded multiple times in one request). */
   private readonly stepUs: Partial<Record<Step, number>> = Object.create(null);
 
+  /** Wall-clock start (unix nanoseconds, ms precision) — used as the OTLP span start. */
+  readonly startWallNs: bigint = BigInt(Date.now()) * 1_000_000n;
+  private readonly startPerfMs = performance.now();
+
   /** Add `us` to a step's tally for this request. */
   add(step: Step, us: number): void {
     this.stepUs[step] = (this.stepUs[step] ?? 0) + us;
+  }
+
+  /** Total request wall time so far, in microseconds. */
+  elapsedUs(): number {
+    return (performance.now() - this.startPerfMs) * 1000;
+  }
+
+  /** Recorded steps as [step, accumulated µs] pairs, in canonical order. */
+  steps(): Array<[Step, number]> {
+    const out: Array<[Step, number]> = [];
+    for (const s of STEPS) {
+      const v = this.stepUs[s];
+      if (v !== undefined) out.push([s, v]);
+    }
+    return out;
   }
 
   /** Roll into the global histograms. Call exactly once at request end. */

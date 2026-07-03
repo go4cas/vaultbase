@@ -53,6 +53,7 @@ import { startUpdateCheckScheduler } from "./core/update-check.ts";
 import { startWebhookDispatcher } from "./core/webhooks.ts";
 import { registerNotificationsWorker } from "./core/notifications.ts";
 import { RequestTimer, attachTimer, detachTimer } from "./core/perf-metrics.ts";
+import { exportRequestTrace } from "./core/otel.ts";
 import { log } from "./core/log.ts";
 import {
   setWSAuth,
@@ -312,7 +313,14 @@ export function createServer(config: Config) {
       }
       recordApiTokenTelemetry(request);
     }
-    detachTimer(request)?.finish();
+    const timer = detachTimer(request);
+    if (timer) {
+      timer.finish();
+      if (status !== 101) {
+        const route = c.req.routePath ?? new URL(request.url).pathname;
+        exportRequestTrace(timer, { method: c.req.method, route, status });
+      }
+    }
   });
   // Access + audit logging are registered OUTER to the rate limiter so their
   // `finally` blocks still run when `rateLimitMiddleware` short-circuits a 429
@@ -323,7 +331,13 @@ export function createServer(config: Config) {
   app.use("*", rateLimitMiddleware());
   app.onError((error, c) => {
     const request = c.req.raw;
-    detachTimer(request)?.finish();
+    const timer = detachTimer(request);
+    timer?.finish();
+    const errStatus = error instanceof HTTPException ? error.status : 500;
+    if (timer) {
+      const route = c.req.routePath ?? new URL(request.url).pathname;
+      exportRequestTrace(timer, { method: request.method, route, status: errStatus });
+    }
     // Client errors raised as HTTPException — notably the body validator's 400
     // on malformed JSON — render at their real status and are NOT error-logged
     // (mirrors the old Elysia onError skipping NOT_FOUND/VALIDATION/PARSE).

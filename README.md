@@ -28,6 +28,7 @@ bun run build           # compiles admin + binary → ./cogworks[.exe]
 - **Files** — local FS, size + MIME validation, multi-file fields
 - **Hooks page** — record event hooks (before/after × Create/Update/Delete), custom HTTP routes (`/api/custom/*`), cron jobs (UTC, with cronstrue + crontab.guru link). Monaco editor with ctx IntelliSense
 - **Logs** — JSONL files per UTC day, never deleted. JSONPath search
+- **Tracing** — opt-in OTLP/HTTP trace export (set `otel.endpoint`); per-request phase spans to any OpenTelemetry collector (Jaeger, Tempo, …). No SDK, no native deps
 - **Rate limiting** — per-IP token bucket, per-rule (path + action + audience). Editable from Settings
 - **SMTP** — full config + test button. `helpers.email()` available in hooks/routes/jobs
 - **Encrypted fields** — AES-GCM via `COGWORKS_ENCRYPTION_KEY`
