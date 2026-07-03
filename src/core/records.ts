@@ -488,7 +488,7 @@ export async function listRecords(
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-    await expandRelations(items, expandPaths, fields);
+    await expandRelations(items, expandPaths, fields, opts.auth ?? null);
   }
 
   // Field projection
@@ -606,7 +606,7 @@ export async function vectorSearch(
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-    await expandRelations(items, paths, fields);
+    await expandRelations(items, paths, fields, opts.auth ?? null);
   }
   if (opts.fields) {
     const keep = opts.fields
@@ -1059,6 +1059,7 @@ async function expandRelations(
   items: RecordWithMeta[],
   expandPaths: string[],
   schema: FieldDef[],
+  auth: AuthContext | null = null,
 ): Promise<void> {
   if (items.length === 0 || expandPaths.length === 0) return;
   const client = rawClient();
@@ -1066,41 +1067,129 @@ async function expandRelations(
 
   for (const [fieldName, restPaths] of tree) {
     const fieldDef = schema.find((f) => f.name === fieldName && f.type === "relation");
-    if (!fieldDef?.collection) continue;
+    if (fieldDef?.collection) {
+      // ── Forward relation: this record points at one target ──────────────
+      const targetCol = await getCollection(fieldDef.collection);
+      if (!targetCol) continue;
+      const targetFields = parseFields(targetCol.fields);
+      const targetTable = quoteIdent(userTableName(targetCol.name));
 
-    const targetCol = await getCollection(fieldDef.collection);
-    if (!targetCol) continue;
-    const targetFields = parseFields(targetCol.fields);
-    const targetTable = quoteIdent(userTableName(targetCol.name));
+      const ids = [
+        ...new Set(
+          items
+            .map((it) => it[fieldName])
+            .filter((v): v is string => typeof v === "string" && v.length > 0),
+        ),
+      ];
+      if (ids.length === 0) continue;
 
-    const ids = [
-      ...new Set(
-        items
-          .map((it) => it[fieldName])
-          .filter((v): v is string => typeof v === "string" && v.length > 0),
-      ),
-    ];
-    if (ids.length === 0) continue;
+      const placeholders = ids.map(() => "?").join(", ");
+      const rows = client
+        .prepare(`SELECT * FROM ${targetTable} WHERE "id" IN (${placeholders})`)
+        .all(...ids) as Record<string, unknown>[];
 
-    const placeholders = ids.map(() => "?").join(", ");
-    const rows = client
-      .prepare(`SELECT * FROM ${targetTable} WHERE "id" IN (${placeholders})`)
-      .all(...ids) as Record<string, unknown>[];
+      const expanded = await Promise.all(
+        rows.map((r) => rowToMetaAsync(r, targetCol, targetFields)),
+      );
+      const byId = new Map(expanded.map((rec) => [rec.id, rec]));
 
-    const expanded = await Promise.all(rows.map((r) => rowToMetaAsync(r, targetCol, targetFields)));
-    const byId = new Map(expanded.map((rec) => [rec.id, rec]));
-
-    for (const item of items) {
-      const refId = item[fieldName];
-      if (typeof refId === "string" && byId.has(refId)) {
-        if (!item.expand) item.expand = {};
-        item.expand[fieldName] = byId.get(refId);
+      for (const item of items) {
+        const refId = item[fieldName];
+        if (typeof refId === "string" && byId.has(refId)) {
+          if (!item.expand) item.expand = {};
+          item.expand[fieldName] = byId.get(refId);
+        }
       }
-    }
-
-    // Recurse: expand the remaining paths on the just-loaded target records
-    if (restPaths.length > 0) {
-      await expandRelations(expanded, restPaths, targetFields);
+      if (restPaths.length > 0) await expandRelations(expanded, restPaths, targetFields, auth);
+    } else {
+      // ── Reverse relation: `<collection>_via_<field>` ────────────────────
+      await expandReverse(items, fieldName, restPaths, auth);
     }
   }
+}
+
+/**
+ * Reverse-relation expand: `posts?expand=comments_via_post` attaches, to each
+ * post, the array of comments whose `post` relation points back at it.
+ *
+ * Security: the (collection, field) pair must be a REAL incoming relation to the
+ * host collection (validated via `findIncomingRefs`), and — unlike forward
+ * expand, which surfaces a single explicitly-referenced record — the referencing
+ * collection's `list_rule` is enforced, so a reverse expand can't leak rows the
+ * caller isn't allowed to list. Single (non-`multiple`) relations only.
+ */
+async function expandReverse(
+  items: RecordWithMeta[],
+  path: string,
+  restPaths: string[],
+  auth: AuthContext | null,
+): Promise<void> {
+  const hostCollection = items[0]?.collectionName;
+  if (!hostCollection) return;
+
+  // Resolve `<refCol>_via_<field>` (try every `_via_` split; names may contain it).
+  const incoming = await findIncomingRefs(hostCollection);
+  let refColName: string | undefined;
+  let refFieldName: string | undefined;
+  let idx = path.indexOf("_via_");
+  while (idx !== -1 && refColName === undefined) {
+    const c = path.slice(0, idx);
+    const f = path.slice(idx + 5);
+    if (incoming.some((r) => r.collection.name === c && r.fieldName === f)) {
+      refColName = c;
+      refFieldName = f;
+    }
+    idx = path.indexOf("_via_", idx + 1);
+  }
+  if (!refColName || !refFieldName) return; // not a valid reverse relation
+
+  const refCol = await getCollection(refColName);
+  if (!refCol) return;
+  const refFields = parseFields(refCol.fields);
+  const refFieldDef = refFields.find((f) => f.name === refFieldName);
+  if (refFieldDef?.options?.multiple) return; // multi-relations not supported (see forward)
+
+  // Access control: enforce the referencing collection's list_rule (admins bypass).
+  const isAdmin = auth?.type === "admin";
+  let ruleSql = "";
+  const ruleParams: Array<string | number | bigint | boolean | null | Uint8Array> = [];
+  if (!isAdmin && refCol.list_rule !== null) {
+    if (refCol.list_rule === "") return; // admin-only collection → expose nothing
+    try {
+      const compiled = parseFilter(refCol.list_rule, userTableName(refColName), {
+        auth: auth ?? null,
+        lookup: makeCollectionLookup(),
+        hostIdField: "id",
+      });
+      if (compiled) {
+        ruleSql = ` AND (${compiled.sql})`;
+        ruleParams.push(...(compiled.params as typeof ruleParams));
+      }
+    } catch {
+      return; // an uncompilable rule fails closed
+    }
+  }
+
+  const hostIds = [...new Set(items.map((it) => it.id))];
+  const client = rawClient();
+  const refTable = quoteIdent(userTableName(refColName));
+  const fieldQ = quoteIdent(refFieldName);
+  const placeholders = hostIds.map(() => "?").join(", ");
+  const rows = client
+    .prepare(`SELECT * FROM ${refTable} WHERE ${fieldQ} IN (${placeholders})${ruleSql}`)
+    .all(...hostIds, ...ruleParams) as Record<string, unknown>[];
+
+  const expanded = await Promise.all(rows.map((r) => rowToMetaAsync(r, refCol, refFields)));
+  // Group referencing records by the host id their relation field holds.
+  const byHost = new Map<string, RecordWithMeta[]>();
+  for (const rec of expanded) {
+    const hostId = rec[refFieldName];
+    if (typeof hostId !== "string") continue;
+    (byHost.get(hostId) ?? byHost.set(hostId, []).get(hostId)!).push(rec);
+  }
+  for (const item of items) {
+    if (!item.expand) item.expand = {};
+    item.expand[path] = byHost.get(item.id) ?? [];
+  }
+  if (restPaths.length > 0) await expandRelations(expanded, restPaths, refFields, auth);
 }

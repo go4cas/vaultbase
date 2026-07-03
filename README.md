@@ -20,7 +20,7 @@ bun run build           # compiles admin + binary → ./cogworks[.exe]
 
 - **Collections** with typed fields: `text`, `number`, `bool`, `email`, `url`, `date`, `file` (multi), `relation`, `select` (multi), `json`, `autodate`, `password` (bcrypt), `editor` (rich text), `geoPoint`
 - **Per-collection real SQL tables** (not JSON blobs) — fast queries, native indexes
-- **REST API** — list/get/create/update/delete with filter, sort, expand (nested), field projection, skipTotal, batch. Offset pagination by default; opt-in **keyset/cursor** pagination (`?cursor=`) for O(log n) deep-page seeks with no `COUNT`
+- **REST API** — list/get/create/update/delete with filter, sort, expand (nested — forward *and* reverse relations via `expand=comments_via_post`), field projection, skipTotal, batch. Offset pagination by default; opt-in **keyset/cursor** pagination (`?cursor=`) for O(log n) deep-page seeks with no `COUNT`
 - **Full-text search** — opt-in `searchable` flag on text/email/url/editor fields builds a SQLite FTS5 index (kept in sync by triggers); query via `?search=terms` on the list endpoint
 - **Auth** — email + password, JWT (admin + user), token refresh, multi-admin
 - **Passkeys / WebAuthn** — passwordless registration + login for auth-collection users (FIDO2), beside TOTP/MFA; per-user credential management
