@@ -86,11 +86,17 @@ export async function runJob(jobId: string): Promise<{ ok: boolean; error?: stri
   const row = rows[0] as JobRow | undefined;
   if (!row) return { ok: false, error: "Job not found" };
   const now = Math.floor(Date.now() / 1000);
+  // One-off ("run at") jobs carry an empty cron (F-8): fire once, never
+  // reschedule. Empty cron does NOT throw in cron-parser (it means "every
+  // minute"), so we must gate on it explicitly rather than lean on a throw.
+  const oneOff = !row.cron.trim();
   let nextRun: number | null = null;
-  try {
-    nextRun = nextRunFromCron(row.cron, now);
-  } catch {
-    nextRun = null;
+  if (!oneOff) {
+    try {
+      nextRun = nextRunFromCron(row.cron, now);
+    } catch {
+      nextRun = null;
+    }
   }
 
   // Worker-mode: cron tick enqueues onto the named queue and returns. The
@@ -200,8 +206,9 @@ async function scheduleTick(): Promise<void> {
   for (const r of rows) {
     if (r.next_run_at !== null && r.next_run_at <= now) {
       void runJob(r.id);
-    } else if (r.next_run_at === null) {
-      // Newly created or never run — initialize next_run_at
+    } else if (r.next_run_at === null && r.cron.trim()) {
+      // Newly created or never run — initialize next_run_at (recurring jobs
+      // only; a one-off with empty cron + null next_run_at has already fired).
       try {
         const next = nextRunFromCron(r.cron, now);
         await db.update(jobs).set({ next_run_at: next, updated_at: now }).where(eq(jobs.id, r.id));

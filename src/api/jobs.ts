@@ -29,7 +29,10 @@ export function makeJobsPlugin(jwtSecret: string) {
       jsonBody(
         t.Object({
           name: t.Optional(t.String()),
-          cron: t.String(),
+          // Recurring: supply `cron`. One-off: supply `run_at` (unix seconds,
+          // future) and leave `cron` empty — the job fires once then disables.
+          cron: t.Optional(t.String()),
+          run_at: t.Optional(t.Number()),
           code: t.Optional(t.String()),
           enabled: t.Optional(t.Boolean()),
           mode: t.Optional(t.String()),
@@ -40,9 +43,25 @@ export function makeJobsPlugin(jwtSecret: string) {
           return c.json({ error: "Unauthorized", code: 401 }, 401);
         }
         const body = c.req.valid("json");
-        const cronErr = validateCron(body.cron);
-        if (cronErr) {
-          return c.json({ error: `Invalid cron: ${cronErr}`, code: 422 }, 422);
+        const now = Math.floor(Date.now() / 1000);
+        // One-off ("run at") jobs carry an empty cron + a future next_run_at;
+        // runJob disables them after the single fire (see core/jobs.ts).
+        const oneOff = body.run_at !== undefined;
+        let cron = "";
+        let next: number;
+        if (oneOff) {
+          const runAt = body.run_at as number;
+          if (!Number.isFinite(runAt) || runAt <= now) {
+            return c.json({ error: "run_at must be a future unix timestamp", code: 422 }, 422);
+          }
+          next = Math.floor(runAt);
+        } else {
+          cron = body.cron ?? "";
+          const cronErr = validateCron(cron);
+          if (cronErr) {
+            return c.json({ error: `Invalid cron: ${cronErr}`, code: 422 }, 422);
+          }
+          next = nextRunFromCron(cron, now);
         }
         const mode = body.mode ?? "inline";
         const modeErr = validateMode(mode);
@@ -50,14 +69,12 @@ export function makeJobsPlugin(jwtSecret: string) {
           return c.json({ error: modeErr, code: 422 }, 422);
         }
         const id = crypto.randomUUID();
-        const now = Math.floor(Date.now() / 1000);
-        const next = nextRunFromCron(body.cron, now);
         await getDb()
           .insert(jobs)
           .values({
             id,
             name: body.name ?? "",
-            cron: body.cron,
+            cron,
             code: body.code ?? "",
             enabled: body.enabled === false ? 0 : 1,
             mode,

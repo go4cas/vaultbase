@@ -910,7 +910,9 @@ function JobsTab() {
   const columns: VbTableColumn<CronJob>[] = [
     { key: "name", label: "Name", flex: 1.2, render: (j) => <NameCell name={j.name} /> },
     { key: "cron", label: "Schedule", width: 140, mono: true, render: (j) => (
-      <span style={{ fontSize: 12, color: "var(--vb-fg)" }}>{j.cron}</span>
+      <span style={{ fontSize: 12, color: j.cron ? "var(--vb-fg)" : "var(--vb-fg-3)" }}>
+        {j.cron || "one-off"}
+      </span>
     )},
     { key: "last", label: "Last run", width: 110, mono: true, render: (j) => (
       <span style={{ fontSize: 11, color: "var(--vb-fg-3)" }}>{fmtRelTime(j.last_run_at)}</span>
@@ -1011,6 +1013,13 @@ function analyzeCron(expr: string): CronAnalysis {
   }
 }
 
+/** unix seconds → `<input type="datetime-local">` value in the browser's local zone. */
+function toLocalInput(unixSec: number): string {
+  const d = new Date(unixSec * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function JobEditor({
   job,
   open,
@@ -1029,6 +1038,10 @@ function JobEditor({
   const [enabled, setEnabled] = useState(true);
   const [modeKind, setModeKind] = useState<"inline" | "worker">("inline");
   const [modeQueue, setModeQueue] = useState("");
+  // Recurring (cron) vs one-off ("run at" a specific local time). One-off is
+  // create-only — an existing job stays in whichever kind it was made.
+  const [scheduleKind, setScheduleKind] = useState<"cron" | "once">("cron");
+  const [runAt, setRunAt] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const cronAnalysis = useMemo(() => analyzeCron(cron), [cron]);
@@ -1040,6 +1053,9 @@ function JobEditor({
       setCron(job.cron);
       setCode(job.code);
       setEnabled(!!job.enabled);
+      // Empty cron ⇒ this was a one-off; show it as such (read-only reschedule).
+      setScheduleKind(job.cron.trim() ? "cron" : "once");
+      setRunAt(job.next_run_at ? toLocalInput(job.next_run_at) : "");
       const m = /^worker:(.+)$/.exec(job.mode ?? "inline");
       if (m) { setModeKind("worker"); setModeQueue(m[1]!.trim()); }
       else   { setModeKind("inline"); setModeQueue(""); }
@@ -1048,6 +1064,8 @@ function JobEditor({
       setCron("0 * * * *");
       setCode(JOB_TEMPLATE);
       setEnabled(true);
+      setScheduleKind("cron");
+      setRunAt("");
       setModeKind("inline");
       setModeQueue("");
     }
@@ -1056,16 +1074,25 @@ function JobEditor({
   }, [open, job]);
 
   async function handleSave() {
-    if (!cron.trim()) { setError("Cron expression required"); return; }
-    if (!cronAnalysis.valid) { setError(`Invalid cron: ${cronAnalysis.error ?? "unknown"}`); return; }
     if (modeKind === "worker" && !modeQueue.trim()) {
       setError("Queue name required for worker mode");
       return;
     }
+    const mode = modeKind === "worker" ? `worker:${modeQueue.trim()}` : "inline";
+    let body: Record<string, unknown>;
+    if (scheduleKind === "once") {
+      // datetime-local has no timezone — interpret in the browser's local zone.
+      const ts = runAt ? Math.floor(new Date(runAt).getTime() / 1000) : NaN;
+      if (!Number.isFinite(ts)) { setError("Pick a run time"); return; }
+      if (ts <= Math.floor(Date.now() / 1000)) { setError("Run time must be in the future"); return; }
+      body = { name: name.trim(), run_at: ts, code, enabled, mode };
+    } else {
+      if (!cron.trim()) { setError("Cron expression required"); return; }
+      if (!cronAnalysis.valid) { setError(`Invalid cron: ${cronAnalysis.error ?? "unknown"}`); return; }
+      body = { name: name.trim(), cron: cron.trim(), code, enabled, mode };
+    }
     setSaving(true);
     setError("");
-    const mode = modeKind === "worker" ? `worker:${modeQueue.trim()}` : "inline";
-    const body = { name: name.trim(), cron: cron.trim(), code, enabled, mode };
     const res = isNew
       ? await api.post<ApiResponse<CronJob>>("/api/v1/admin/jobs", body)
       : await api.patch<ApiResponse<CronJob>>(`/api/v1/admin/jobs/${job!.id}`, body);
@@ -1106,28 +1133,57 @@ function JobEditor({
               <VbInput value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. nightly-cleanup" />
             </VbField>
           </div>
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <VbField label="Cron expression" hint="UTC">
-              <VbInput
-                mono
-                value={cron}
-                onChange={(e) => setCron(e.target.value)}
-                placeholder="0 3 * * *"
-                style={cronBorder ? { borderColor: cronBorder } : undefined}
-              />
-            </VbField>
-          </div>
-          <div style={{ width: 200 }}>
-            <VbField label="Preset">
+          <div style={{ width: 150 }}>
+            <VbField label="Schedule">
               <Dropdown
-                value={null}
-                options={CRON_PRESETS.map((p) => ({ label: p.label, value: p.expr }))}
-                onChange={(e) => setCron(e.value)}
-                placeholder="—"
+                value={scheduleKind}
+                options={[
+                  { label: "Recurring (cron)", value: "cron" },
+                  { label: "One-off (run at)", value: "once" },
+                ]}
+                onChange={(e) => setScheduleKind(e.value)}
+                disabled={!isNew}
                 style={{ width: "100%", height: 32 }}
               />
             </VbField>
           </div>
+          {scheduleKind === "cron" ? (
+            <>
+              <div style={{ flex: 1, minWidth: 220 }}>
+                <VbField label="Cron expression" hint="UTC">
+                  <VbInput
+                    mono
+                    value={cron}
+                    onChange={(e) => setCron(e.target.value)}
+                    placeholder="0 3 * * *"
+                    style={cronBorder ? { borderColor: cronBorder } : undefined}
+                  />
+                </VbField>
+              </div>
+              <div style={{ width: 200 }}>
+                <VbField label="Preset">
+                  <Dropdown
+                    value={null}
+                    options={CRON_PRESETS.map((p) => ({ label: p.label, value: p.expr }))}
+                    onChange={(e) => setCron(e.value)}
+                    placeholder="—"
+                    style={{ width: "100%", height: 32 }}
+                  />
+                </VbField>
+              </div>
+            </>
+          ) : (
+            <div style={{ flex: 1, minWidth: 240 }}>
+              <VbField label="Run at" hint="your local time">
+                <VbInput
+                  type="datetime-local"
+                  value={runAt}
+                  onChange={(e) => setRunAt(e.target.value)}
+                  readOnly={!isNew}
+                />
+              </VbField>
+            </div>
+          )}
           <div style={{ width: 230 }}>
             <VbField label="Run mode">
               <Dropdown
@@ -1173,7 +1229,15 @@ function JobEditor({
           background: "var(--vb-bg-2)",
           fontSize: 12,
         }}>
-          {cronAnalysis.valid ? (
+          {scheduleKind === "once" ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--vb-accent)" }}>
+              <span style={{
+                fontSize: 10.5, fontWeight: 600, letterSpacing: 1.2, textTransform: "uppercase",
+                color: "var(--vb-fg-3)", fontFamily: "var(--font-mono)",
+              }}>Schedule</span>
+              <span>{runAt ? `Runs once at ${new Date(runAt).toISOString().replace("T", " ").slice(0, 19)} UTC — then disables` : "Pick a run time above"}</span>
+            </div>
+          ) : cronAnalysis.valid ? (
             <>
               <div style={{
                 flex: 1,
