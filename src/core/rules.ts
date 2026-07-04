@@ -51,6 +51,27 @@ export function isExpressionRule(rule: string | null): boolean {
   return rule !== null && rule !== "";
 }
 
+/**
+ * Evaluate a bare expression as a predicate against a record — with NO admin
+ * bypass and none of the rule-slot special cases (`null`/`""`). For a
+ * caller-chosen filter (e.g. a realtime subscription filter, E-2) rather than
+ * an access rule. Returns false on parse or evaluation failure.
+ */
+export function evaluateExpression(
+  expr: string,
+  auth: AuthContext | null,
+  record: Record<string, unknown> | null,
+  request?: RequestContextLike | null,
+): boolean {
+  const ast = parseExpression(expr);
+  if (!ast) return false;
+  try {
+    return evaluateExpr(ast, { auth, record, request: request ?? null });
+  } catch {
+    return false;
+  }
+}
+
 // ── AST evaluation ──────────────────────────────────────────────────────────
 
 const UNAUTH_SENTINEL = Symbol("unauth");
