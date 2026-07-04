@@ -1,10 +1,11 @@
-import { and, asc, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import { getDb } from "../db/client.ts";
 import { log } from "./log.ts";
 import { jobsLog, workers } from "../db/schema.ts";
 import { ValidationError } from "./validate.ts";
 import { makeHookHelpers, type HookHelpers } from "./hooks.ts";
 import { runWithTimeout, userCodeTimeoutMs } from "./user-code.ts";
+import { getSetting } from "../api/settings.ts";
 
 /**
  * In-process job queue + worker engine. Phase 1 of the Redis brainstorm —
@@ -204,8 +205,91 @@ export async function enqueue(
 // ── Worker loop ──────────────────────────────────────────────────────────────
 
 let schedulerInterval: ReturnType<typeof setInterval> | null = null;
-const inFlight = new Map<string, number>(); // worker id → current concurrent count
 const POLL_INTERVAL_MS = 500;
+
+/**
+ * Count jobs currently `running` on a queue (P1-2). Concurrency is accounted
+ * from the DB, not an in-memory per-process counter, so a worker's
+ * `concurrency` cap holds *globally* across cluster processes (and correctly
+ * excludes jobs the reaper has reclaimed). Caveat: two processes ticking at the
+ * exact same instant can each claim up to `concurrency` before either's writes
+ * are visible, so the aggregate can transiently overshoot; it converges on the
+ * next tick. A hard global cap would need row locking — deliberately not paid for.
+ */
+async function countRunning(queue: string): Promise<number> {
+  const r = await getDb()
+    .select({ c: count() })
+    .from(jobsLog)
+    .where(and(eq(jobsLog.queue, queue), eq(jobsLog.status, "running")));
+  return r[0]?.c ?? 0;
+}
+
+// ── Reaper / visibility timeout (P1-1) ───────────────────────────────────────
+// A worker process that crashes mid-job leaves its row in `status='running'`
+// forever — nothing reclaims it, and (worse) its `unique_key` keeps blocking
+// re-enqueues because dedup counts `running` as occupied. The reaper sweeps
+// rows stuck `running` past a visibility timeout back to `queued` (or dead-
+// letters them once retries are exhausted).
+const REAP_INTERVAL_SEC = 30;
+let lastReapAt = 0;
+
+/** Visibility timeout in seconds. Keep it well above `execution.timeout_ms`. */
+function visibilityTimeoutSec(): number {
+  const n = parseInt(getSetting("queues.visibility_timeout_sec", "300"), 10);
+  return Number.isFinite(n) && n > 0 ? n : 300;
+}
+
+/**
+ * Reclaim jobs stuck in `running` past the visibility timeout (crashed/killed
+ * worker). Each reclaim re-queues for another attempt, or dead-letters once the
+ * job has reached its worker's `retry_max`. The `WHERE status='running'` guard
+ * makes the reclaim atomic, so concurrent cluster workers can't double-process.
+ *
+ * At-least-once: a job that legitimately runs longer than the visibility
+ * timeout could be reclaimed and run twice — keep the timeout generously above
+ * `execution.timeout_ms` (default 300s vs 5s).
+ */
+async function reapStuckJobs(byQueue: Map<string, CompiledWorker>): Promise<void> {
+  const db = getDb();
+  const now = Math.floor(Date.now() / 1000);
+  const cutoff = now - visibilityTimeoutSec();
+  const stuck = await db
+    .select()
+    .from(jobsLog)
+    .where(and(eq(jobsLog.status, "running"), lt(jobsLog.started_at, cutoff)));
+  for (const job of stuck) {
+    const retryMax = byQueue.get(job.queue)?.retry_max ?? 3;
+    const guard = and(eq(jobsLog.id, job.id), eq(jobsLog.status, "running"));
+    if (job.attempt >= retryMax) {
+      await db
+        .update(jobsLog)
+        .set({
+          status: "dead",
+          finished_at: now,
+          error: `reclaimed: stuck in 'running' past visibility timeout, retries exhausted (attempt ${job.attempt})`,
+        })
+        .where(guard);
+      log.error("job reclaimed → dead", { scope: "queues", jobId: job.id, attempts: job.attempt });
+    } else {
+      await db
+        .update(jobsLog)
+        .set({
+          status: "queued",
+          attempt: job.attempt + 1,
+          worker_id: null,
+          started_at: null,
+          scheduled_at: now,
+          error: `reclaimed: stuck in 'running' past visibility timeout (attempt ${job.attempt})`,
+        })
+        .where(guard);
+      log.warn("job reclaimed → requeued", {
+        scope: "queues",
+        jobId: job.id,
+        attempts: job.attempt,
+      });
+    }
+  }
+}
 
 /**
  * Start the in-process worker scheduler. Polls the jobs_log table every
@@ -228,23 +312,37 @@ export function stopQueueScheduler(): void {
   schedulerInterval = null;
 }
 
-async function tick(): Promise<void> {
+/**
+ * One worker per queue (user-defined take precedence over builtins) — a single
+ * worker per queue per tick avoids two workers grabbing the same job.
+ */
+async function buildQueueWorkerMap(): Promise<Map<string, CompiledWorker>> {
   const compiled = await loadWorkers();
-
-  // Group workers by queue, picking a single worker per queue per tick to
-  // avoid two workers grabbing the same job. (Multiple workers per queue is
-  // a future addition; for now the first one wins.)
   const byQueue = new Map<string, CompiledWorker>();
-  // User-defined workers first — they take precedence over builtins.
   for (const w of compiled) if (!byQueue.has(w.queue)) byQueue.set(w.queue, w);
-  // Builtins fill in any queues the user hasn't claimed.
   for (const [queue, w] of builtinWorkers) if (!byQueue.has(queue)) byQueue.set(queue, w);
+  return byQueue;
+}
 
+/** Run the stuck-job reaper once, on demand (tests + a future admin action). */
+export async function runReaperOnce(): Promise<void> {
+  await reapStuckJobs(await buildQueueWorkerMap());
+}
+
+async function tick(): Promise<void> {
+  const byQueue = await buildQueueWorkerMap();
   if (byQueue.size === 0) return;
 
+  // Reclaim stuck jobs before claiming new ones (throttled — the sweep is a
+  // rare-hit query, no need to run it every 500ms tick).
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (nowSec - lastReapAt >= REAP_INTERVAL_SEC) {
+    lastReapAt = nowSec;
+    await reapStuckJobs(byQueue);
+  }
+
   for (const [queue, worker] of byQueue) {
-    const current = inFlight.get(worker.id) ?? 0;
-    const slots = worker.concurrency - current;
+    const slots = worker.concurrency - (await countRunning(queue));
     if (slots <= 0) continue;
     await claimAndRun(queue, worker, slots);
   }
@@ -279,10 +377,11 @@ async function claimAndRun(queue: string, worker: CompiledWorker, slots: number)
       .returning({ id: jobsLog.id });
     if (claim.length === 0) continue;
 
-    inFlight.set(worker.id, (inFlight.get(worker.id) ?? 0) + 1);
-    void runJob(worker, job).finally(() => {
-      inFlight.set(worker.id, Math.max(0, (inFlight.get(worker.id) ?? 1) - 1));
-    });
+    // Fire-and-forget: runJob owns the row's terminal state (succeeded / retry /
+    // dead). The DB `running` count (countRunning) is the concurrency ledger, so
+    // there's no in-memory counter to maintain. `.catch` guards against an
+    // unexpected throw escaping the async task as an unhandled rejection.
+    void runJob(worker, job).catch(() => {});
   }
 }
 
@@ -381,6 +480,33 @@ export async function retryJob(id: string): Promise<boolean> {
     .where(and(eq(jobsLog.id, id), inArray(jobsLog.status, ["failed", "dead", "succeeded"])))
     .returning({ id: jobsLog.id });
   return r.length > 0;
+}
+
+/**
+ * Bulk dead-letter replay (E-12): re-queue every `dead` job, optionally scoped
+ * to one queue. Resets the attempt counter so each gets a fresh retry budget.
+ * Returns the number re-queued.
+ */
+export async function retryDeadJobs(queue?: string): Promise<number> {
+  const db = getDb();
+  const now = Math.floor(Date.now() / 1000);
+  const where = queue
+    ? and(eq(jobsLog.status, "dead"), eq(jobsLog.queue, queue))
+    : eq(jobsLog.status, "dead");
+  const r = await db
+    .update(jobsLog)
+    .set({
+      status: "queued",
+      attempt: 1,
+      scheduled_at: now,
+      started_at: null,
+      finished_at: null,
+      error: null,
+      worker_id: null,
+    })
+    .where(where)
+    .returning({ id: jobsLog.id });
+  return r.length;
 }
 
 /** Drop a job (typically a stuck "queued" or noisy "dead"). */

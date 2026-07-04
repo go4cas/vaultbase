@@ -8,6 +8,7 @@ import {
   invalidateWorkerCache,
   listJobsLog,
   retryJob,
+  retryDeadJobs,
   discardJob,
   queueStats,
   type JobStatus,
@@ -185,6 +186,17 @@ export function makeQueuesPlugin(jwtSecret: string) {
           return c.json({ error: "Job not found or not retryable", code: 404 }, 404);
         }
         return c.json({ data: { ok: true } });
+      })
+
+      // Bulk dead-letter replay (E-12). Optional `?queue=` scopes it; omit to
+      // replay every dead job.
+      .post("/admin/queues/jobs/retry-dead", async (c) => {
+        if (!(await requireAdmin(c.req.raw, jwtSecret))) {
+          return c.json({ error: "Unauthorized", code: 401 }, 401);
+        }
+        const queue = c.req.query("queue") || undefined;
+        const retried = await retryDeadJobs(queue);
+        return c.json({ data: { retried } });
       })
 
       .delete("/admin/queues/jobs/:id", async (c) => {

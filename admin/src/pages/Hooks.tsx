@@ -1623,6 +1623,30 @@ function JobsLogTab() {
     load();
   }
 
+  // Dead-letter depth for the current scope (all queues, or the filtered one).
+  const deadCount = stats.reduce(
+    (n, s) => n + (queueFilter ? (s.queue === queueFilter ? s.dead : 0) : s.dead),
+    0,
+  );
+
+  async function handleReplayDead() {
+    const scope = queueFilter ? ` in "${queueFilter}"` : "";
+    const ok = await confirm({
+      title: "Replay dead jobs",
+      message: `Re-queue all ${deadCount} dead job(s)${scope}? Each gets a fresh retry budget.`,
+      confirmLabel: "Replay all",
+    });
+    if (!ok) return;
+    const qs = queueFilter ? `?queue=${encodeURIComponent(queueFilter)}` : "";
+    const res = await api.post<ApiResponse<{ retried: number }>>(
+      `/api/v1/admin/queues/jobs/retry-dead${qs}`,
+      {},
+    );
+    if (res.error) { toast(res.error, "info"); return; }
+    toast(`Re-queued ${res.data?.retried ?? 0} dead job(s)`, "check");
+    load();
+  }
+
   const queueOptions = [{ label: "All queues", value: "" }, ...stats.map((s) => ({ label: s.queue, value: s.queue }))];
 
   const columns: VbTableColumn<JobLogRow>[] = [
@@ -1678,6 +1702,11 @@ function JobsLogTab() {
           style={{ height: 32, minWidth: 140 }}
         />
         <VbBtn kind="ghost" size="sm" icon="refresh" onClick={load}>Refresh</VbBtn>
+        {deadCount > 0 && (
+          <VbBtn kind="danger" size="sm" icon="refresh" onClick={handleReplayDead}>
+            Replay dead ({deadCount})
+          </VbBtn>
+        )}
         <div style={{ flex: 1 }} />
         <div style={{
           fontSize: 11,
