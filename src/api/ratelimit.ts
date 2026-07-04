@@ -271,7 +271,12 @@ export function rateLimitMiddleware(): MiddlewareHandler {
       /* not all runtimes expose this */
     }
     const ip = ipFromRequest(request, peerIp);
-    const key = `${ip}|${match.index}`;
+    // E-13: key authenticated requests by their bearer token so users sharing an
+    // egress IP (corporate NAT, mobile carrier) get independent buckets. Guests
+    // stay keyed by IP. The token is hashed — the bucket key never retains it.
+    const authHeader = request.headers.get("authorization");
+    const principal = authHeader ? `t:${Bun.hash(authHeader)}` : `ip:${ip}`;
+    const key = `${principal}|${match.index}`;
     if (!consumeToken(key, match.rule.max, match.rule.windowMs)) {
       c.header("Retry-After", String(Math.ceil(match.rule.windowMs / 1000)));
       return c.json({ error: `Rate limit exceeded (rule: ${match.rule.label})`, code: 429 }, 429);

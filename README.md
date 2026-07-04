@@ -52,6 +52,7 @@ bun run build           # compiles admin + binary → ./cogworks[.exe]
 | `COGWORKS_DATA_DIR` | `./cogworks_data` | DB, uploads, logs, secrets |
 | `COGWORKS_JWT_SECRET` | auto-generated | Persisted in `<dataDir>/.secret` |
 | `COGWORKS_ENCRYPTION_KEY` | none | Required for encrypted fields. Base64 / hex / 32-char string (32 bytes) |
+| `COGWORKS_ENCRYPTION_KEY_OLD` | none | Previous key(s), comma-separated, accepted for decryption during a key rotation. See `cogworks rotate-key`. |
 | `COGWORKS_RATE_*` | rule-based | See Settings → Rate limiting |
 
 ## Production deployment

@@ -18,8 +18,8 @@ function validatePath(path: string): string | null {
 
 /**
  * Returns a Response if the path matches a user route, otherwise undefined.
- * Wired into the main Elysia app's onRequest hook so it fires before route
- * resolution (preventing collisions with built-in /api/:collection routes).
+ * Called from the Hono root middleware (see `server.ts`) before built-in route
+ * resolution, so user routes can't collide with /api/:collection routes.
  */
 export async function tryDispatchCustom(
   request: Request,

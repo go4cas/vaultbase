@@ -149,6 +149,13 @@ export function makeApiTokensPlugin(jwtSecret: string) {
       if (!me) {
         return c.json({ error: "Unauthorized", code: 401 }, 401);
       }
-      return c.json({ data: { scopes: KNOWN_SCOPES } });
+      return c.json({
+        data: {
+          scopes: KNOWN_SCOPES,
+          // F-10: per-collection scopes are dynamic, not enumerable. Advertise
+          // the grammar so clients can build `collection:<name>:<action>` scopes.
+          collectionScopePattern: "collection:<name|*>:<read|write|*>",
+        },
+      });
     });
 }

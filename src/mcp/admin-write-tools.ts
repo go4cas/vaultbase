@@ -678,6 +678,10 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
             type: "boolean",
             description: "Permit non-SELECT statements. Default false.",
           },
+          dry_run: {
+            type: "boolean",
+            description: "Return the EXPLAIN QUERY PLAN without executing. Default false.",
+          },
         },
         required: ["query"],
         additionalProperties: false,
@@ -730,6 +734,11 @@ export function registerAdminWriteTools(reg: ToolRegistry): void {
         string | number | bigint | boolean | null | Uint8Array
       >;
       const client = getRawClient();
+      // Dry-run (P1-4): show the plan, change nothing. Safe preview of a write.
+      if (args.dry_run === true) {
+        const plan = client.query(`EXPLAIN QUERY PLAN ${q}`).all(...params) as unknown[];
+        return asJsonText({ dryRun: true, executed: false, plan });
+      }
       if (looksLikeRead) {
         const stmt = client.query(q);
         const rows = stmt.all(...params) as unknown[];

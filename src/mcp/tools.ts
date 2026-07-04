@@ -19,6 +19,32 @@ import type { CallToolResult, ContentBlock, ToolDefinition } from "./types.ts";
 import { log } from "../core/log.ts";
 import { hasScope } from "../core/api-tokens.ts";
 
+// ── Per-tool rate limiting (P1-4) ────────────────────────────────────────────
+// In-memory sliding window per tool name (per process). Write-class tools get a
+// tighter budget than reads. Defends against a runaway agent, not a substitute
+// for the scope checks above.
+const MCP_WRITE_PER_MIN = 30;
+const MCP_READ_PER_MIN = 240;
+const RATE_WINDOW_MS = 60_000;
+const rateLog = new Map<string, number[]>();
+
+function mcpRateLimited(name: string, maxPerMin: number): boolean {
+  const now = Date.now();
+  const recent = (rateLog.get(name) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
+  if (recent.length >= maxPerMin) {
+    rateLog.set(name, recent);
+    return true;
+  }
+  recent.push(now);
+  rateLog.set(name, recent);
+  return false;
+}
+
+/** Test hook — reset the rate-limit window. */
+export function _resetMcpRateLimit(): void {
+  rateLog.clear();
+}
+
 export interface ToolContext {
   /** Token id (jti) — used for audit logging. */
   tokenId: string;
@@ -98,6 +124,20 @@ export class ToolRegistry {
           {
             type: "text",
             text: `Permission denied: tool '${name}' requires scope '${t.requiredScope}'. The token has: ${ctx.scopes.join(", ") || "(none)"}.`,
+          },
+        ],
+        isError: true,
+      };
+    }
+    // Per-tool rate limit (P1-4) — defends against a runaway agent hammering a
+    // (especially write) tool. Write-class tools get a tighter budget.
+    const perMin = t.requiredScope === "mcp:read" ? MCP_READ_PER_MIN : MCP_WRITE_PER_MIN;
+    if (mcpRateLimited(name, perMin)) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Rate limit: tool '${name}' exceeded ${perMin} calls/min. Slow down and retry shortly.`,
           },
         ],
         isError: true,

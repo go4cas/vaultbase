@@ -8,6 +8,7 @@ import { appendHookLog } from "./file-logger.ts";
 import { sendEmail } from "./email.ts";
 import { recordRuleEval, type RuleOutcome } from "./request-context.ts";
 import { runWithTimeout, userCodeTimeoutMs } from "./user-code.ts";
+import { getSetting } from "../api/settings.ts";
 import type { AuthContext } from "./rules.ts";
 import { makeExtraHelpers, type ExtraHookHelpers } from "./hook-helpers-extra.ts";
 
@@ -198,6 +199,29 @@ async function lookupEnabledHooks(
   return compiled;
 }
 
+/** Slow-hook threshold (E-11). A hook exceeding this logs a warning with its ms. */
+function slowHookMs(): number {
+  const n = parseInt(getSetting("hooks.slow_ms", "1000"), 10);
+  return Number.isFinite(n) && n > 0 ? n : 1000;
+}
+
+/** Run a compiled hook under the execution timeout, timing it (E-11). */
+async function runHookTimed(
+  fn: () => Promise<unknown>,
+  label: string,
+  hookLabel: string,
+): Promise<void> {
+  const start = Date.now();
+  try {
+    await runWithTimeout(fn, userCodeTimeoutMs(), label);
+  } finally {
+    const ms = Date.now() - start;
+    if (ms >= slowHookMs()) {
+      log.warn("slow hook", { scope: "hooks", hook: hookLabel, ms, budgetMs: slowHookMs() });
+    }
+  }
+}
+
 export async function runBeforeHook(
   collection: Collection,
   event: "beforeCreate" | "beforeUpdate" | "beforeDelete",
@@ -217,10 +241,10 @@ export async function runBeforeHook(
     if (effectiveReq) helperCtx.request = effectiveReq;
     const helpers = makeHookHelpers(helperCtx);
     try {
-      await runWithTimeout(
+      await runHookTimed(
         () => h.fn({ ...ctx, helpers }),
-        userCodeTimeoutMs(),
         `hook '${h.name || h.id}'`,
+        h.name || h.id,
       );
     } catch (e) {
       if (e instanceof ValidationError) throw e;
@@ -250,10 +274,10 @@ export function runAfterHook(
       if (effectiveReq) helperCtx.request = effectiveReq;
       const helpers = makeHookHelpers(helperCtx);
       try {
-        await runWithTimeout(
+        await runHookTimed(
           () => h.fn({ ...ctx, helpers }),
-          userCodeTimeoutMs(),
           `after-hook '${h.name || h.id}'`,
+          h.name || h.id,
         );
       } catch (e) {
         log.error("after-hook threw", { scope: "hooks", hookId: h.id, err: e });

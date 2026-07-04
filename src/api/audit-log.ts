@@ -3,6 +3,7 @@ import type { MiddlewareHandler } from "hono";
 import { listAuditEntries, recordAuditEntry } from "../core/audit-log.ts";
 import { getAdmin } from "../core/sec.ts";
 import { isAdminApiPath } from "../core/api-paths.ts";
+import { resStatus } from "./http-util.ts";
 
 /**
  * Root-level Hono middleware: capture every state-changing `/api/v1/admin/*`
@@ -18,12 +19,7 @@ export function auditLogMiddleware(jwtSecret: string): MiddlewareHandler {
       const request = c.req.raw;
       const url = new URL(request.url);
       if (isAdminApiPath(url.pathname)) {
-        let status = 500;
-        try {
-          status = c.res.status;
-        } catch {
-          /* no response set — treat as 500 */
-        }
+        const status = resStatus(c, 500);
         void (async () => {
           const actor = await getAdmin(request, jwtSecret);
           // Body is already consumed by the handler — we don't try to capture

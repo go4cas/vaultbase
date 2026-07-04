@@ -6,6 +6,7 @@ import * as jose from "jose";
 import { timeFor } from "../core/perf-metrics.ts";
 import { ISSUER, requireAdmin } from "../core/sec.ts";
 import { isAdminApiPath } from "../core/api-paths.ts";
+import { resStatus } from "./http-util.ts";
 import {
   appendLogEntry,
   listLogDates,
@@ -178,12 +179,7 @@ export function accessLogMiddleware(jwtSecret: string): MiddlewareHandler {
       if (!shouldSkip(path)) {
         const ms = Date.now() - start;
         const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
-        let status = 500;
-        try {
-          status = c.res.status;
-        } catch {
-          /* no response set (threw before dispatch) — treat as 500 */
-        }
+        const status = resStatus(c, 500);
         void (async () => {
           const auth = await extractAuth(request, secret);
           const rules = getRuleEvals(request);
