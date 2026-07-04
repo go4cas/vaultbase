@@ -58,7 +58,7 @@ Manual steps (Bun does not currently expose programmatic CPU-profile dump):
 
   1. In a separate terminal, start the server with the V8 inspector:
 
-       cd vaultbase
+       cd cogworks
        bun --inspect=9229 src/index.ts
 
   2. Open chrome://inspect in Chrome / Chromium → 'Inspect' the bun target.

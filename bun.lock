@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "vaultbase",
+      "name": "cogworks",
       "dependencies": {
         "@hono/typebox-validator": "^1.1.0",
         "@jsquash/avif": "^2.1.1",

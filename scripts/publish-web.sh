@@ -4,8 +4,12 @@
 # automatically.
 #
 # Required git remotes:
-#   landing-origin  → git@github.com:<user>/vaultbase-landing.git
-#   docs-origin     → git@github.com:<user>/vaultbase-docs.git
+#   landing-origin  → git@github.com:<user>/<cogworks-landing-repo>.git
+#   docs-origin     → git@github.com:<user>/<cogworks-docs-repo>.git
+# TODO(brand): confirm the actual Cogworks landing/docs repo names during the
+# landing-rebrand milestone (the old vaultbase-landing / vaultbase-docs targets
+# are stale). These are git-remote names, not hardcoded URLs, so nothing breaks
+# until this script is run.
 #
 # Usage:  ./scripts/publish-web.sh
 set -euo pipefail

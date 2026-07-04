@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "vaultbase-admin",
+      "name": "cogworks-admin",
       "dependencies": {
         "@monaco-editor/react": "^4.7.0",
         "cron-parser": "^5.5.0",

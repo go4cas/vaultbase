@@ -646,7 +646,7 @@ function applySchema(client: Database): void {
   );
 
   // ── Cross-worker realtime bus (cluster mode only) ─────────────────────────
-  // Under `vaultbase cluster`, workers are separate processes with no shared
+  // Under `cogworks cluster`, workers are separate processes with no shared
   // memory. A record/system broadcast delivers to the originating worker's own
   // WS/SSE subscribers AND appends the event here; every worker tails this
   // table (seq > lastSeen) and re-delivers to its local subscribers. Rows are
@@ -723,7 +723,7 @@ function applySchema(client: Database): void {
  *
  * Safety: refuses to drop if any row in `cogworks_users` is missing
  * from the corresponding per-collection table. Operator must run
- * `vaultbase doctor` and reconcile before the next boot.
+ * `cogworks doctor` and reconcile before the next boot.
  */
 function v0_11FinalizeAuthMigration(client: Database): void {
   const exists = client
@@ -766,8 +766,8 @@ function v0_11FinalizeAuthMigration(client: Database): void {
     client.exec(`DROP TABLE cogworks_users`);
   } else {
     process.stderr.write(
-      `[vaultbase] WARN: cogworks_users still has ${total - copied} row(s) not yet ` +
-        `mirrored to per-collection cw_<auth-col> tables. Run \`vaultbase doctor\` and ` +
+      `[cogworks] WARN: cogworks_users still has ${total - copied} row(s) not yet ` +
+        `mirrored to per-collection cw_<auth-col> tables. Run \`cogworks doctor\` and ` +
         `reconcile before the next boot — the legacy table will not be dropped until clean.\n`,
     );
   }
@@ -880,7 +880,7 @@ function v0_11PrepAuthTables(client: Database): void {
       client.prepare(sql).run(col.id);
     } catch (e) {
       process.stderr.write(
-        `[vaultbase] WARN: v0.11 auth-table prep failed for collection '${col.name}': ` +
+        `[cogworks] WARN: v0.11 auth-table prep failed for collection '${col.name}': ` +
           `${e instanceof Error ? e.message : String(e)}\n`,
       );
     }
