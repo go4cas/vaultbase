@@ -86,6 +86,8 @@ interface ClientMessage {
   collections?: string[];
   /** When type === "auth": the bearer token to attach to this connection. */
   token?: string;
+  /** When type === "subscribe": a filter expression applied to these topics (E-2). */
+  filter?: string;
 }
 
 async function verifyTokenForWS(token: string, jwtSecret: string): Promise<WSAuth | null> {
@@ -460,6 +462,7 @@ export function createServer(config: Config) {
         subscriptions: t.Optional(t.Array(t.String())), // PB-compat alias
         collections: t.Optional(t.Array(t.String())), // legacy alias
         token: t.Optional(t.String()),
+        filter: t.Optional(t.String()), // E-2: subscription filter expression
       }),
     ),
     async (c) => {
@@ -477,7 +480,7 @@ export function createServer(config: Config) {
         setWSAuth(adapter, auth);
       }
       const topics = body.topics ?? body.subscriptions ?? body.collections ?? [];
-      setSSESubscriptions(body.clientId, topics);
+      setSSESubscriptions(body.clientId, topics, body.filter);
       return c.json({ data: { clientId: body.clientId, topics } });
     },
   );
@@ -554,7 +557,7 @@ export function createServer(config: Config) {
             return;
           }
           if (msg.type === "subscribe") {
-            const accepted = subscribe(adapter, topics);
+            const accepted = subscribe(adapter, topics, msg.filter);
             ws.send(JSON.stringify({ type: "subscribed", topics: accepted }));
           } else if (msg.type === "unsubscribe") {
             const removed = unsubscribe(adapter, topics);

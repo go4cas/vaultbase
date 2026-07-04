@@ -1,5 +1,5 @@
 import type { RecordWithMeta } from "../core/records.ts";
-import { evaluateRule, type AuthContext } from "../core/rules.ts";
+import { evaluateRule, evaluateExpression, type AuthContext } from "../core/rules.ts";
 import { publishRecord, publishSystem, maxEventSeq, readEventsSince } from "./cluster-bus.ts";
 
 export interface WSLike {
@@ -59,6 +59,14 @@ const WILDCARD = "*";
  */
 const subs = new Map<string, Map<string, WSLike>>();
 const wsAuth = new Map<string, WSAuth>();
+/**
+ * Per-connection subscription filters (E-2): connId → topic → filter expression.
+ * When set, an event is delivered to that (connection, topic) only if the filter
+ * also matches the record — AND-combined with the collection's `view_rule`.
+ * Unlike a view rule, this is the client's own preference, so admins are NOT
+ * exempt from it.
+ */
+const subFilters = new Map<string, Map<string, string>>();
 
 /** Pull the persistent connection id off `ws.data` (set by the WS open handler). */
 function connId(ws: WSLike): string {
@@ -114,9 +122,10 @@ export function normalizeTopic(raw: string): string | null {
   return t;
 }
 
-export function subscribe(ws: WSLike, topics: string[]): string[] {
+export function subscribe(ws: WSLike, topics: string[], filter?: string): string[] {
   const id = connId(ws);
   const accepted: string[] = [];
+  const f = typeof filter === "string" && filter.trim() ? filter.trim() : null;
   for (const raw of topics) {
     const t = normalizeTopic(raw);
     if (!t) continue;
@@ -127,6 +136,17 @@ export function subscribe(ws: WSLike, topics: string[]): string[] {
     }
     inner.set(id, ws);
     accepted.push(t);
+    // Attach (or clear) this connection's filter for the topic.
+    if (f) {
+      let fm = subFilters.get(id);
+      if (!fm) {
+        fm = new Map();
+        subFilters.set(id, fm);
+      }
+      fm.set(t, f);
+    } else {
+      subFilters.get(id)?.delete(t);
+    }
   }
   return accepted;
 }
@@ -138,6 +158,7 @@ export function unsubscribe(ws: WSLike, topics: string[]): string[] {
     const t = normalizeTopic(raw);
     if (!t) continue;
     if (subs.get(t)?.delete(id)) removed.push(t);
+    subFilters.get(id)?.delete(t);
   }
   return removed;
 }
@@ -159,6 +180,7 @@ export function disconnectAll(ws: WSLike): void {
     inner.delete(id);
   }
   wsAuth.delete(id);
+  subFilters.delete(id);
 }
 
 /**
@@ -178,6 +200,23 @@ function shouldSendTo(id: string, opts?: BroadcastOpts): boolean {
     ? { id: auth.id, type: auth.type, ...(auth.email ? { email: auth.email } : {}) }
     : null;
   return evaluateRule(rule, ctx, opts.record ?? null);
+}
+
+/**
+ * E-2: apply this connection's optional subscription filter for `topic`. Returns
+ * true when there's no filter, no record to test, or the filter matches. Admins
+ * are NOT exempt — the filter is the client's own choice, not access control.
+ */
+function passesSubFilter(id: string, topic: string, opts?: BroadcastOpts): boolean {
+  const f = subFilters.get(id)?.get(topic);
+  if (!f) return true;
+  const record = opts?.record;
+  if (!record) return true; // nothing to evaluate against
+  const auth = wsAuth.get(id);
+  const ctx: AuthContext | null = auth
+    ? { id: auth.id, type: auth.type, ...(auth.email ? { email: auth.email } : {}) }
+    : null;
+  return evaluateExpression(f, ctx, record);
 }
 
 /**
@@ -235,8 +274,12 @@ export function deliverRecordLocal(
     if (!inner) continue;
     for (const [id, ws] of inner) {
       if (sent.has(id)) continue;
-      sent.add(id);
       if (!shouldSendTo(id, opts)) continue;
+      // E-2: a per-topic filter that rejects this record must NOT block delivery
+      // via another matching topic (e.g. a `*` subscription), so only mark the
+      // connection `sent` once it actually receives the event.
+      if (!passesSubFilter(id, topic, opts)) continue;
+      sent.add(id);
       try {
         ws.send(payload, seq);
       } catch {
@@ -307,7 +350,7 @@ export function unregisterSSEClient(clientId: string): void {
 }
 
 /** Replace the client's topic list (PocketBase-style: PUT semantics). */
-export function setSSESubscriptions(clientId: string, topics: string[]): boolean {
+export function setSSESubscriptions(clientId: string, topics: string[], filter?: string): boolean {
   const adapter = sseClients.get(clientId);
   if (!adapter) return false;
   const id = connId(adapter);
@@ -315,9 +358,10 @@ export function setSSESubscriptions(clientId: string, topics: string[]): boolean
   // Capture the replay upper bound BEFORE subscribing so live events (seq >
   // upTo) are strictly newer than anything replayed → no dup, no gap.
   const replayUpTo = maxEventSeq();
-  // Remove from every topic, then re-add the new set.
+  // Remove from every topic (and clear stale filters), then re-add the new set.
   for (const inner of subs.values()) inner.delete(id);
-  subscribe(adapter, topics);
+  subFilters.delete(id);
+  subscribe(adapter, topics, filter);
   // On a resumed connection, replay the missed window once against the new topics.
   if (data && typeof data.replaySince === "number") {
     const since = data.replaySince;
@@ -352,9 +396,13 @@ function replayToClient(adapter: WSLike, topics: string[], since: number, upTo: 
         const event = data.event as RealtimeEvent;
         const collection = data.collection as string;
         const opts = (data.opts ?? undefined) as BroadcastOpts | undefined;
-        const targets = recordEventTargets(collection, event);
-        if (!targets.some((t) => topicSet.has(t))) continue;
+        const matched = recordEventTargets(collection, event).filter(
+          (t): t is string => !!t && topicSet.has(t),
+        );
+        if (matched.length === 0) continue;
         if (!shouldSendTo(id, opts)) continue;
+        // E-2: deliver on resume only if at least one matched topic's filter passes.
+        if (!matched.some((t) => passesSubFilter(id, t, opts))) continue;
         adapter.send(JSON.stringify(event), r.seq);
       } else if (r.kind === "system") {
         if (!topicSet.has(data.topic as string)) continue;
