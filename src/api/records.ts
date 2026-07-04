@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import type { AuthContext } from "../core/rules.ts";
 import { verifyAuthToken } from "../core/sec.ts";
+import { hasScope, stripApiTokenPrefix } from "../core/api-tokens.ts";
 import { getCollection } from "../core/collections.ts";
 import {
   createRecord,
@@ -92,19 +93,47 @@ function validationResponse(c: Context, err: ValidationError) {
   return c.json({ error: "Validation failed", code: 422, details: err.details }, 422);
 }
 
-async function getAuthContext(request: Request, jwtSecret: string): Promise<AuthContext | null> {
+/**
+ * Auth for a records request: the rule-engine {@link AuthContext} (null when
+ * anonymous) plus the API-token scope info needed to enforce per-collection
+ * token scopes (F-10). Direct user/admin sessions carry no scopes and are never
+ * scope-restricted — only API-token principals (`viaApiToken`) are.
+ */
+interface RecordAuth {
+  auth: AuthContext | null;
+  viaApiToken: boolean;
+  scopes: string[];
+}
+
+async function getRecordAuth(request: Request, jwtSecret: string): Promise<RecordAuth> {
   return await timeFor(request, "auth_verify", async () => {
-    const token = request.headers.get("authorization")?.replace("Bearer ", "");
-    if (!token) return null;
+    const raw = request.headers.get("authorization")?.replace("Bearer ", "");
+    if (!raw) return { auth: null, viaApiToken: false, scopes: [] };
+    // Strip the `cwat_`/`vbat_` API-token prefix so API tokens authenticate on
+    // the REST records surface (they carry per-collection scopes enforced below).
+    const token = stripApiTokenPrefix(raw);
     // Centralized verifier — fixes N-1 admin-token-bypass. Accepts user or
     // admin (records API serves both); checks signature, audience, expiry,
     // issuer, jti revocation, and password_reset_at.
     const ctx = await verifyAuthToken(token, jwtSecret);
-    if (!ctx || (ctx.type !== "user" && ctx.type !== "admin")) return null;
+    if (!ctx || (ctx.type !== "user" && ctx.type !== "admin"))
+      return { auth: null, viaApiToken: false, scopes: [] };
     const out: AuthContext = { id: ctx.id, type: ctx.type };
     if (ctx.email) out.email = ctx.email;
-    return out;
+    return { auth: out, viaApiToken: !!ctx.viaApiToken, scopes: ctx.scopes ?? [] };
   });
+}
+
+/**
+ * Enforce per-collection API-token scopes (F-10). Direct sessions (not via an
+ * API token) are unrestricted here — their access is governed by collection
+ * rules / admin bypass as before. An API-token principal must carry a scope
+ * satisfying `collection:<name>:<action>` (global `read`/`write` still count).
+ */
+function tokenScopeAllows(a: RecordAuth, collection: string, method: string): boolean {
+  if (!a.viaApiToken) return true;
+  const action = method === "GET" || method === "HEAD" ? "read" : "write";
+  return hasScope(a.scopes, `collection:${collection}:${action}`);
 }
 
 export function makeRecordsPlugin(jwtSecret: string) {
@@ -117,7 +146,10 @@ export function makeRecordsPlugin(jwtSecret: string) {
         if (!col) {
           return c.json({ error: "Collection not found", code: 404 }, 404);
         }
-        const auth = await getAuthContext(request, jwtSecret);
+        const authz = await getRecordAuth(request, jwtSecret);
+        if (!tokenScopeAllows(authz, collection, c.req.method))
+          return c.json({ error: "Insufficient token scope", code: 403 }, 403);
+        const auth = authz.auth;
 
         // null = public; "" = admin only; expression rule → applied as filter
         recordListRule(request, col.name, col.list_rule, auth);
@@ -244,7 +276,10 @@ export function makeRecordsPlugin(jwtSecret: string) {
         if (!col) {
           return c.json({ error: "Collection not found", code: 404 }, 404);
         }
-        const auth = await getAuthContext(request, jwtSecret);
+        const authz = await getRecordAuth(request, jwtSecret);
+        if (!tokenScopeAllows(authz, collection, c.req.method))
+          return c.json({ error: "Insufficient token scope", code: 403 }, 403);
+        const auth = authz.auth;
         const record = await timeFor(request, "db_exec", () => getRecord(collection, id));
         if (!record) {
           return c.json({ error: "Record not found", code: 404 }, 404);
@@ -278,7 +313,10 @@ export function makeRecordsPlugin(jwtSecret: string) {
           return c.json({ error: "Collection not found", code: 404 }, 404);
         }
         const body = await c.req.json().catch(() => undefined);
-        const auth = await getAuthContext(request, jwtSecret);
+        const authz = await getRecordAuth(request, jwtSecret);
+        if (!tokenScopeAllows(authz, collection, c.req.method))
+          return c.json({ error: "Insufficient token scope", code: 403 }, 403);
+        const auth = authz.auth;
         // For create, rule evaluates against the incoming body
         if (
           !checkRule(
@@ -312,7 +350,10 @@ export function makeRecordsPlugin(jwtSecret: string) {
           return c.json({ error: "Collection not found", code: 404 }, 404);
         }
         const body = await c.req.json().catch(() => undefined);
-        const auth = await getAuthContext(request, jwtSecret);
+        const authz = await getRecordAuth(request, jwtSecret);
+        if (!tokenScopeAllows(authz, collection, c.req.method))
+          return c.json({ error: "Insufficient token scope", code: 403 }, 403);
+        const auth = authz.auth;
         const existing = await getRecord(collection, id);
         if (!existing) {
           return c.json({ error: "Record not found", code: 404 }, 404);
@@ -355,7 +396,10 @@ export function makeRecordsPlugin(jwtSecret: string) {
         if (!col) {
           return c.json({ error: "Collection not found", code: 404 }, 404);
         }
-        const auth = await getAuthContext(request, jwtSecret);
+        const authz = await getRecordAuth(request, jwtSecret);
+        if (!tokenScopeAllows(authz, collection, c.req.method))
+          return c.json({ error: "Insufficient token scope", code: 403 }, 403);
+        const auth = authz.auth;
         const existing = await getRecord(collection, id);
         if (!existing) {
           return c.json({ error: "Record not found", code: 404 }, 404);
@@ -407,7 +451,10 @@ export function makeRecordsPlugin(jwtSecret: string) {
         if (col.history_enabled !== 1) {
           return c.json({ error: "history is not enabled for this collection", code: 404 }, 404);
         }
-        const auth = await getAuthContext(request, jwtSecret);
+        const authz = await getRecordAuth(request, jwtSecret);
+        if (!tokenScopeAllows(authz, collection, c.req.method))
+          return c.json({ error: "Insufficient token scope", code: 403 }, 403);
+        const auth = authz.auth;
         const existing = await getRecord(collection, id);
         // Allow listing history rows even after a delete — gate purely on view_rule
         // against the most recent snapshot.
@@ -443,7 +490,10 @@ export function makeRecordsPlugin(jwtSecret: string) {
         if (col.history_enabled !== 1) {
           return c.json({ error: "history is not enabled for this collection", code: 404 }, 404);
         }
-        const auth = await getAuthContext(request, jwtSecret);
+        const authz = await getRecordAuth(request, jwtSecret);
+        if (!tokenScopeAllows(authz, collection, c.req.method))
+          return c.json({ error: "Insufficient token scope", code: 403 }, 403);
+        const auth = authz.auth;
         if (auth?.type !== "admin") {
           return c.json({ error: "restore is admin-only", code: 403 }, 403);
         }

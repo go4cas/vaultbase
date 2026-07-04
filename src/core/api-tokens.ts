@@ -38,20 +38,33 @@ export const MAX_API_TOKEN_TTL_SEC = 10 * 365 * 24 * 60 * 60;
 export const DEFAULT_API_TOKEN_TTL_SEC = 90 * 24 * 60 * 60;
 
 /**
- * Known scope strings. Phase-1 ships a coarse set; per-collection scopes
- * (`collection:posts:read`, `collection:posts:write`) deferred to the
- * RBAC sprint — the wire format here already supports them.
+ * Coarse, fixed scope strings. Per-collection scopes (`collection:<name>:read`,
+ * `collection:<name>:write`, with `*` wildcards) are dynamic and validated by
+ * {@link isValidScope} rather than enumerated here — that's F-10, "hand an agent
+ * a token that reads posts and touches nothing else."
  */
 export const KNOWN_SCOPES = [
   "admin", // full admin equivalent
-  "read", // any GET on records / files / logs
-  "write", // POST/PATCH/DELETE on records (rules still apply)
+  "read", // any GET on records / files (all collections)
+  "write", // POST/PATCH/DELETE on records (all collections; rules still apply)
   "mcp:read", // MCP server: read-only tools
   "mcp:write", // MCP server: mutating tools (records, hooks, settings)
   "mcp:admin", // MCP server: full admin
   "mcp:sql", // MCP server: raw SQL tool
 ] as const;
 export type Scope = (typeof KNOWN_SCOPES)[number] | string;
+
+/**
+ * Per-collection scope grammar: `collection:<name>:<action>` where `<name>` is a
+ * collection name or `*`, and `<action>` is `read`, `write`, or `*`.
+ * Examples: `collection:posts:read`, `collection:posts:*`, `collection:*:read`.
+ */
+const COLLECTION_SCOPE_RE = /^collection:[A-Za-z0-9_*]+:(read|write|\*)$/;
+
+/** True if `s` is a recognized coarse scope or a well-formed per-collection scope. */
+export function isValidScope(s: string): boolean {
+  return (KNOWN_SCOPES as readonly string[]).includes(s) || COLLECTION_SCOPE_RE.test(s);
+}
 
 export interface MintInput {
   name: string;
@@ -78,7 +91,7 @@ export async function mintApiToken(input: MintInput, jwtSecret: string): Promise
   if (!Array.isArray(input.scopes) || input.scopes.length === 0)
     throw new Error("at least one scope required");
   for (const s of input.scopes) {
-    if (typeof s !== "string" || s.length === 0 || s.length > 64)
+    if (typeof s !== "string" || s.length === 0 || s.length > 64 || !isValidScope(s))
       throw new Error(`invalid scope: ${s}`);
   }
 
@@ -191,15 +204,33 @@ export async function loadApiTokenByJti(jti: string): Promise<ApiTokenRow | null
 // ── Scope check helpers ──────────────────────────────────────────────────────
 
 /**
- * True if the token's scopes satisfy `required`. `admin` implies every
- * other scope. `mcp:admin` implies every other `mcp:*`. `read` and `write`
- * are independent (a `read` token can't write; a `write` token can't read).
+ * True if the token's scopes satisfy `required`.
+ *
+ * - `admin` implies every scope; `mcp:admin` implies every `mcp:*`.
+ * - `read` and `write` are independent (a `read` token can't write, and vice-versa).
+ * - A per-collection `required` (`collection:<name>:<action>`) is satisfied by:
+ *     · the exact scope, or a `collection:<name>:*` / `collection:*:<action>` /
+ *       `collection:*:*` wildcard, **or**
+ *     · the matching GLOBAL scope — a `read` token reads any collection, a
+ *       `write` token writes any collection. (So global scopes stay a superset
+ *       of per-collection ones; per-collection scopes are strictly narrower.)
  */
 export function hasScope(tokenScopes: readonly string[], required: string): boolean {
   if (tokenScopes.includes("admin")) return true;
   if (tokenScopes.includes(required)) return true;
   if (required.startsWith("mcp:") && tokenScopes.includes("mcp:admin")) return true;
-  if (required.startsWith("collection:") && tokenScopes.includes("admin")) return true;
+  if (required.startsWith("collection:")) {
+    const parts = required.split(":");
+    const name = parts[1];
+    const action = parts[2];
+    if (!name || !action) return false;
+    if (action === "read" && tokenScopes.includes("read")) return true;
+    if (action === "write" && tokenScopes.includes("write")) return true;
+    if (tokenScopes.includes(`collection:${name}:*`)) return true;
+    if (tokenScopes.includes(`collection:*:${action}`)) return true;
+    if (tokenScopes.includes("collection:*:*")) return true;
+    return false;
+  }
   return false;
 }
 

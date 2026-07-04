@@ -17,6 +17,7 @@ import { ValidationError } from "../core/validate.ts";
 import { checkRuleOrThrow, recordListRule, RuleDeniedError } from "./_rules.ts";
 import type { AuthContext } from "../core/rules.ts";
 import { verifyAuthToken } from "../core/sec.ts";
+import { hasScope, stripApiTokenPrefix } from "../core/api-tokens.ts";
 import { normalizeApiPath } from "../core/api-paths.ts";
 
 interface BatchRequest {
@@ -32,15 +33,22 @@ interface BatchResult {
 
 const MAX_BATCH = 100;
 
-async function extractAuth(request: Request, jwtSecret: string): Promise<AuthContext | null> {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) return null;
-  // Centralized verifier — fixes N-1 admin-token-bypass. Accept user or admin.
-  const ctx = await verifyAuthToken(token, jwtSecret);
-  if (!ctx || (ctx.type !== "user" && ctx.type !== "admin")) return null;
+interface BatchAuth {
+  auth: AuthContext | null;
+  viaApiToken: boolean;
+  scopes: string[];
+}
+
+async function extractAuth(request: Request, jwtSecret: string): Promise<BatchAuth> {
+  const raw = request.headers.get("authorization")?.replace("Bearer ", "");
+  if (!raw) return { auth: null, viaApiToken: false, scopes: [] };
+  // Strip the API-token prefix so API tokens authenticate here too (scoped per op below).
+  const ctx = await verifyAuthToken(stripApiTokenPrefix(raw), jwtSecret);
+  if (!ctx || (ctx.type !== "user" && ctx.type !== "admin"))
+    return { auth: null, viaApiToken: false, scopes: [] };
   const out: AuthContext = { id: ctx.id, type: ctx.type };
   if (ctx.email) out.email = ctx.email;
-  return out;
+  return { auth: out, viaApiToken: !!ctx.viaApiToken, scopes: ctx.scopes ?? [] };
 }
 
 interface ParsedOp {
@@ -186,7 +194,8 @@ export function makeBatchPlugin(jwtSecret: string) {
     ),
     async (c) => {
       const request = c.req.raw;
-      const auth = await extractAuth(request, jwtSecret);
+      const authz = await extractAuth(request, jwtSecret);
+      const auth = authz.auth;
       const body = c.req.valid("json");
       const requests = body.requests;
       if (!Array.isArray(requests) || requests.length === 0) {
@@ -203,6 +212,17 @@ export function makeBatchPlugin(jwtSecret: string) {
         const p = parseOp(r.method ?? "", r.url ?? "");
         if ("error" in p) {
           return c.json({ error: `Request ${i}: ${p.error}`, code: 422 }, 422);
+        }
+        // F-10: per-collection token-scope enforcement (API-token principals
+        // only). Fail the whole batch before any write if a sub-op is out of scope.
+        if (authz.viaApiToken) {
+          const action = p.kind === "list" || p.kind === "get" ? "read" : "write";
+          if (!hasScope(authz.scopes, `collection:${p.collection}:${action}`)) {
+            return c.json(
+              { error: `Request ${i}: insufficient token scope for '${p.collection}'`, code: 403 },
+              403,
+            );
+          }
         }
         parsed.push(p);
       }

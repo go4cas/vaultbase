@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../db/client.ts";
 import { admin, apiTokens, tokenRevocations } from "../db/schema.ts";
 import type { AuthContext } from "./rules.ts";
+import { type AdminRole, normalizeRole } from "./admin-roles.ts";
 import { parseCidr, ipInCidr, type ParsedCidr } from "./hook-egress.ts";
 
 /**
@@ -211,12 +212,21 @@ export async function verifyAuthToken(
 export async function getAdmin(
   request: Request,
   jwtSecret: string,
-): Promise<{ id: string; email: string; viaApiToken: boolean } | null> {
+): Promise<{ id: string; email: string; viaApiToken: boolean; role: AdminRole } | null> {
   const token = extractBearer(request);
   if (!token) return null;
   const ctx = await verifyAuthToken(token, jwtSecret, { audience: "admin" });
   if (!ctx) return null;
-  return { id: ctx.id, email: ctx.email ?? "", viaApiToken: !!ctx.viaApiToken };
+  // Role is read fresh from the admin row (F-9) so a demotion takes effect
+  // immediately, without waiting for the token to expire. `ctx.id` is the admin
+  // id for both direct admin JWTs and API-token principals (minting admin).
+  const rows = await getDb()
+    .select({ role: admin.role })
+    .from(admin)
+    .where(eq(admin.id, ctx.id))
+    .limit(1);
+  const role = normalizeRole(rows[0]?.role);
+  return { id: ctx.id, email: ctx.email ?? "", viaApiToken: !!ctx.viaApiToken, role };
 }
 
 /** Boolean form of {@link getAdmin} — true iff a valid, non-revoked admin token. */

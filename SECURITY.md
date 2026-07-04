@@ -6,9 +6,11 @@ Cogworks has three principal classes:
 
 1. **Anonymous / unauthenticated** — public records only (`view_rule = null`).
 2. **User** (auth-collection JWT) — gated by per-collection rule expressions.
-3. **Admin** (`cogworks_admin` row) — bypasses all rule checks; can author hooks, custom routes, scheduled jobs, queue workers, view collections. Admins are trusted with code execution on the host process.
+3. **Admin** (`cogworks_admin` row) — bypasses all collection rules. Admins carry an operator **role** (F-9): `owner` | `developer` | `editor` | `viewer`, ascending. **Only `owner`/`developer` may author hooks, custom routes, scheduled jobs, queue workers, or use the SQL runner** — i.e. only they get code execution on the host. `editor`/`viewer` exist so you can grant teammates data/read access *without* that power.
 
-Treat the admin role as **operator-equivalent**. Compromise of any admin account is equivalent to root on the box.
+Treat an `owner`/`developer` admin as **operator-equivalent**: authoring a hook is arbitrary code execution in the API process, so compromise of such an account is equivalent to root on the box.
+
+> **Scope note (F-9, current):** roles gate the **control plane** — authoring code, settings, backups, token minting, admin management. Data-plane per-role enforcement (restricting what `editor`/`viewer` may read/write on the records API) is a planned refinement; today *every* admin still bypasses collection rules for **data** access, but only `owner`/`developer` can author **code**.
 
 ## Admin-authored code execution surfaces
 
@@ -60,6 +62,19 @@ prefer `helpers.http.request` for new code.
 
 `helpers.query` does NOT enforce the egress guard — it goes through the
 SQLite rule engine, not the network.
+
+**The egress guard is not a sandbox.** It reduces *accidental* SSRF from
+`helpers.http` — it does **not** contain a hostile hook author. Hook/route/job
+code runs in the API process with the full JS global scope reachable (`fetch`,
+`Bun`, `process`, `globalThis`), so a determined author can bypass the guard
+entirely: raw `fetch`, spawn a subprocess, read the data directory, exfiltrate
+the JWT secret. This is **by design** — authoring server-side code is a trusted,
+host-RCE-equivalent capability (see Trust boundaries), which is exactly why it
+is gated behind the `owner`/`developer` roles. Do not treat the egress denylist
+or the execution timeout as a security boundary against a malicious author; they
+are guardrails against *accidental* mistakes in otherwise-trusted code. If you
+must run untrusted hook code, isolate the whole process at the OS level (network
+namespace + seccomp/nftables); Cogworks does not sandbox it in-process.
 
 ## Token lifecycle
 
