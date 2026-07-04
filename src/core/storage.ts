@@ -99,6 +99,15 @@ interface S3LikeClient {
   };
   delete(key: string): Promise<unknown>;
   exists(key: string): Promise<boolean>;
+  /** Generate a time-limited signed GET URL for a key (E-4b). */
+  presign(key: string, opts?: { expiresIn?: number; method?: string }): string;
+}
+
+/** Test-only S3 client override — injected by tests that can't reach real S3. */
+let s3ClientOverride: S3LikeClient | null = null;
+export function _setS3ClientForTests(client: S3LikeClient | null): void {
+  s3ClientOverride = client;
+  cachedS3Client = null;
 }
 
 interface BunWithS3 {
@@ -114,6 +123,7 @@ interface BunWithS3 {
 let cachedS3Client: { client: S3LikeClient; key: string } | null = null;
 
 function s3Client(s3: S3Config): S3LikeClient {
+  if (s3ClientOverride) return s3ClientOverride;
   const fingerprint = `${s3.endpoint}|${s3.bucket}|${s3.region}|${s3.accessKeyId}`;
   if (cachedS3Client && cachedS3Client.key === fingerprint) return cachedS3Client.client;
   const ctor = (Bun as unknown as BunWithS3).S3Client;
@@ -230,6 +240,33 @@ export function publicUrlFor(key: string): string | null {
   if (cfg.driver !== "s3" || !cfg.s3?.publicUrl) return null;
   const base = cfg.s3.publicUrl.replace(/\/+$/, "");
   return `${base}/${encodeURIComponent(key)}`;
+}
+
+/**
+ * Opt-in: redirect S3 downloads to a signed URL instead of proxying the bytes
+ * through the server (E-4b). Setting `storage.redirect_downloads` (default off).
+ */
+export function redirectDownloadsEnabled(): boolean {
+  const v = getAllSettings()["storage.redirect_downloads"];
+  return v === "1" || v === "true";
+}
+
+/**
+ * A URL the client can fetch the object directly from (E-4b) — a public-CDN URL
+ * if `s3.public_url` is set, else a short-lived presigned URL. `null` for the
+ * local driver (nothing to offload) or if presigning fails. TTL kept short since
+ * the caller has already enforced access.
+ */
+export function directDownloadUrl(key: string, expiresIn = 120): string | null {
+  const cfg = getConfig();
+  if (cfg.driver !== "s3" || !cfg.s3) return null;
+  const cdn = publicUrlFor(key);
+  if (cdn) return cdn;
+  try {
+    return s3Client(cfg.s3).presign(key, { expiresIn, method: "GET" });
+  } catch {
+    return null;
+  }
 }
 
 /** Where the local thumb cache lives — always on local FS, even when primary storage is S3. */

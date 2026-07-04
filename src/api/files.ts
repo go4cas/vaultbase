@@ -18,7 +18,15 @@ import {
 import { getRecord } from "../core/records.ts";
 import { evaluateRule, type AuthContext } from "../core/rules.ts";
 import type { RequestContextLike } from "../core/filter.ts";
-import { deleteFile, fileExists, fileResponse, readFile, writeFile } from "../core/storage.ts";
+import {
+  deleteFile,
+  directDownloadUrl,
+  fileExists,
+  fileResponse,
+  readFile,
+  redirectDownloadsEnabled,
+  writeFile,
+} from "../core/storage.ts";
 import { tokenWindowSeconds } from "../core/auth-tokens.ts";
 import {
   extractBearer,
@@ -604,6 +612,15 @@ export function makeFilesPlugin(uploadDir: string, jwtSecret: string) {
 
       const spec = parseThumbSpec(queryThumb);
       if (!spec) {
+        // E-4b: offload the raw-file transfer to a signed / CDN URL rather than
+        // proxying bytes through the server — but only when the field doesn't
+        // need per-fetch enforcement (one-time or IP-bound) that a URL can't honor.
+        const perFetchControlled =
+          !!fieldDefForAudit?.options?.oneTimeToken || !!fieldDefForAudit?.options?.bindTokenIp;
+        if (redirectDownloadsEnabled() && !perFetchControlled) {
+          const url = directDownloadUrl(filename);
+          if (url) return c.redirect(url, 302);
+        }
         const r = await fileResponse(filename);
         if (!r) {
           return c.json({ error: "File not found", code: 404 }, 404);
