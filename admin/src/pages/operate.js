@@ -2,82 +2,102 @@ import { html, reactive } from '@arrow-js/core'
 import { useMeta } from '../framework/index.js'
 import { useToast } from '../composables/useToast.js'
 import { api } from '../lib/api.js'
+import { SettingsPanels } from '../components/SettingsPanels.js'
 
 export const meta = { layout: 'menu', title: 'Settings' }
 
-function groupSettings(/** @type {Record<string, any>} */ flat) {
-  /** @type {Record<string, Array<{ key: string, value: any }>>} */ const groups = {}
-  for (const [k, v] of Object.entries(flat ?? {})) {
-    const g = k.includes('.') ? k.slice(0, k.indexOf('.')) : 'general'
-    ;(groups[g] ??= []).push({ key: k, value: v })
-  }
-  return groups
-}
-const render = (/** @type {any} */ v) => (v === null || v === undefined || v === '' ? '—' : typeof v === 'object' ? JSON.stringify(v) : String(v))
+const mailTest = { label: 'Send test', run: async () => {
+  const to = globalThis.prompt('Send a test email to:')
+  if (!to) throw new Error('cancelled')
+  const r = /** @type {any} */ (await api.post('/api/v1/admin/settings/smtp/test', { to }))
+  if (r?.error) throw new Error(r.error)
+} }
+const storageTest = { label: 'Test storage', run: async () => {
+  const r = /** @type {any} */ (await api.post('/api/v1/admin/settings/storage/test', {}))
+  if (r?.error) throw new Error(r.error)
+} }
+
+/** @type {import('../components/SettingsPanels.js').Panel[]} */
+const PANELS = [
+  { title: 'Application', fields: [
+    { key: 'app.url', label: 'App URL', placeholder: 'https://api.example.com', help: 'Used in emails and OAuth callbacks.' },
+    { key: 'docs.enabled', label: 'Serve OpenAPI docs', type: 'bool' },
+  ] },
+  { title: 'Mail', help: 'Outbound email for verification, resets, and OTP.', test: mailTest, fields: [
+    { key: 'mail.transport', label: 'Transport', type: 'select', options: ['smtp', 'http', 'none'] },
+    { key: 'mail.http.api_key', label: 'HTTP provider API key', type: 'password' },
+  ] },
+  { title: 'Rate limiting & queues', fields: [
+    { key: 'rate_limit.enabled', label: 'Enable rate limiting', type: 'bool' },
+    { key: 'queues.visibility_timeout_sec', label: 'Queue visibility timeout (s)', type: 'number' },
+  ] },
+  { title: 'CORS & hook egress', fields: [
+    { key: 'cors.origins', label: 'Allowed origins', placeholder: 'https://app.example.com, https://admin.example.com', help: 'Comma-separated. Empty = same-origin only.' },
+    { key: 'hooks.http.allow', label: 'Hook HTTP allowlist', placeholder: 'api.stripe.com, *.internal' },
+    { key: 'hooks.http.deny', label: 'Hook HTTP denylist' },
+  ] },
+  { title: 'Telemetry', fields: [
+    { key: 'metrics.enabled', label: 'Prometheus metrics', type: 'bool' },
+    { key: 'metrics.token', label: 'Metrics token', type: 'password' },
+    { key: 'otel.endpoint', label: 'OTel endpoint' },
+    { key: 'otel.service_name', label: 'OTel service name', placeholder: 'cogworks' },
+  ] },
+  { title: 'Execution limits', fields: [
+    { key: 'execution.timeout_ms', label: 'Hook/route timeout (ms)', type: 'number' },
+    { key: 'hooks.slow_ms', label: 'Slow-hook warning (ms)', type: 'number' },
+  ] },
+  { title: 'Storage', help: 'Where uploaded files live.', test: storageTest, fields: [
+    { key: 's3.bucket', label: 'S3 / R2 bucket', placeholder: 'leave empty for local disk' },
+  ] },
+]
 
 function SettingsPage() {
   useMeta({ title: 'Settings · Cogworks' })
   const toast = useToast()
 
-  const s = reactive(/** @type {{ settings: any, storage: any, busy: boolean }} */ ({ settings: null, storage: null, busy: false }))
-  let setKey = ''
-  let setVal = ''
-  const load = () => api.get('/api/v1/admin/settings').then((r) => { s.settings = /** @type {any} */ (r)?.data ?? {} }).catch(() => { s.settings = {} })
-  load()
+  const s = reactive(/** @type {{ storage:any, latest:string, advOpen:boolean, busy:boolean }} */ ({ storage: null, latest: 'v0.1.0', advOpen: false, busy: false }))
   api.get('/api/v1/admin/settings/storage/status').then((r) => { s.storage = /** @type {any} */ (r)?.data ?? {} }).catch(() => { s.storage = {} })
-
-  async function applySetting() {
-    if (s.busy) return
-    if (!setKey.trim()) { toast.error('Key is required'); return }
+  api.get('/api/v1/admin/settings').then((r) => { s.latest = /** @type {any} */ (r)?.data?.['update_check.latest_version'] || 'v0.1.0' }).catch(() => {})
+  let advKey = ''; let advVal = ''
+  async function setRaw() {
+    if (!advKey.trim()) { toast.error('Key required'); return }
     s.busy = true
-    try {
-      const r = /** @type {any} */ (await api.patch('/api/v1/admin/settings', { [setKey.trim()]: setVal }))
-      if (r?.error) throw new Error(r.error)
-      toast.success('Setting saved'); await load()
-    } catch (/** @type {any} */ e) { toast.error(e?.message || 'Save failed') } finally { s.busy = false }
+    try { const r = /** @type {any} */ (await api.patch('/api/v1/admin/settings', { [advKey.trim()]: advVal })); if (r?.error) throw new Error(r.error); toast.success('Saved') } catch (/** @type {any} */ e) { toast.error(e?.message || 'Failed') } finally { s.busy = false }
   }
 
   const stat = (/** @type {string} */ label, /** @type {()=>any} */ val, /** @type {string} */ tone = '') => html`
-    <div class="card p-4"><div class="field-label">${label}</div><div class="mt-1 font-display text-xl font-semibold" style="${`color:${tone ?? 'var(--color-fg)'}`}">${val}</div></div>`
+    <div class="card p-4"><div class="field-label">${label}</div><div class="mt-1 font-display text-xl font-semibold" style="${`color:${tone || 'var(--color-fg)'}`}">${val}</div></div>`
 
   return html`
     <div class="space-y-5">
       <div>
         <h1 class="font-display text-2xl font-semibold text-fg">Settings</h1>
-        <p class="mt-0.5 text-sm text-fg-soft">Configuration and the levers that keep the server running.</p>
+        <p class="mt-0.5 text-sm text-fg-soft">Configure your Cogworks server.</p>
       </div>
 
       <div class="grid gap-4 sm:grid-cols-3">
-        ${stat('Latest release', () => (s.settings?.['update_check.latest_version'] || 'v0.1.0'), 'var(--color-brand)')}
+        ${stat('Latest release', () => s.latest, 'var(--color-brand)')}
         ${stat('Storage', () => (s.storage === null ? '…' : (s.storage.driver ?? 'local')))}
-        ${stat('Settings keys', () => (s.settings === null ? '…' : Object.keys(s.settings).length))}
+        ${stat('Server', () => 'operational', 'var(--color-ok)')}
       </div>
 
-      <div class="card card-pad">
-        <div class="mb-3 card-title">Set a value</div>
-        <div class="flex flex-wrap items-center gap-2">
-          <input class="input flex-1" placeholder="setting.key" @input="${(/** @type {any} */ e) => { setKey = e.target.value }}" />
-          <input class="input flex-1" placeholder="value" @input="${(/** @type {any} */ e) => { setVal = e.target.value }}" />
-          <button class="btn btn-primary" aria-disabled="${() => (s.busy ? 'true' : 'false')}" @click="${applySetting}">${() => (s.busy ? 'Saving…' : 'Set')}</button>
-        </div>
-        <p class="mt-2 text-xs text-fg-faint">Owner escape hatch — writes any key via <span class="mono">PATCH /admin/settings</span>. Curated per-concern panels are the next build.</p>
-      </div>
+      ${SettingsPanels({ panels: PANELS })}
 
-      ${() => {
-        if (s.settings === null) return html`<div class="card p-8 text-center text-sm text-fg-faint">Loading settings…</div>`
-        const groups = groupSettings(s.settings)
-        const names = Object.keys(groups).sort()
-        if (!names.length) return html`<div class="card p-8 text-center text-sm text-fg-faint">No settings configured — defaults in effect.</div>`
-        return html`<div class="space-y-4">${names.map((g) => html`
-          <div class="card overflow-hidden">
-            <div class="card-head"><span class="card-title">${g}</span></div>
-            <div>${groups[g].map((row) => html`
-              <div class="grid trow" style="grid-template-columns:1.4fr 1fr">
-                <div class="tcell tcell-mono text-fg-soft">${row.key}</div>
-                <div class="tcell tcell-mono truncate text-fg">${render(row.value)}</div>
-              </div>`.key(row.key))}</div>
-          </div>`.key(g))}</div>`
-      }}
+      <div class="card">
+        <button class="card-head w-full cursor-pointer text-left" @click="${() => { s.advOpen = !s.advOpen }}">
+          <span class="card-title">Advanced — raw key/value</span>
+          <span class="text-xs text-fg-faint">${() => (s.advOpen ? 'hide' : 'show')}</span>
+        </button>
+        ${() => s.advOpen ? html`
+          <div class="card-pad space-y-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <input class="input flex-1" placeholder="setting.key" @input="${(/** @type {any} */ e) => { advKey = e.target.value }}" />
+              <input class="input flex-1" placeholder="value" @input="${(/** @type {any} */ e) => { advVal = e.target.value }}" />
+              <button class="btn btn-secondary" aria-disabled="${() => (s.busy ? 'true' : 'false')}" @click="${setRaw}">Set</button>
+            </div>
+            <p class="text-xs text-fg-faint">Writes any key directly via <span class="mono">PATCH /admin/settings</span>. For keys not covered above.</p>
+          </div>` : ''}
+      </div>
     </div>
   `
 }
