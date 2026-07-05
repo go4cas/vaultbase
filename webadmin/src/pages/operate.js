@@ -1,5 +1,6 @@
 import { html, reactive } from '@arrow-js/core'
 import { useMeta } from '../framework/index.js'
+import { useToast } from '../composables/useToast.js'
 import { api } from '../lib/api.js'
 
 export const meta = { layout: 'menu', title: 'Settings' }
@@ -23,14 +24,35 @@ const render = (/** @type {any} */ v) => {
 
 function SettingsPage() {
   useMeta({ title: 'Settings · Cogworks' })
+  const toast = useToast()
 
   const s = reactive(
-    /** @type {{ settings: any, storage: any }} */
-    ({ settings: null, storage: null }),
+    /** @type {{ settings: any, storage: any, busy: boolean }} */
+    ({ settings: null, storage: null, busy: false }),
   )
+  let setKey = ''
+  let setVal = ''
 
-  api.get('/api/v1/admin/settings').then((r) => { s.settings = /** @type {any} */ (r)?.data ?? {} }).catch(() => { s.settings = {} })
+  const load = () => api.get('/api/v1/admin/settings').then((r) => { s.settings = /** @type {any} */ (r)?.data ?? {} }).catch(() => { s.settings = {} })
+  load()
   api.get('/api/v1/admin/settings/storage/status').then((r) => { s.storage = /** @type {any} */ (r)?.data ?? {} }).catch(() => { s.storage = {} })
+
+  async function applySetting() {
+    if (s.busy) return
+    if (!setKey.trim()) { toast.error('Key is required'); return }
+    s.busy = true
+    try {
+      const r = /** @type {any} */ (await api.patch('/api/v1/admin/settings', { [setKey.trim()]: setVal }))
+      if (r?.error) throw new Error(r.error)
+      toast.success('Setting saved')
+      await load()
+    } catch (/** @type {any} */ e) {
+      toast.error(e?.message || 'Save failed')
+    } finally {
+      s.busy = false
+    }
+  }
+  const inputCls = 'rounded-control border border-line bg-surface-inset px-3 py-2 text-sm text-fg outline-none placeholder:text-fg-faint focus:border-brand'
 
   return html`
     <div class="space-y-8">
@@ -53,6 +75,16 @@ function SettingsPage() {
           <div class="font-mono text-[10px] uppercase tracking-wider text-fg-faint">Settings keys</div>
           <div class="mt-1 font-display text-xl font-semibold text-fg">${() => (s.settings === null ? '…' : Object.keys(s.settings).length)}</div>
         </div>
+      </div>
+
+      <div class="rounded-panel border border-line bg-surface-raised p-5 shadow-panel">
+        <div class="mb-3 font-mono text-[11px] uppercase tracking-wider text-fg-faint">Set a value</div>
+        <div class="flex flex-wrap items-center gap-2">
+          <input class="${`${inputCls} flex-1`}" placeholder="setting.key" @input="${(/** @type {any} */ e) => { setKey = e.target.value }}" />
+          <input class="${`${inputCls} flex-1`}" placeholder="value" @input="${(/** @type {any} */ e) => { setVal = e.target.value }}" />
+          <button @click="${applySetting}" aria-disabled="${() => (s.busy ? 'true' : 'false')}" class="${() => `rounded-control px-4 py-2 text-sm font-semibold text-[#12233f] transition ${s.busy ? 'bg-brand/40' : 'bg-brand hover:bg-brand-hover'}`}">${() => (s.busy ? 'saving…' : 'Set')}</button>
+        </div>
+        <p class="mt-2 font-mono text-[10px] text-fg-faint">Owner escape hatch — writes any key via PATCH /admin/settings. Curated per-concern panels are the next build.</p>
       </div>
 
       ${() => {
