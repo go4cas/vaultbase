@@ -36,9 +36,10 @@ function CollectionDetail() {
   const toast = useToast()
 
   const s = reactive(
-    /** @type {{ col: any, error: string, records: any[]|null, editing: string|null, saving: boolean, addingField: boolean }} */
-    ({ col: null, error: '', records: null, editing: null, saving: false, addingField: false }),
+    /** @type {{ col: any, error: string, records: any[]|null, editing: string|null, saving: boolean, addingField: boolean, page: number, totalPages: number, totalItems: number, search: string }} */
+    ({ col: null, error: '', records: null, editing: null, saving: false, addingField: false, page: 1, totalPages: 1, totalItems: 0, search: '' }),
   )
+  const PER_PAGE = 20
   useMeta({ title: () => `${s.col?.name ?? 'Collection'} · Cogworks` })
   // Plain (non-reactive) form buffers so per-keystroke edits don't re-render the form.
   /** @type {Record<string, any>} */ let formInit = {}
@@ -46,6 +47,7 @@ function CollectionDetail() {
   /** @type {Record<string, string>} */ let ruleVals = {}
   let newFieldName = ''
   let newFieldType = 'text'
+  let searchTerm = ''
 
   const RULE_KEYS = /** @type {const} */ (['list_rule', 'view_rule', 'create_rule', 'update_rule', 'delete_rule'])
   function initRules() {
@@ -101,7 +103,31 @@ function CollectionDetail() {
   const editableFields = () => parseFields(s.col?.fields ?? '[]').filter((/** @type {any} */ f) => !f.system && !f.implicit)
 
   function loadRecords() {
-    api.get(`/api/v1/${s.col.name}?perPage=50`).then((r) => { s.records = /** @type {any} */ (r)?.data ?? [] }).catch(() => { s.records = [] })
+    const q = new URLSearchParams({ perPage: String(PER_PAGE), page: String(s.page) })
+    const term = s.search.trim().replace(/"/g, '')
+    if (term) {
+      // Contains-match across text-like fields (works without an FTS index).
+      const textFields = editableFields()
+        .filter((/** @type {any} */ f) => ['text', 'email', 'url', 'editor'].includes(f.type))
+        .map((/** @type {any} */ f) => f.name)
+      if (textFields.length) q.set('filter', textFields.map((f) => `${f} ~ "${term}"`).join(' || '))
+    }
+    api.get(`/api/v1/${s.col.name}?${q.toString()}`).then((r) => {
+      const d = /** @type {any} */ (r)
+      s.records = d?.data ?? []
+      s.totalPages = d?.totalPages ?? 1
+      s.totalItems = d?.totalItems ?? (d?.data?.length ?? 0)
+    }).catch(() => { s.records = [] })
+  }
+  function goPage(/** @type {number} */ p) {
+    if (p < 1 || p > s.totalPages || p === s.page) return
+    s.page = p
+    loadRecords()
+  }
+  function runSearch(/** @type {string} */ term) {
+    s.search = term
+    s.page = 1
+    loadRecords()
   }
 
   function openForm(/** @type {any} */ rec) {
@@ -177,11 +203,19 @@ function CollectionDetail() {
           ? ''
           : html`
             <div class="overflow-hidden rounded-panel border border-line bg-surface-raised text-sm shadow-panel">
-              <div class="flex items-center justify-between border-b border-line px-4 py-3">
-                <div class="font-mono text-[11px] uppercase tracking-wider text-fg-faint">Records ${() => (s.records ? `· ${s.records.length}` : '')}</div>
-                ${s.col.type !== 'view'
-                  ? html`<button @click="${() => openForm(null)}" class="rounded-control bg-brand px-3 py-1.5 font-mono text-[11px] font-semibold text-[#12233f] transition hover:bg-brand-hover">+ new record</button>`
-                  : html`<span class="font-mono text-[11px] text-fg-faint">read-only view</span>`}
+              <div class="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3">
+                <div class="font-mono text-[11px] uppercase tracking-wider text-fg-faint">Records ${() => (s.records ? `· ${s.totalItems}` : '')}</div>
+                <div class="flex items-center gap-2">
+                  <input
+                    class="${`${inputCls} w-48 py-1.5`}"
+                    placeholder="search…"
+                    @input="${(/** @type {any} */ e) => { searchTerm = e.target.value }}"
+                    @keydown="${(/** @type {any} */ e) => { if (e.key === 'Enter') runSearch(searchTerm) }}"
+                  />
+                  ${s.col.type !== 'view'
+                    ? html`<button @click="${() => openForm(null)}" class="rounded-control bg-brand px-3 py-1.5 font-mono text-[11px] font-semibold text-[#12233f] transition hover:bg-brand-hover">+ new record</button>`
+                    : html`<span class="font-mono text-[11px] text-fg-faint">read-only view</span>`}
+                </div>
               </div>
 
               ${() =>
@@ -229,6 +263,18 @@ function CollectionDetail() {
                     </div>
                   </div>`
               }}
+
+              ${() =>
+                s.records && s.totalPages > 1
+                  ? html`
+                    <div class="flex items-center justify-between border-t border-line px-4 py-2.5 font-mono text-[11px] text-fg-faint">
+                      <span>page ${() => s.page} of ${() => s.totalPages} · ${() => s.totalItems} records</span>
+                      <span class="flex gap-1">
+                        <button @click="${() => goPage(s.page - 1)}" aria-disabled="${() => (s.page <= 1 ? 'true' : 'false')}" class="${() => `rounded-control border border-line px-2 py-1 ${s.page <= 1 ? 'opacity-40' : 'hover:bg-surface-inset'}`}">‹ prev</button>
+                        <button @click="${() => goPage(s.page + 1)}" aria-disabled="${() => (s.page >= s.totalPages ? 'true' : 'false')}" class="${() => `rounded-control border border-line px-2 py-1 ${s.page >= s.totalPages ? 'opacity-40' : 'hover:bg-surface-inset'}`}">next ›</button>
+                      </span>
+                    </div>`
+                  : ''}
             </div>
 
             <div class="overflow-hidden rounded-panel border border-line bg-surface-raised text-sm shadow-panel">
