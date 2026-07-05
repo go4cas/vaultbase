@@ -1,0 +1,47 @@
+name: Deploy landing to GitHub Pages
+
+# Publishes the static landing page (landing/) to GitHub Pages. Pure static —
+# no build step — so we just upload the folder as the Pages artifact.
+#
+# One-time setup: Repo → Settings → Pages → Build and deployment → Source =
+# "GitHub Actions". `configure-pages` with enablement:true attempts to turn it
+# on automatically, but confirm there if the first run fails.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "landing/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deploy; don't cancel an in-progress publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - name: Upload landing/ as the Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: landing
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
