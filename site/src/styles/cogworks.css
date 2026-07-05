@@ -1,0 +1,96 @@
+/* Cogworks brand theme for Starlight — cyanotype navy + lime blueprint.
+   Primary token: #B6D14A (lime). Display: Chakra Petch. Mono: Space Mono. */
+@import url("https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Barlow:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap");
+
+:root {
+  --sl-font: "Barlow", system-ui, -apple-system, sans-serif;
+  --sl-font-mono: "Space Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* ── Dark theme (default) — cyanotype navy + lime ─────────────────────── */
+:root,
+:root[data-theme="dark"] {
+  --sl-color-accent-low: #2c3a10;
+  --sl-color-accent: #b6d14a;
+  --sl-color-accent-high: #dce9a8;
+
+  --sl-color-white: #eef4fb;
+  --sl-color-gray-1: #dbe4f2;
+  --sl-color-gray-2: #c4d3ea;
+  --sl-color-gray-3: #9fb4d4;
+  --sl-color-gray-4: #6e86ab;
+  --sl-color-gray-5: #2a4a7d;
+  --sl-color-gray-6: #1d3a63;
+  --sl-color-black: #12294a;
+
+  --sl-color-bg: #12294a;
+  --sl-color-bg-nav: #17335c;
+  --sl-color-bg-sidebar: #15305a;
+  --sl-color-bg-inline-code: #0f2547;
+  --sl-color-hairline-light: #2a4a7d;
+  --sl-color-hairline: #21406e;
+  --sl-color-text-accent: #b6d14a;
+}
+
+/* ── Light theme — the "light band" aesthetic ─────────────────────────── */
+:root[data-theme="light"] {
+  --sl-color-accent-low: #e7efc7;
+  --sl-color-accent: #5f7a1e; /* darker lime for contrast on light */
+  --sl-color-accent-high: #3f5210;
+
+  --sl-color-white: #17335c;
+  --sl-color-gray-1: #23406e;
+  --sl-color-gray-2: #33517f;
+  --sl-color-gray-3: #46587a;
+  --sl-color-gray-4: #6b7c9c;
+  --sl-color-gray-5: #c4cdda;
+  --sl-color-gray-6: #e2e7ee;
+  --sl-color-gray-7: #eef1f5;
+  --sl-color-black: #ffffff;
+
+  --sl-color-bg: #ffffff;
+  --sl-color-bg-nav: #e7ebee;
+  --sl-color-bg-sidebar: #eef1f5;
+  --sl-color-bg-inline-code: #eef1f5;
+  --sl-color-text-accent: #5f7a1e;
+}
+
+/* ── Display font on headings + site title ────────────────────────────── */
+.site-title,
+.sl-markdown-content h1,
+.sl-markdown-content h2,
+.sl-markdown-content h3,
+.sl-markdown-content h4,
+.sl-markdown-content h5,
+h1#_top {
+  font-family: "Chakra Petch", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+/* Section headings get a hairline underline like the blueprint grouphead. */
+.sl-markdown-content h2 {
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--sl-color-hairline);
+}
+
+/* Inline code leans on the lime token; tabular labels stay mono. */
+.sl-markdown-content :not(pre) > code {
+  color: var(--sl-color-accent-high);
+  font-size: 0.9em;
+}
+
+/* Faint blueprint grid behind the main content (dark only). */
+:root[data-theme="dark"] .main-frame {
+  background-image:
+    linear-gradient(rgba(232, 239, 249, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(232, 239, 249, 0.035) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Tighten the mono label on code-block titles. */
+.expressive-code .frame .title,
+figure.frame figcaption {
+  font-family: var(--sl-font-mono);
+  letter-spacing: 0.3px;
+}

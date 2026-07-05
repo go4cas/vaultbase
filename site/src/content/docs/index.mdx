@@ -1,0 +1,62 @@
+---
+title: Cogworks
+description: Self-hosted, single-binary backend-as-a-service — database, REST APIs, realtime, queues, search, auth, storage, and AI (MCP).
+template: splash
+hero:
+  tagline: The works, without the work. Database, APIs, realtime, queues, search, auth, and AI in one self-hosted binary.
+  image:
+    file: ../../assets/cogworks-logo.svg
+  actions:
+    - text: Get started
+      link: /cogworks/docs/getting-started/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/go4cas/cogworks
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## One binary. All the gears.
+
+Cogworks ships fully assembled — a single self-hosted binary with every subsystem
+wired together. No Redis, no external workers, no black boxes.
+
+<CardGrid>
+  <Card title="Real SQL tables" icon="open-book">
+    Every collection is a native SQLite table — fast queries, real indexes, no
+    JSON-blob soup. [Data model →](/cogworks/docs/data-model/)
+  </Card>
+  <Card title="Auto-generated REST" icon="document">
+    Typed endpoints the moment you define a collection: filter, sort, paginate,
+    expand, project. [REST API →](/cogworks/docs/rest-api/)
+  </Card>
+  <Card title="Batteries-included auth" icon="approve-check">
+    Password, TOTP, passkeys, OAuth2, email OTP, anonymous, API tokens, operator
+    roles. [Authentication →](/cogworks/docs/authentication/)
+  </Card>
+  <Card title="Realtime" icon="bars">
+    WebSocket + SSE with per-record rule filtering, reconnect resume, and
+    presence. [Realtime →](/cogworks/docs/realtime/)
+  </Card>
+  <Card title="Queues, cron & workflows" icon="rocket">
+    Durable background jobs, UTC cron + one-off schedules, and code-first durable
+    workflows. [Extensibility →](/cogworks/docs/extensibility/)
+  </Card>
+  <Card title="AI via MCP" icon="puzzle">
+    A first-party Model Context Protocol server — scope-gated, audited agent
+    access to your data. [MCP →](/cogworks/docs/platform/)
+  </Card>
+</CardGrid>
+
+## Install
+
+```bash title="one line, signature-verified"
+curl -fsSL https://get.cogworks.dev | sh
+cogworks start   # → http://localhost:8090/_/  (setup wizard)
+```
+
+New here? Start with the [Introduction](/cogworks/docs/introduction/), then the
+[Quick start](/cogworks/docs/getting-started/).

@@ -42,9 +42,10 @@ vaultbase_data_test/
 Thumbs.db
 
 # Internal scratch: roadmap, BUILD_TODO, threat models, future-features, perf
-# baselines, superpowers plans/specs. All reside under vaultbase/docs and are
-# NOT for public consumption (the public docs site is a sibling repo).
-docs/
+# baselines, superpowers plans/specs. All reside under the repo-root docs/ and
+# are NOT for public consumption. Anchored to root (leading slash) so it does
+# NOT swallow the Starlight docs content dir at site/src/content/docs/.
+/docs/
 
 # Internal security-audit working files (the published advisory lives in
 # SECURITY.md; these are pre-publication notes only).

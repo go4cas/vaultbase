@@ -1,17 +1,18 @@
-name: Deploy landing to GitHub Pages
+name: Deploy landing + docs to GitHub Pages
 
-# Publishes the static landing page (landing/) to GitHub Pages. Pure static —
-# no build step — so we just upload the folder as the Pages artifact.
+# Publishes one GitHub Pages site composed of two sources:
+#   landing/   → served at the Pages root  (/cogworks/)          — pure static, no build
+#   site/      → built with Astro/Starlight, served at /cogworks/docs/
 #
-# One-time setup: Repo → Settings → Pages → Build and deployment → Source =
-# "GitHub Actions". `configure-pages` with enablement:true attempts to turn it
-# on automatically, but confirm there if the first run fails.
+# One-time setup: Repo → Settings → Pages → Source = "GitHub Actions".
+# configure-pages(enablement:true) attempts to turn it on automatically.
 
 on:
   push:
     branches: [main]
     paths:
       - "landing/**"
+      - "site/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -20,28 +21,49 @@ permissions:
   pages: write
   id-token: write
 
-# Allow one concurrent deploy; don't cancel an in-progress publish.
+# One concurrent deploy; don't cancel an in-progress publish.
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Build docs (Astro + Starlight)
+        working-directory: site
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+      - name: Compose site (landing at root, docs under /docs)
+        run: |
+          rm -rf _site
+          mkdir -p _site/docs
+          cp -R landing/. _site/
+          cp -R site/dist/. _site/docs/
+          rm -f _site/README.md
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
   deploy:
+    needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-      - name: Upload landing/ as the Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: landing
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
