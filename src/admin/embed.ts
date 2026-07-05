@@ -1,11 +1,11 @@
 /**
- * Bun macro: scans the admin build (`webadmin/dist`, the Quiver console) at
+ * Bun macro: scans the admin build (`admin/dist`, the Quiver console) at
  * compile time, gzip-compresses each file, and returns a base64-encoded map.
  * Result is inlined into the binary.
  *
  * Saves ~70% on text assets (HTML/JS/CSS) vs raw base64.
  *
- * Path resolution: tries `<source>/../../webadmin/dist` first, then cwd-relative
+ * Path resolution: tries `<source>/../../admin/dist` first, then cwd-relative
  * — the fallback covers any quirk where Bun macros resolve `import.meta.dir`
  * differently than runtime expects.
  */
@@ -15,8 +15,8 @@ import { gzipSync } from "node:zlib";
 
 export function embedAdminFiles(): Record<string, string> {
   const candidates = [
-    join(import.meta.dir, "../../webadmin/dist"),
-    resolve(process.cwd(), "webadmin/dist"),
+    join(import.meta.dir, "../../admin/dist"),
+    resolve(process.cwd(), "admin/dist"),
   ];
 
   let distDir: string | null = null;
@@ -29,7 +29,7 @@ export function embedAdminFiles(): Record<string, string> {
 
   if (!distDir) {
     process.stderr.write(
-      `[embed-admin] WARNING: webadmin/dist not found. Tried:\n` +
+      `[embed-admin] WARNING: admin/dist not found. Tried:\n` +
         candidates.map((c) => `  - ${c}\n`).join("") +
         `Binary will serve "Admin UI not built" at /_/.\n` +
         `Run \`bun run build:admin\` before \`bun build --compile\`.\n`,
