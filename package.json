@@ -6,11 +6,9 @@
   "scripts": {
     "dev": "bun --watch src/index.ts",
     "dev:admin": "cd webadmin && bun run dev",
-    "dev:admin-legacy": "cd admin && bun dev",
     "dev:docs": "cd site && bun run dev",
     "dev:landing": "cd landing && bun run dev",
     "build:admin": "cd webadmin && bun install --frozen-lockfile && bun run build",
-    "build:admin-legacy": "cd admin && bun run build",
     "build:docs": "cd site && bun run build",
     "build:landing": "cd landing && bun run build",
     "patch:deps": "bun scripts/patch-imagescript.ts",

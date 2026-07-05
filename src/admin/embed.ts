@@ -1,13 +1,13 @@
 /**
- * Bun macro: scans the admin build at compile time, gzip-compresses each file,
- * and returns a base64-encoded map. Result is inlined into the binary.
+ * Bun macro: scans the admin build (`webadmin/dist`, the Quiver console) at
+ * compile time, gzip-compresses each file, and returns a base64-encoded map.
+ * Result is inlined into the binary.
  *
  * Saves ~70% on text assets (HTML/JS/CSS) vs raw base64.
  *
- * Path resolution: prefers the Quiver console at `webadmin/dist`, falling back
- * to the legacy React admin at `admin/dist`. Each is tried source-relative
- * (`<source>/../../<dir>`) then cwd-relative — the fallback covers any quirk
- * where Bun macros resolve `import.meta.dir` differently than runtime expects.
+ * Path resolution: tries `<source>/../../webadmin/dist` first, then cwd-relative
+ * — the fallback covers any quirk where Bun macros resolve `import.meta.dir`
+ * differently than runtime expects.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -17,8 +17,6 @@ export function embedAdminFiles(): Record<string, string> {
   const candidates = [
     join(import.meta.dir, "../../webadmin/dist"),
     resolve(process.cwd(), "webadmin/dist"),
-    join(import.meta.dir, "../../admin/dist"),
-    resolve(process.cwd(), "admin/dist"),
   ];
 
   let distDir: string | null = null;
@@ -31,7 +29,7 @@ export function embedAdminFiles(): Record<string, string> {
 
   if (!distDir) {
     process.stderr.write(
-      `[embed-admin] WARNING: admin/dist not found. Tried:\n` +
+      `[embed-admin] WARNING: webadmin/dist not found. Tried:\n` +
         candidates.map((c) => `  - ${c}\n`).join("") +
         `Binary will serve "Admin UI not built" at /_/.\n` +
         `Run \`bun run build:admin\` before \`bun build --compile\`.\n`,
