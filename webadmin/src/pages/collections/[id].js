@@ -1,6 +1,7 @@
 import { html, reactive } from '@arrow-js/core'
 import { useMeta } from '../../framework/index.js'
 import { useRoute } from '../../composables/useRoute.js'
+import { useToast } from '../../composables/useToast.js'
 import { api, parseFields } from '../../lib/api.js'
 import { Link } from '../../components/Link.js'
 
@@ -21,17 +22,88 @@ const RULES = /** @type {const} */ ([
   ['delete_rule', 'Delete'],
 ])
 
+const cell = (/** @type {any} */ v) => {
+  if (v === null || v === undefined || v === '') return '—'
+  if (typeof v === 'object') return JSON.stringify(v)
+  return String(v)
+}
+
 function CollectionDetail() {
   const route = useRoute()
   const id = route.params().id
-  useMeta({ title: () => `${s.col?.name ?? 'Collection'} · Cogworks` })
+  const toast = useToast()
 
-  const s = reactive(/** @type {{ col: any, error: string }} */ ({ col: null, error: '' }))
+  const s = reactive(
+    /** @type {{ col: any, error: string, records: any[]|null, editing: string|null, saving: boolean }} */
+    ({ col: null, error: '', records: null, editing: null, saving: false }),
+  )
+  useMeta({ title: () => `${s.col?.name ?? 'Collection'} · Cogworks` })
+  // Plain (non-reactive) form buffers so per-keystroke edits don't re-render the form.
+  /** @type {Record<string, any>} */ let formInit = {}
+  /** @type {Record<string, any>} */ let formVals = {}
+
   api.get(`/api/v1/collections/${id}`)
-    .then((r) => { const d = /** @type {any} */ (r); if (d?.error) s.error = d.error; else s.col = d?.data ?? null })
+    .then((r) => {
+      const d = /** @type {any} */ (r)
+      if (d?.error) { s.error = d.error; return }
+      s.col = d?.data ?? null
+      if (s.col) loadRecords()
+    })
     .catch((/** @type {any} */ e) => { s.error = e?.message || 'Failed to load' })
 
+  /** Editable = user fields (not system/implicit). */
+  const editableFields = () => parseFields(s.col?.fields ?? '[]').filter((/** @type {any} */ f) => !f.system && !f.implicit)
+
+  function loadRecords() {
+    api.get(`/api/v1/${s.col.name}?perPage=50`).then((r) => { s.records = /** @type {any} */ (r)?.data ?? [] }).catch(() => { s.records = [] })
+  }
+
+  function openForm(/** @type {any} */ rec) {
+    formInit = {}
+    formVals = {}
+    for (const f of editableFields()) {
+      const v = rec ? (rec[f.name] ?? '') : ''
+      formInit[f.name] = f.type === 'bool' ? !!v : v
+      formVals[f.name] = formInit[f.name]
+    }
+    s.editing = rec ? rec.id : 'new'
+  }
+
+  function coerce() {
+    /** @type {Record<string, any>} */ const out = {}
+    for (const f of editableFields()) {
+      let v = formVals[f.name]
+      if (f.type === 'number') v = v === '' || v === null ? null : Number(v)
+      else if (f.type === 'bool') v = !!v
+      out[f.name] = v
+    }
+    return out
+  }
+
+  async function saveRecord() {
+    if (s.saving) return
+    s.saving = true
+    try {
+      const body = coerce()
+      if (s.editing === 'new') await api.post(`/api/v1/${s.col.name}`, body)
+      else await api.patch(`/api/v1/${s.col.name}/${s.editing}`, body)
+      s.editing = null
+      toast.success('Saved')
+      loadRecords()
+    } catch (/** @type {any} */ e) {
+      toast.error(e?.message || 'Save failed')
+    } finally {
+      s.saving = false
+    }
+  }
+
+  async function deleteRecord(/** @type {string} */ rid) {
+    if (!globalThis.confirm('Delete this record?')) return
+    try { await api.delete(`/api/v1/${s.col.name}/${rid}`); toast.success('Deleted'); loadRecords() } catch (/** @type {any} */ e) { toast.error(e?.message || 'Delete failed') }
+  }
+
   const kind = () => KIND[s.col?.type] ?? KIND.base
+  const inputCls = 'w-full rounded-control border border-line bg-surface-inset px-3 py-2 text-sm text-fg outline-none placeholder:text-fg-faint focus:border-brand'
 
   return html`
     <div class="space-y-6">
@@ -55,8 +127,64 @@ function CollectionDetail() {
       </div>
 
       ${() =>
-        s.col
-          ? html`
+        !s.col
+          ? ''
+          : html`
+            <div class="overflow-hidden rounded-panel border border-line bg-surface-raised text-sm shadow-panel">
+              <div class="flex items-center justify-between border-b border-line px-4 py-3">
+                <div class="font-mono text-[11px] uppercase tracking-wider text-fg-faint">Records ${() => (s.records ? `· ${s.records.length}` : '')}</div>
+                ${s.col.type !== 'view'
+                  ? html`<button @click="${() => openForm(null)}" class="rounded-control bg-brand px-3 py-1.5 font-mono text-[11px] font-semibold text-[#12233f] transition hover:bg-brand-hover">+ new record</button>`
+                  : html`<span class="font-mono text-[11px] text-fg-faint">read-only view</span>`}
+              </div>
+
+              ${() =>
+                s.editing
+                  ? html`
+                    <div class="space-y-3 border-b border-line bg-surface-inset px-4 py-4">
+                      <div class="font-mono text-[11px] uppercase tracking-wider text-brand">${s.editing === 'new' ? 'New record' : 'Edit record'}</div>
+                      <div class="grid gap-3 sm:grid-cols-2">
+                        ${editableFields().map((/** @type {any} */ f) => html`
+                          <label class="block">
+                            <span class="font-mono text-[11px] text-fg-soft">${f.name} <span class="text-fg-faint">${f.type}</span></span>
+                            ${f.type === 'bool'
+                              ? html`<div class="mt-1"><input type="checkbox" aria-checked="${formInit[f.name] ? 'true' : 'false'}" @change="${(/** @type {any} */ e) => { formVals[f.name] = e.target.checked }}" /></div>`
+                              : html`<input class="${`${inputCls} mt-1`}" type="${f.type === 'number' ? 'number' : 'text'}" value="${formInit[f.name] ?? ''}" @input="${(/** @type {any} */ e) => { formVals[f.name] = e.target.value }}" />`}
+                          </label>`)}
+                      </div>
+                      <div class="flex gap-2">
+                        <button @click="${saveRecord}" aria-disabled="${() => (s.saving ? 'true' : 'false')}" class="${() => `rounded-control px-3.5 py-2 font-mono text-xs font-semibold text-[#12233f] transition ${s.saving ? 'bg-brand/40' : 'bg-brand hover:bg-brand-hover'}`}">${() => (s.saving ? 'saving…' : 'save')}</button>
+                        <button @click="${() => { s.editing = null }}" class="rounded-control border border-line px-3.5 py-2 font-mono text-xs text-fg-soft hover:bg-surface-raised">cancel</button>
+                      </div>
+                    </div>`
+                  : ''}
+
+              ${() => {
+                if (s.records === null) return html`<div class="px-4 py-6 text-center text-fg-faint">Loading…</div>`
+                if (!s.records.length) return html`<div class="px-4 py-6 text-center text-fg-faint">No records yet.</div>`
+                const cols = editableFields().map((/** @type {any} */ f) => f.name)
+                return html`
+                  <div class="overflow-x-auto">
+                    <div class="min-w-max">
+                      <div class="flex border-b border-line font-mono text-[11px] uppercase tracking-wider text-fg-faint">
+                        <div class="min-w-32 flex-1 px-4 py-2 font-medium">id</div>
+                        ${cols.map((c) => html`<div class="min-w-36 flex-1 px-4 py-2 font-medium">${c}</div>`.key(c))}
+                        <div class="w-24 px-4 py-2"></div>
+                      </div>
+                      ${s.records.map((rec) => html`
+                        <div class="flex items-center border-b border-line/60 text-xs">
+                          <div class="min-w-32 flex-1 truncate px-4 py-2 font-mono text-fg-faint">${String(rec.id).slice(0, 8)}</div>
+                          ${cols.map((c) => html`<div class="min-w-36 flex-1 truncate px-4 py-2 text-fg-soft">${cell(rec[c])}</div>`.key(c))}
+                          <div class="flex w-24 shrink-0 gap-1 px-4 py-2">
+                            ${s.col.type !== 'view' ? html`<button @click="${() => openForm(rec)}" class="font-mono text-[11px] text-fg-faint hover:text-brand">edit</button>` : ''}
+                            ${s.col.type !== 'view' ? html`<button @click="${() => deleteRecord(rec.id)}" class="font-mono text-[11px] text-fg-faint hover:text-bad">del</button>` : ''}
+                          </div>
+                        </div>`.key(rec.id))}
+                    </div>
+                  </div>`
+              }}
+            </div>
+
             <div class="overflow-hidden rounded-panel border border-line bg-surface-raised text-sm shadow-panel">
               <div class="border-b border-line px-4 py-2.5 font-mono text-[11px] uppercase tracking-wider text-fg-faint">Schema</div>
               <div class="grid grid-cols-[1.2fr_0.8fr_1.4fr] border-b border-line font-mono text-[11px] uppercase tracking-wider text-fg-faint">
@@ -89,14 +217,13 @@ function CollectionDetail() {
                   return html`
                     <div class="flex items-start gap-3 rounded-control border border-line bg-surface-inset px-3 py-2">
                       <span class="w-16 shrink-0 font-mono text-xs text-fg-soft">${label}</span>
-                      <span class="font-mono text-xs ${val ? 'text-fg' : 'text-fg-faint'}">${val || 'public — no rule'}</span>
+                      <span class="${val ? 'font-mono text-xs text-fg' : 'font-mono text-xs text-fg-faint'}">${val || 'public — no rule'}</span>
                     </div>
-                  `
+                  `.key(key)
                 })}
               </div>
             </div>
-          `
-          : ''}
+          `}
     </div>
   `
 }
