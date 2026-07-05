@@ -13,8 +13,11 @@ export default defineConfig({
       title: "Cogworks",
       tagline: "The works, without the work.",
       description:
-        "Self-hosted, single-binary backend-as-a-service — database, REST APIs, realtime, queues, search, auth, storage, and AI (MCP).",
-      logo: { src: "./src/assets/cogworks-logo.svg", replacesTitle: false },
+        "Self-hosted, single-binary backend-as-a-service — database, REST APIs, realtime, hooks, search, auth, storage, and AI (MCP).",
+      components: {
+        // Gear + wordmark + tagline lockup, matching the landing page & admin.
+        SiteTitle: "./src/components/SiteTitle.astro",
+      },
       customCss: ["./src/styles/cogworks.css"],
       social: [
         { icon: "github", label: "GitHub", href: "https://github.com/go4cas/cogworks" },
