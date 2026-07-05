@@ -401,7 +401,7 @@ export async function hmacRecoveryCode(code: string, jwtSecret: string): Promise
  * `cogworks_admin_token` / `cogworks_user_token` cookie. Cookie path lets
  * the admin SPA migrate off `localStorage` without changing every API call.
  *
- * Also strips the `vbat_` API-token prefix when present so downstream
+ * Also strips the `cwat_`/`vbat_` API-token prefix when present so downstream
  * callers always see a raw JWT — the prefix is purely for log-scanner /
  * secret-scanning detection on the wire.
  */

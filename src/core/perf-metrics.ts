@@ -264,7 +264,7 @@ export class RequestTimer {
 }
 
 /**
- * Per-Request timer registry. Elysia gives us the live `Request` object in
+ * Per-Request timer registry. Hono gives us the live `Request` object in
  * every handler/middleware, so we key by it directly — avoids the
  * AsyncLocalStorage plumbing that would otherwise be required to thread
  * timing context through deep records-core calls.

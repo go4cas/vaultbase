@@ -205,7 +205,7 @@ function ConnectTab({ tokens }: { tokens: TokenRow[] }) {
           <VbSecretInput
             value={tokenValue}
             onChange={(e) => setTokenValue(e.target.value)}
-            placeholder="vbat_…"
+            placeholder="cwat_…"
             spellCheck={false}
           />
         </div>

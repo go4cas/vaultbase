@@ -1,7 +1,7 @@
 /**
  * Admin actions audit log.
  *
- * Wired as a global Elysia `onAfterHandle` that fires for every state-changing
+ * Wired as Hono middleware that fires for every state-changing
  * request to `/api/admin/*` (POST/PATCH/PUT/DELETE; not GET). Each row
  * captures actor + action + target + status + IP, in append-only form.
  *

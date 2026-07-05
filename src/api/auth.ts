@@ -14,9 +14,11 @@ import { ValidationError } from "../core/validate.ts";
 import { tokenWindowSeconds } from "../core/auth-tokens.ts";
 import {
   dummyPasswordHash,
+  extractBearer,
   getAdmin,
   hmacRecoveryCode,
   redactEmail,
+  revokeToken,
   signAuthToken,
   verifyAuthToken,
 } from "../core/sec.ts";
@@ -307,7 +309,6 @@ export function makeAuthPlugin(jwtSecret: string) {
             email,
             password_hash: hash,
             custom: finalExtra,
-            legacyDataJson: JSON.stringify(finalExtra),
             created_at: now,
             updated_at: now,
           });
@@ -762,7 +763,6 @@ export function makeAuthPlugin(jwtSecret: string) {
       // Logout — revokes the bearer token's `jti` and clears any auth cookies.
       .post("/auth/logout", async (c) => {
         const request = c.req.raw;
-        const { extractBearer, revokeToken } = await import("../core/sec.ts");
         const token = extractBearer(request);
         if (token) {
           const ctx = await verifyAuthToken(token, jwtSecret, { recheckPrincipal: false });
@@ -1050,7 +1050,6 @@ export function makeAuthPlugin(jwtSecret: string) {
           email,
           password_hash: hash,
           is_anonymous: 1,
-          legacyDataJson: "{}",
           created_at: now,
           updated_at: now,
         });

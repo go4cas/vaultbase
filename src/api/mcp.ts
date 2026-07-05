@@ -6,7 +6,7 @@
  *   GET  /api/v1/mcp/events    — SSE stream of server → client messages
  *                                 (notifications, listChanged hints, …)
  *
- * Both endpoints accept the same `Authorization: Bearer vbat_…` API token
+ * Both endpoints accept the same `Authorization: Bearer cwat_…` API token
  * as the rest of the admin surface. The token must carry at least one
  * `mcp:*` scope; per-tool scope checks happen inside the registry.
  *

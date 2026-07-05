@@ -1,20 +1,13 @@
 /**
- * Auth-collection user storage helpers — v0.11 transition.
+ * Auth-collection user storage helpers.
  *
- * v0.10 model: every auth user lived in shared `cogworks_users` keyed by
- * collection_id, with custom fields packed into a `data` JSON blob.
+ * Each auth collection gets a per-collection `cw_<name>` table with the auth
+ * columns inline + typed custom-field columns (custom fields are real columns,
+ * not a JSON blob). The old v0.10 shared `cogworks_users` table was dropped in
+ * the v0.11 migration; these helpers read/write `cw_<name>` only.
  *
- * v0.11 model: each auth collection gets a per-collection `cw_<name>`
- * table with auth columns inline + typed custom-field columns. Custom
- * fields are real columns, not JSON-extracted.
- *
- * Phase 2 strategy: writes dual-fan to **both** tables so existing tests
- * (which insert into the legacy table directly) keep passing while new
- * code reads from the new shape with a legacy fallback. Phase 4 deletes
- * the legacy table + the dual-write + the fallback.
- *
- * Every helper here is keyed by `collectionName` so the SQL targets the
- * right per-collection table.
+ * Every helper is keyed by `collectionName` so the SQL targets the right
+ * per-collection table.
  */
 
 import type { Database } from "bun:sqlite";
@@ -50,8 +43,6 @@ export interface AuthUserRow {
   totp_enabled: number;
   is_anonymous: number;
   password_reset_at: number;
-  /** Serialised JSON blob — present only on legacy reads from cogworks_users. */
-  data?: string;
   created_at: number;
   updated_at: number;
   [k: string]: unknown;
@@ -106,11 +97,6 @@ export function tableColumns(collectionName: string): string[] {
   return rows.map((r) => r.name);
 }
 
-/** No-op kept for callers that referenced it before caching was dropped. */
-export function invalidateUserTableColumnCache(_collectionName?: string): void {
-  /* cache removed in v0.11 — function kept for compatibility */
-}
-
 interface InsertInput {
   id: string;
   email: string;
@@ -122,8 +108,6 @@ interface InsertInput {
   password_reset_at?: number;
   /** Custom-field values keyed by field name (typed per the collection schema). */
   custom?: Record<string, unknown>;
-  /** Pre-serialised legacy JSON blob — used for the dual-write to cogworks_users. */
-  legacyDataJson?: string;
   created_at: number;
   updated_at: number;
 }

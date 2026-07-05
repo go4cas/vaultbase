@@ -1,7 +1,7 @@
 /**
  * `cogworks mcp` — Model Context Protocol server.
  *
- *   cogworks mcp [--token vbat_…] [--read-only]
+ *   cogworks mcp [--token cwat_…] [--read-only]
  *
  * Boots a stdio MCP server that AI agents (Claude Desktop, Cursor,
  * Continue, ChatGPT plugins) can connect to. Auto-derives tools per
@@ -9,7 +9,7 @@
  * scope mcp:* required).
  *
  * Token lookup precedence:
- *   1. --token <vbat_…> argument
+ *   1. --token <cwat_…> argument
  *   2. COGWORKS_MCP_TOKEN env
  *   3. COGWORKS_API_TOKEN env
  *
@@ -59,7 +59,7 @@ Boots an MCP server over stdio. Connect AI agents (Claude Desktop, Cursor,
 Continue, ChatGPT) by registering cogworks as an MCP server in their config.
 
 Flags:
-  --token, -t <vbat_…>     API token. Required scope: mcp:read or higher.
+  --token, -t <cwat_…>     API token. Required scope: mcp:read or higher.
                            Falls back to COGWORKS_MCP_TOKEN or COGWORKS_API_TOKEN env.
   --read-only              Filter the registry to read-only tools, even if the
                            token has write scopes. Defence-in-depth for ad-hoc
@@ -74,7 +74,7 @@ or %APPDATA%\\Claude\\claude_desktop_config.json):
       "cogworks": {
         "command": "cogworks",
         "args": ["mcp"],
-        "env": { "COGWORKS_MCP_TOKEN": "vbat_…" }
+        "env": { "COGWORKS_MCP_TOKEN": "cwat_…" }
       }
     }
   }
@@ -94,7 +94,7 @@ export async function runMcpCli(
     flags.token ?? process.env.COGWORKS_MCP_TOKEN ?? process.env.COGWORKS_API_TOKEN ?? null;
   if (!tokenRaw) {
     process.stderr.write(
-      `cogworks mcp: no token provided. Pass --token vbat_…, or set COGWORKS_MCP_TOKEN env.\n`,
+      `cogworks mcp: no token provided. Pass --token cwat_…, or set COGWORKS_MCP_TOKEN env.\n`,
     );
     process.exit(2);
   }

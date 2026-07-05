@@ -10,7 +10,7 @@
  *
  * Exposed two ways:
  *   - `applyCorsHeaders(req, set)` — set Access-Control-* response headers
- *     based on the request's Origin (use inside Elysia onAfterHandle).
+ *     based on the request's Origin (applied by the Hono response middleware).
  *   - `handleCorsPreflight(req)`   — produce a 204 Response for OPTIONS
  *     when the origin is allowed, else null (let normal routing run).
  *

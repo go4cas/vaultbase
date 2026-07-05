@@ -334,17 +334,3 @@ async function hmacSign(secret: string, data: string): Promise<string> {
   const sig = await crypto.subtle.sign("HMAC", key, enc.encode(data));
   return Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, "0")).join("");
 }
-
-// ── Helper for hooks: dispatch a custom event ───────────────────────────────
-
-export interface WebhookDispatchHelper {
-  dispatch(event: string, data?: unknown): Promise<{ enqueued: number }>;
-}
-
-export function makeWebhookHelper(): WebhookDispatchHelper {
-  return {
-    dispatch(event, data) {
-      return dispatchEvent({ event, data });
-    },
-  };
-}

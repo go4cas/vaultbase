@@ -293,12 +293,12 @@ describe("RealtimeManager", () => {
     expect(normalizeTopic("posts.foobar")).toBe("posts.foobar");
   });
 
-  // ── Bun/Elysia wrapper-identity quirk ──────────────────────────────────
+  // ── Bun/Hono wrapper-identity quirk ──────────────────────────────────
   // Bun hands `open(ws)` and `message(ws, ...)` different wrapper objects
   // backing the same socket. The manager keys by `ws.data.connId`, so
   // wrapper identity doesn't matter — both wrappers carry the same connId
   // via Bun's persistent `data` slot. Reproduce here with two distinct
-  // mock objects that share a connId, the way Elysia + Bun appear to
+  // mock objects that share a connId, the way Bun appears to
   // present them to handlers.
   it("subscribe + unsubscribe work across distinct wrappers sharing connId", () => {
     const sharedId = "conn-A";

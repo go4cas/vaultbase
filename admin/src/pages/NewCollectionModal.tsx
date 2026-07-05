@@ -57,7 +57,7 @@ export default function NewCollectionModal({
         if (f.system) continue;
         cols.push(f.name);
       }
-      return { name: `vb_${c.name}`, collectionName: c.name, columns: cols };
+      return { name: `cw_${c.name}`, collectionName: c.name, columns: cols };
     }),
   }), [allCollections]);
 
@@ -272,7 +272,7 @@ export default function NewCollectionModal({
 
         {type === "view" && (
           <VbField label="SELECT query" hint={
-            <>Single SELECT only · autocomplete for <Code>vb_*</Code> tables and columns · backed by VIEW <Code>vb_{collName || "name"}</Code>.</>
+            <>Single SELECT only · autocomplete for <Code>cw_*</Code> tables and columns · backed by VIEW <Code>cw_{collName || "name"}</Code>.</>
           } right={
             <VbBtn kind="ghost" size="sm" icon="play" onClick={validateView} disabled={validating}>
               {validating ? "Validating…" : "Validate"}

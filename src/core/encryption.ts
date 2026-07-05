@@ -154,7 +154,7 @@ export async function decryptValue(stored: string): Promise<string> {
  * Synchronous variants — same `vbenc:1:<iv>:<ct>` wire format as
  * {@link encryptValue} / {@link decryptValue}, implemented via `node:crypto`
  * so callers on hot, fully-sync paths (settings reads called from inside
- * Elysia plugin factories, CORS resolution, etc.) don't have to await.
+ * Hono middleware, CORS resolution, etc.) don't have to await.
  *
  * Values produced by either form decrypt with either form — backups +
  * restores stay symmetric and you can mix sync/async at will.

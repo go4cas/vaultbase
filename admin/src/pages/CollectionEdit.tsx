@@ -117,7 +117,7 @@ export default function CollectionEdit() {
           if (f.system) continue;
           cols.push(f.name);
         }
-        return { name: `vb_${c.name}`, collectionName: c.name, columns: cols };
+        return { name: `cw_${c.name}`, collectionName: c.name, columns: cols };
       }),
   }), [allCollections, collId]);
 
@@ -529,7 +529,7 @@ function FieldsTab(props: FieldsTabProps) {
       {isView && (
         <SchemaCard
           title="SELECT query"
-          meta={<>backed by SQLite VIEW <SchemaCode>vb_{collection.name}</SchemaCode></>}
+          meta={<>backed by SQLite VIEW <SchemaCode>cw_{collection.name}</SchemaCode></>}
           right={
             <>
               <VbBtn kind="ghost" size="sm" icon="eye" onClick={previewViewRowsHandler} disabled={previewing}>
@@ -557,7 +557,7 @@ function FieldsTab(props: FieldsTabProps) {
             />
           </div>
           <div style={{ marginTop: 10, fontSize: 11.5, color: "var(--vb-fg-3)", lineHeight: 1.55 }}>
-            Single SELECT only — no semicolons, no DML/DDL. Autocompletes <SchemaCode>vb_*</SchemaCode> tables and columns.
+            Single SELECT only — no semicolons, no DML/DDL. Autocompletes <SchemaCode>cw_*</SchemaCode> tables and columns.
           </div>
           {previewRows && (
             <div style={{
@@ -1292,7 +1292,7 @@ function FieldOptionsBody({
             hint={
               <>
                 Per-field rule, AND-combined with the collection's view rule. Empty = inherit collection rule.
-                Extra context: <SchemaCode>@request.headers.x_vb_ip</SchemaCode>, <SchemaCode>x_vb_file_size</SchemaCode>, <SchemaCode>x_vb_file_mime</SchemaCode>.
+                Extra context: <SchemaCode>@request.headers.x_cw_ip</SchemaCode>, <SchemaCode>x_cw_file_size</SchemaCode>, <SchemaCode>x_cw_file_mime</SchemaCode>.
               </>
             }
           >

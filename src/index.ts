@@ -222,7 +222,7 @@ Subcommands:
 
   mcp                             Run the MCP server over stdio.
                                   Connect Claude Desktop / Cursor / Continue / Cline.
-                                  --token <vbat_…>           (or COGWORKS_MCP_TOKEN env)
+                                  --token <cwat_…>           (or COGWORKS_MCP_TOKEN env)
                                   --read-only                Strip write tools regardless of scope.
 
   token                           API-token management (mint / list / revoke).

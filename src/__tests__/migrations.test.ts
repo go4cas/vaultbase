@@ -21,7 +21,7 @@ afterEach(() => closeDb());
 
 // The migrations endpoints are thin wrappers around createCollection /
 // updateCollection / listCollections; we test the integration by simulating
-// what the endpoints do, since spinning up Elysia in-process is heavier than
+// what the endpoints do, since spinning up the full Hono app in-process is heavier than
 // these primitives need.
 
 interface CollectionSnapshot {

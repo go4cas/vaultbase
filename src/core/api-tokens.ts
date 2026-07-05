@@ -13,7 +13,7 @@
  * months — leak risk is mitigated by per-token revoke + scopes + audit
  * trail per token rather than expiry.
  *
- * Format on the wire: `Authorization: Bearer vbat_<jwt>` — the prefix
+ * Format on the wire: `Authorization: Bearer cwat_<jwt>` — the prefix
  * lets log scanners + secret-scanning tools detect leaked tokens. The
  * underlying JWT carries audience="api", jti=<token id>, plus name/scopes
  * claims for display. Verification is signature + jti lookup in the
@@ -78,7 +78,7 @@ export interface MintInput {
 }
 
 export interface MintResult {
-  /** The full token string the caller must save (`vbat_<jwt>`) — shown ONCE. */
+  /** The full token string the caller must save (`cwat_<jwt>`) — shown ONCE. */
   token: string;
   /** Token id (== jti). Use to revoke later. */
   id: string;
@@ -309,7 +309,7 @@ export function startApiTokenUsageFlusher(): void {
 // ── Token format helpers ─────────────────────────────────────────────────────
 
 /**
- * Strip the `vbat_` prefix if present. Returns the raw JWT for the
+ * Strip the `cwat_` (or legacy `vbat_`) prefix if present. Returns the raw JWT for the
  * standard verifier. Idempotent for tokens missing the prefix (callers may
  * pass plain JWTs in rare paths — tests, internal scripts).
  */

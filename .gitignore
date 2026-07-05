@@ -8,7 +8,9 @@ admin/dist/
 drizzle/
 *.tsbuildinfo
 
-# Compiled binaries
+# Compiled binaries (build outputs `cogworks`; keep the old name too for stale local builds)
+cogworks
+cogworks.exe
 vaultbase
 vaultbase.exe
 releases/*
@@ -18,7 +20,9 @@ releases/*
 .*.bun-build
 index.js.map
 
-# Data dirs (local DB, uploads, logs, secrets)
+# Data dirs (local DB, uploads, logs, secrets) — current + legacy names
+cogworks_data/
+cogworks_data_test/
 vaultbase_data/
 vaultbase_data_test/
 *.db

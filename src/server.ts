@@ -164,7 +164,7 @@ function startFileTokenUsesPrune(): void {
 
 /**
  * API-token usage telemetry. Runs after the handler so it never adds latency.
- * Records last_used_at + IP + UA for any request bearing a `vbat_`-prefixed
+ * Records last_used_at + IP + UA for any request bearing a `cwat_`- (or legacy `vbat_`-) prefixed
  * token. Pure observability — failures never block a request. (Was an Elysia
  * global `onAfterHandle`; now called from the Hono root `core` middleware.)
  */
@@ -295,7 +295,7 @@ export function createServer(config: Config) {
   const app = new Hono();
 
   // ── Root cross-cutting pipeline ────────────────────────────────────────
-  // These `app.use` middlewares wrap EVERYTHING below — the native `migrated`
+  // These `app.use` middlewares wrap EVERYTHING below — the native `api`
   // sub-app and the WS route — so every request gets the same lifecycle. This
   // replaces the old Elysia global hooks. Registration order = onion order:
   // `core` (outermost) → access log → audit → rate limit (innermost).
@@ -384,46 +384,46 @@ export function createServer(config: Config) {
 
   // Every route below is native Hono (no Elysia mount remains). Matched in
   // static-over-dynamic priority within this one router — see the records note.
-  const migrated = new Hono();
+  const api = new Hono();
   // F-9 control-plane RBAC: enforce admin operator-role tiers before any route
   // handler. No-ops for non-gated paths (records, auth, files, observability).
-  migrated.use("*", roleGateMiddleware(config.jwtSecret));
-  migrated.route("/api/v1", makeOpenApiPlugin());
-  migrated.route("/api/v1", makeThemePlugin());
-  migrated.route("/api/v1", makeMetricsPlugin(config.jwtSecret));
-  migrated.route("/api/v1", makeBackupPlugin(config.jwtSecret, config.dbPath));
-  migrated.route("/api/v1", makeSecurityPlugin(config.jwtSecret, config.encryptionKey));
-  migrated.route("/api/v1", makeMcpAdminPlugin(config.jwtSecret));
-  migrated.route("/api/v1", makeIndexesPlugin(config.jwtSecret));
-  migrated.route("/api/v1", makeCsvPlugin(config.jwtSecret));
-  migrated.route("/api/v1", makeMcpPlugin(config.jwtSecret));
-  migrated.route("/api/v1", makeMigrationsPlugin(config.jwtSecret));
-  migrated.route("/api/v1", makeJobsPlugin(config.jwtSecret));
-  migrated.route("/api/v1", makeAdminsPlugin(config.jwtSecret));
-  migrated.route("/api/v1", makeSettingsPlugin(config.jwtSecret));
-  migrated.route("/api/v1", makeHooksPlugin(config.jwtSecret));
-  migrated.route("/api/v1", makeRoutesPlugin(config.jwtSecret));
-  migrated.route("/api/v1", makeBatchPlugin(config.jwtSecret));
-  migrated.route("/api/v1", makeWebhooksPlugin(config.jwtSecret));
-  migrated.route("/api/v1", makeApiTokensPlugin(config.jwtSecret));
-  migrated.route("/api/v1", makeQueuesPlugin(config.jwtSecret));
-  migrated.route("/api/v1", makeCollectionsPlugin(config.jwtSecret));
-  migrated.route("/api/v1", makeFlagsPlugin(config.jwtSecret));
-  migrated.route("/api/v1", makeNotificationsPlugin(config.jwtSecret));
-  migrated.route("/api/v1", makeSqlPlugin(config.jwtSecret, config.dbPath));
-  migrated.route("/api/v1", makeFilesPlugin(config.uploadDir, config.jwtSecret));
-  migrated.route("/api/v1", makeAuthPlugin(config.jwtSecret));
-  migrated.route("/api/v1", makeLogsPlugin(config.jwtSecret));
-  migrated.route("/api/v1", makeAuditLogPlugin(config.jwtSecret));
+  api.use("*", roleGateMiddleware(config.jwtSecret));
+  api.route("/api/v1", makeOpenApiPlugin());
+  api.route("/api/v1", makeThemePlugin());
+  api.route("/api/v1", makeMetricsPlugin(config.jwtSecret));
+  api.route("/api/v1", makeBackupPlugin(config.jwtSecret, config.dbPath));
+  api.route("/api/v1", makeSecurityPlugin(config.jwtSecret, config.encryptionKey));
+  api.route("/api/v1", makeMcpAdminPlugin(config.jwtSecret));
+  api.route("/api/v1", makeIndexesPlugin(config.jwtSecret));
+  api.route("/api/v1", makeCsvPlugin(config.jwtSecret));
+  api.route("/api/v1", makeMcpPlugin(config.jwtSecret));
+  api.route("/api/v1", makeMigrationsPlugin(config.jwtSecret));
+  api.route("/api/v1", makeJobsPlugin(config.jwtSecret));
+  api.route("/api/v1", makeAdminsPlugin(config.jwtSecret));
+  api.route("/api/v1", makeSettingsPlugin(config.jwtSecret));
+  api.route("/api/v1", makeHooksPlugin(config.jwtSecret));
+  api.route("/api/v1", makeRoutesPlugin(config.jwtSecret));
+  api.route("/api/v1", makeBatchPlugin(config.jwtSecret));
+  api.route("/api/v1", makeWebhooksPlugin(config.jwtSecret));
+  api.route("/api/v1", makeApiTokensPlugin(config.jwtSecret));
+  api.route("/api/v1", makeQueuesPlugin(config.jwtSecret));
+  api.route("/api/v1", makeCollectionsPlugin(config.jwtSecret));
+  api.route("/api/v1", makeFlagsPlugin(config.jwtSecret));
+  api.route("/api/v1", makeNotificationsPlugin(config.jwtSecret));
+  api.route("/api/v1", makeSqlPlugin(config.jwtSecret, config.dbPath));
+  api.route("/api/v1", makeFilesPlugin(config.uploadDir, config.jwtSecret));
+  api.route("/api/v1", makeAuthPlugin(config.jwtSecret));
+  api.route("/api/v1", makeLogsPlugin(config.jwtSecret));
+  api.route("/api/v1", makeAuditLogPlugin(config.jwtSecret));
   // ── Health + realtime SSE (native Hono) ────────────────────────────────
-  // Registered on `migrated` (same router as records) BEFORE records so Hono's
+  // Registered on `api` (same router as records) BEFORE records so Hono's
   // static-over-dynamic priority makes these win over records' `/:collection`
   // catch-all. (Registering them on the root `app` instead fails: `app.route`
   // creates a separate router boundary and records shadows them.)
-  migrated.get("/api/health", (c) => c.json({ data: { status: "ok", version: COGWORKS_VERSION } }));
+  api.get("/api/health", (c) => c.json({ data: { status: "ok", version: COGWORKS_VERSION } }));
   // Cluster health probe — admin proxies / load-balancers hit this. Worker id
   // (if running under cluster mode) helps debug which worker answered.
-  migrated.get("/_/health", (c) =>
+  api.get("/_/health", (c) =>
     c.json({
       data: {
         status: "ok",
@@ -438,7 +438,7 @@ export function createServer(config: Config) {
   // readiness gate hold traffic off a pod whose DB isn't migrated/available yet
   // (e.g. mid rolling deploy), while liveness stays green so it isn't killed.
   // 503 (not 500) on failure so probes read it as "not ready", not "crashed".
-  migrated.get("/_/ready", (c) => {
+  api.get("/_/ready", (c) => {
     try {
       const row = getRawClient()
         .query("SELECT version FROM cogworks_schema WHERE id = 1")
@@ -464,7 +464,7 @@ export function createServer(config: Config) {
   // Presence snapshot (read-only) — a full `key → [meta]` map for a channel.
   // Handy for SSE observers (which can't track over the one-way stream) and for
   // any client that wants the current roster over plain HTTP.
-  migrated.get("/api/v1/realtime/presence/:channel", (c) => {
+  api.get("/api/v1/realtime/presence/:channel", (c) => {
     const origin = c.req.header("origin") ?? null;
     if (!isOriginAllowed(origin)) {
       return c.json({ error: "Origin not allowed", code: 403 }, 403);
@@ -473,7 +473,7 @@ export function createServer(config: Config) {
   });
   // SSE fallback for clients that can't open WebSockets. Pairs with
   // `POST /api/v1/realtime` for setting subscriptions.
-  migrated.get("/api/v1/realtime", (c) => {
+  api.get("/api/v1/realtime", (c) => {
     const origin = c.req.header("origin") ?? null;
     // Present Origin must be allowlisted (blocks cross-site browsers); absent
     // Origin (non-browser EventSource clients) is allowed.
@@ -488,7 +488,7 @@ export function createServer(config: Config) {
     response.headers.set("content-type", "text/event-stream; charset=utf-8");
     return response;
   });
-  migrated.post(
+  api.post(
     "/api/v1/realtime",
     jsonBody(
       t.Object({
@@ -519,19 +519,19 @@ export function createServer(config: Config) {
       return c.json({ data: { clientId: body.clientId, topics } });
     },
   );
-  migrated.delete("/api/v1/realtime/:clientId", (c) => {
+  api.delete("/api/v1/realtime/:clientId", (c) => {
     unregisterSSEClient(c.req.param("clientId"));
     return c.json({ data: null });
   });
   // Admin SPA (`/_/*`) + auth HTML pages (`/auth/reset|verify|otp`) — the
   // non-`/api` surface. Static `/_/health` above out-prioritises `/_/*`.
-  migrated.route("/", makeAdminPlugin());
-  migrated.route("/", makeAuthPagesPlugin());
+  api.route("/", makeAdminPlugin());
+  api.route("/", makeAuthPagesPlugin());
   // Records LAST: its greedy `/:collection` + `/:collection/:id` catch-alls
   // must not shadow any static route. Hono prioritises static routes over
   // params, so the sibling plugins/routes above win.
-  migrated.route("/api/v1", makeRecordsPlugin(config.jwtSecret));
-  app.route("/", migrated);
+  api.route("/api/v1", makeRecordsPlugin(config.jwtSecret));
+  app.route("/", api);
 
   // The realtime manager keys subscriptions by `ws.data.connId` on a `WSLike
   // {send}`. Hono hands a fresh WSContext per event, so we key a stable adapter

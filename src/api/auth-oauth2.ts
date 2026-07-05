@@ -301,7 +301,6 @@ export function makeAuthOauth2Plugin(jwtSecret: string) {
               password_hash: hash,
               email_verified: profile.emailVerified ? 1 : 0,
               custom: profile.name ? { name: profile.name } : {},
-              legacyDataJson: JSON.stringify(profile.name ? { name: profile.name } : {}),
               created_at: now,
               updated_at: now,
             });

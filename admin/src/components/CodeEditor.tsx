@@ -467,7 +467,7 @@ export interface SqlSchemaForeignKey {
 }
 
 export interface SqlSchemaTable {
-  /** Real table/view name (e.g. "vb_posts"). */
+  /** Real table/view name (e.g. "cw_posts"). */
   name: string;
   /** What kind of object this is. */
   type?: "table" | "view";
@@ -518,10 +518,10 @@ function normaliseTable(t: SqlSchemaTable): NormalisedTable {
 
 function findTable(ref: string): NormalisedTable | null {
   const lower = ref.toLowerCase();
-  // Exact name match first, then collection name, then vb_<collection>.
+  // Exact name match first, then collection name, then cw_<collection>.
   return activeTables.find((t) => t.name.toLowerCase() === lower) ??
          activeTables.find((t) => (t.collectionName ?? "").toLowerCase() === lower) ??
-         activeTables.find((t) => `vb_${(t.collectionName ?? "").toLowerCase()}` === lower) ??
+         activeTables.find((t) => `cw_${(t.collectionName ?? "").toLowerCase()}` === lower) ??
          null;
 }
 

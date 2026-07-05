@@ -1,7 +1,7 @@
 /**
  * MCP Phase-3 — HTTP transport at /api/v1/mcp.
  *
- * Drives the Elysia plugin through `app.request(Request)` so we exercise
+ * Drives the Hono app through `app.request(Request)` so we exercise
  * the real auth path (extractBearer → verifyAuthToken → scope check),
  * dispatcher build, and JSON-RPC framing — without binding a port.
  */

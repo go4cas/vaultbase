@@ -47,7 +47,7 @@ const WILDCARD = "*";
  *   - "*"                     → every event everywhere
  *
  * Storage is keyed by **connection id** (string), not by `WSLike` object
- * identity. Bun/Elysia can hand you a different wrapper per handler call
+ * identity. Bun/Hono can hand you a different wrapper per handler call
  * (one for `open`, another for `message`); using `===` for membership
  * misbehaves — subscribe stored wrapper A, unsubscribe looked up wrapper B,
  * cross-call mutation silently dropped. The id is minted at connect time
