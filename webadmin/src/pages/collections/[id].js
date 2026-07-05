@@ -22,6 +22,8 @@ const RULES = /** @type {const} */ ([
   ['delete_rule', 'Delete'],
 ])
 
+const FIELD_TYPES = ['text', 'number', 'bool', 'email', 'url', 'date', 'json']
+
 const cell = (/** @type {any} */ v) => {
   if (v === null || v === undefined || v === '') return '—'
   if (typeof v === 'object') return JSON.stringify(v)
@@ -34,22 +36,66 @@ function CollectionDetail() {
   const toast = useToast()
 
   const s = reactive(
-    /** @type {{ col: any, error: string, records: any[]|null, editing: string|null, saving: boolean }} */
-    ({ col: null, error: '', records: null, editing: null, saving: false }),
+    /** @type {{ col: any, error: string, records: any[]|null, editing: string|null, saving: boolean, addingField: boolean }} */
+    ({ col: null, error: '', records: null, editing: null, saving: false, addingField: false }),
   )
   useMeta({ title: () => `${s.col?.name ?? 'Collection'} · Cogworks` })
   // Plain (non-reactive) form buffers so per-keystroke edits don't re-render the form.
   /** @type {Record<string, any>} */ let formInit = {}
   /** @type {Record<string, any>} */ let formVals = {}
+  /** @type {Record<string, string>} */ let ruleVals = {}
+  let newFieldName = ''
+  let newFieldType = 'text'
+
+  const RULE_KEYS = /** @type {const} */ (['list_rule', 'view_rule', 'create_rule', 'update_rule', 'delete_rule'])
+  function initRules() {
+    ruleVals = {}
+    for (const k of RULE_KEYS) ruleVals[k] = s.col[k] || ''
+  }
 
   api.get(`/api/v1/collections/${id}`)
     .then((r) => {
       const d = /** @type {any} */ (r)
       if (d?.error) { s.error = d.error; return }
       s.col = d?.data ?? null
-      if (s.col) loadRecords()
+      if (s.col) { initRules(); loadRecords() }
     })
     .catch((/** @type {any} */ e) => { s.error = e?.message || 'Failed to load' })
+
+  async function saveRules() {
+    if (s.saving) return
+    s.saving = true
+    try {
+      /** @type {Record<string, any>} */ const body = {}
+      for (const k of RULE_KEYS) body[k] = ruleVals[k].trim() === '' ? null : ruleVals[k].trim()
+      const r = /** @type {any} */ (await api.patch(`/api/v1/collections/${s.col.id}`, body))
+      if (r?.error) throw new Error(r.error)
+      if (r?.data) { s.col = r.data; initRules() }
+      toast.success('Rules saved')
+    } catch (/** @type {any} */ e) {
+      toast.error(e?.message || 'Save failed')
+    } finally { s.saving = false }
+  }
+
+  async function addField() {
+    if (!newFieldName.trim()) { toast.error('Field name required'); return }
+    const fields = parseFields(s.col.fields)
+      .filter((/** @type {any} */ f) => !f.system && !f.implicit)
+      .map((/** @type {any} */ f) => ({ name: f.name, type: f.type, ...(f.required ? { required: true } : {}) }))
+    fields.push({ name: newFieldName.trim(), type: newFieldType })
+    s.saving = true
+    try {
+      const r = /** @type {any} */ (await api.patch(`/api/v1/collections/${s.col.id}`, { fields }))
+      if (r?.error) throw new Error(r.error)
+      if (r?.data) s.col = r.data
+      newFieldName = ''
+      s.addingField = false
+      toast.success('Field added')
+      loadRecords()
+    } catch (/** @type {any} */ e) {
+      toast.error(e?.message || 'Add field failed')
+    } finally { s.saving = false }
+  }
 
   /** Editable = user fields (not system/implicit). */
   const editableFields = () => parseFields(s.col?.fields ?? '[]').filter((/** @type {any} */ f) => !f.system && !f.implicit)
@@ -186,7 +232,12 @@ function CollectionDetail() {
             </div>
 
             <div class="overflow-hidden rounded-panel border border-line bg-surface-raised text-sm shadow-panel">
-              <div class="border-b border-line px-4 py-2.5 font-mono text-[11px] uppercase tracking-wider text-fg-faint">Schema</div>
+              <div class="flex items-center justify-between border-b border-line px-4 py-2.5">
+                <div class="font-mono text-[11px] uppercase tracking-wider text-fg-faint">Schema</div>
+                ${s.col.type !== 'view'
+                  ? html`<button @click="${() => { s.addingField = !s.addingField }}" class="font-mono text-[11px] text-brand hover:underline">${() => (s.addingField ? 'cancel' : '+ add field')}</button>`
+                  : ''}
+              </div>
               <div class="grid grid-cols-[1.2fr_0.8fr_1.4fr] border-b border-line font-mono text-[11px] uppercase tracking-wider text-fg-faint">
                 <div class="px-4 py-2.5 font-medium">Field</div>
                 <div class="px-4 py-2.5 font-medium">Type</div>
@@ -207,20 +258,31 @@ function CollectionDetail() {
                   </div>
                 `.key(f.name),
               )}
+              ${() =>
+                s.addingField
+                  ? html`
+                    <div class="flex items-center gap-2 border-t border-line bg-surface-inset px-4 py-3">
+                      <input class="${`${inputCls} flex-1`}" placeholder="field name" @input="${(/** @type {any} */ e) => { newFieldName = e.target.value }}" />
+                      <select class="${`${inputCls} w-32`}" @change="${(/** @type {any} */ e) => { newFieldType = e.target.value }}">
+                        ${FIELD_TYPES.map((t) => html`<option value="${t}">${t}</option>`.key(t))}
+                      </select>
+                      <button @click="${addField}" aria-disabled="${() => (s.saving ? 'true' : 'false')}" class="rounded-control bg-brand px-3 py-2 font-mono text-[11px] font-semibold text-[#12233f] hover:bg-brand-hover">add</button>
+                    </div>`
+                  : ''}
             </div>
 
             <div class="rounded-panel border border-line bg-surface-raised p-5 shadow-panel">
-              <div class="font-mono text-[11px] uppercase tracking-wider text-fg-faint">Access rules</div>
+              <div class="flex items-center justify-between">
+                <div class="font-mono text-[11px] uppercase tracking-wider text-fg-faint">Access rules</div>
+                <button @click="${saveRules}" aria-disabled="${() => (s.saving ? 'true' : 'false')}" class="${() => `rounded-control px-3 py-1.5 font-mono text-[11px] font-semibold text-[#12233f] transition ${s.saving ? 'bg-brand/40' : 'bg-brand hover:bg-brand-hover'}`}">${() => (s.saving ? 'saving…' : 'save rules')}</button>
+              </div>
+              <p class="mt-1 font-mono text-[10px] text-fg-faint">Empty = public. Use a filter expression, e.g. <span class="text-fg-soft">@request.auth.id != ""</span></p>
               <div class="mt-3 grid gap-2">
-                ${RULES.map(([key, label]) => {
-                  const val = s.col[key]
-                  return html`
-                    <div class="flex items-start gap-3 rounded-control border border-line bg-surface-inset px-3 py-2">
-                      <span class="w-16 shrink-0 font-mono text-xs text-fg-soft">${label}</span>
-                      <span class="${val ? 'font-mono text-xs text-fg' : 'font-mono text-xs text-fg-faint'}">${val || 'public — no rule'}</span>
-                    </div>
-                  `.key(key)
-                })}
+                ${RULES.map(([key, label]) => html`
+                  <div class="flex items-center gap-3">
+                    <span class="w-16 shrink-0 font-mono text-xs text-fg-soft">${label}</span>
+                    <input class="${`${inputCls} flex-1 font-mono text-xs`}" placeholder="public — no rule" value="${ruleVals[key] ?? ''}" @input="${(/** @type {any} */ e) => { ruleVals[key] = e.target.value }}" />
+                  </div>`.key(key))}
               </div>
             </div>
           `}
