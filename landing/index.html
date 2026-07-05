@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cogworks — the works, without the work.</title>
+<meta name="description" content="A self-hosted, single-binary backend-as-a-service. Database, REST APIs, realtime, queues, search, auth, storage, and AI (MCP) in one binary. Open source, MIT.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-26 -20 64 40'%3E%3Cg transform='translate(-6 1)' fill='none' stroke='%23B6D14A' stroke-width='1.8' stroke-linejoin='round'%3E%3Cpath d='M8.6.2 12.9 1.1 12.6 2.9 8.2 2.5 6.8 5.2 9.8 8.5 8.5 9.8 5.2 6.8 2.5 8.2 2.9 12.6 1.1 12.9.2 8.6-2.8 8.1-5.1 11.9-6.7 11.1-4.9 7-7 4.9-11.1 6.7-11.9 5.1-8.1 2.8-8.6-.2-12.9-1.1-12.6-2.9-8.2-2.5-6.8-5.2-9.8-8.5-8.5-9.8-5.2-6.8-2.5-8.2-2.9-12.6-1.1-12.9-.2-8.6 2.8-8.1 5.1-11.9 6.7-11.1 4.9-7 7-4.9 11.1-6.7 11.9-5.1 8.1-2.8Z'/%3E%3Ccircle r='4'/%3E%3C/g%3E%3C/svg%3E">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Barlow:wght@400;500;600&family=Space+Mono:wght@400;700&family=IBM+Plex+Mono:wght@400;500&family=Archivo:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:28px 20px;background:#0f1f3a;font-family:Barlow,Inter,system-ui,sans-serif}
+  html{scroll-behavior:smooth}
+  @keyframes tline{to{opacity:1}}
+  @keyframes blink{50%{opacity:0}}
+  @keyframes viewin{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
+  .cog-card{container-type:inline-size;margin:0 auto;border-radius:10px;border:1px solid rgba(255,255,255,.06)}
+
+  /* interactive states (were `style-hover`/`style-focus` in the prototype runtime) */
+  .nlink{transition:color .15s}
+  .nlink:hover{color:var(--pc)}
+  .btn-primary{transition:transform .15s}
+  .btn-primary:hover{transform:translateY(-1px)}
+  .btn-primary:focus-visible{outline:2px solid #E8EFF9;outline-offset:2px}
+  .btn-ghost{transition:border-color .15s}
+  .btn-ghost:hover{border-color:#E8EFF9}
+  .flink{transition:color .15s}
+  .flink:hover{color:var(--pc)}
+  .flink-lite{transition:color .15s}
+  .flink-lite:hover{color:#E8EFF9}
+
+  @container (max-width:920px){
+    .cog-hero{grid-template-columns:minmax(0,1fr) !important}
+    .cog-cols{grid-template-columns:1fr !important}
+    .cog-gears{grid-template-columns:1fr !important;height:auto !important}
+    .cog-gears .cog-nav{height:auto !important;max-height:300px}
+    .cog-gears .cog-detail{height:auto !important}
+  }
+  @container (max-width:640px){
+    .cog-fig{grid-template-columns:1fr !important}
+    .cog-install{grid-template-columns:1fr !important}
+    .cog-specs{grid-template-columns:1fr !important}
+    .cog-detail-inner{grid-template-columns:1fr !important}
+    .cog-card>nav,.cog-card>div,.cog-card>footer{padding-left:22px !important;padding-right:22px !important}
+  }
+  @media (prefers-reduced-motion: reduce){*{animation-duration:.01s !important;animation-iteration-count:1 !important;transition:none !important}}
+</style>
+</head>
+<body>
+
+<div class="cog-card" style="--pc:#B6D14A;width:1240px;max-width:100%;overflow:visible;font-family:Barlow,sans-serif;color:#E8EFF9;border-color:rgba(0,0,0,.4);background-color:#17335C;background-image:linear-gradient(rgba(232,239,249,.09) 1px,transparent 1px),linear-gradient(90deg,rgba(232,239,249,.09) 1px,transparent 1px),linear-gradient(rgba(232,239,249,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(232,239,249,.045) 1px,transparent 1px);background-size:120px 120px,120px 120px,24px 24px,24px 24px">
+
+  <nav style="position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:28px;padding:16px 40px;border-bottom:1px solid #2A4A7D;background:#17335C;box-shadow:0 8px 22px -10px rgba(0,0,0,.55)">
+    <div style="display:flex;align-items:center;gap:10px;margin-right:auto">
+      <svg id="logo-d" width="46" height="32" viewBox="-26 -20 64 40" aria-hidden="true"></svg>
+      <div style="display:flex;flex-direction:column;gap:1px">
+        <span style="font-family:'Chakra Petch',sans-serif;font-size:19px;font-weight:500;letter-spacing:.2px;line-height:1.1;color:var(--pc)">Cogworks</span>
+        <span style="font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.5px;color:#9FB4D4">The works, without the work.</span>
+      </div>
+    </div>
+    <a href="#features" class="nlink" style="font-size:13.5px;color:#E8EFF9;text-decoration:none">Features</a>
+    <a href="/docs" class="nlink" style="font-size:13.5px;color:#E8EFF9;text-decoration:none">Docs</a>
+    <a href="https://github.com/go4cas/cogworks" class="nlink" aria-label="GitHub" style="display:flex;align-items:center;color:#E8EFF9;text-decoration:none"><svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5A11.5 11.5 0 0 0 .5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.36-3.88-1.36-.53-1.34-1.28-1.7-1.28-1.7-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.24 2.76.12 3.05.74.81 1.18 1.84 1.18 3.1 0 4.43-2.69 5.4-5.26 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.2.67.8.56A11.5 11.5 0 0 0 23.5 12 11.5 11.5 0 0 0 12 .5Z"></path></svg></a>
+    <a href="#get-started" class="btn-primary" style="font-size:13.5px;font-weight:500;background:var(--pc);color:#2A1B04;text-decoration:none;border-radius:8px;padding:9px 16px">Get started</a>
+  </nav>
+
+  <div class="cog-hero" style="display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:52px;padding:60px 40px 44px;align-items:center">
+    <div>
+      <div class="cog-fig" style="display:grid;grid-template-columns:158px minmax(0,1fr) 158px;gap:12px;align-items:stretch">
+        <div style="display:flex;flex-direction:column;justify-content:space-between;padding:30px 0 40px;gap:14px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="flex:none;width:38px;height:38px;border-radius:50%;border:1px dashed rgba(169,192,226,.5);display:flex;align-items:center;justify-content:center;color:#A9C0E2"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><ellipse cx="12" cy="6" rx="7" ry="3"></ellipse><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"></path><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"></path></svg></span>
+            <div><h3 style="margin:0;font-family:'Space Mono',monospace;font-size:12px;font-weight:400;letter-spacing:1px">database</h3><p style="margin:2px 0 0;font-size:11.5px;line-height:1.4;color:#9FB4D4">Flexible, powerful data storage</p></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="flex:none;width:38px;height:38px;border-radius:50%;border:1px dashed rgba(169,192,226,.5);display:flex;align-items:center;justify-content:center;color:#A9C0E2"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="10" cy="10" r="6"></circle><line x1="15" y1="15" x2="20" y2="20"></line></svg></span>
+            <div><h3 style="margin:0;font-family:'Space Mono',monospace;font-size:12px;font-weight:400;letter-spacing:1px">search</h3><p style="margin:2px 0 0;font-size:11.5px;line-height:1.4;color:#9FB4D4">Full-text and vector search</p></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="flex:none;width:38px;height:38px;border-radius:50%;border:1px dashed rgba(169,192,226,.5);display:flex;align-items:center;justify-content:center;color:#A9C0E2"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 13.8 10.2 20 12 13.8 13.8 12 20 10.2 13.8 4 12 10.2 10.2 Z"></path></svg></span>
+            <div><h3 style="margin:0;font-family:'Space Mono',monospace;font-size:12px;font-weight:400;letter-spacing:1px">ai</h3><p style="margin:2px 0 0;font-size:11.5px;line-height:1.4;color:#9FB4D4">Integrate AI-powered features</p></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="flex:none;width:38px;height:38px;border-radius:50%;border:1px dashed rgba(169,192,226,.5);display:flex;align-items:center;justify-content:center;color:#A9C0E2"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"></path></svg></span>
+            <div><h3 style="margin:0;font-family:'Space Mono',monospace;font-size:12px;font-weight:400;letter-spacing:1px">storage</h3><p style="margin:2px 0 0;font-size:11.5px;line-height:1.4;color:#9FB4D4">S3-compatible object storage</p></div>
+          </div>
+        </div>
+
+        <svg id="fig-d" viewBox="0 -2 320 396" width="100%" role="img" aria-label="Animated machine: two roof-mounted control units (Admin UI and MCP) drive a flywheel, gear train and belts, with an rpm gauge, ending at your app"></svg>
+
+        <div style="display:flex;flex-direction:column;justify-content:space-between;padding:30px 0 40px;gap:14px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="flex:none;width:38px;height:38px;border-radius:50%;border:1px dashed rgba(169,192,226,.5);display:flex;align-items:center;justify-content:center;color:#A9C0E2"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"></line><line x1="4" y1="12" x2="20" y2="12"></line><line x1="4" y1="17" x2="20" y2="17"></line><circle cx="9" cy="7" r="2" fill="#17335C"></circle><circle cx="15" cy="12" r="2" fill="#17335C"></circle><circle cx="8" cy="17" r="2" fill="#17335C"></circle></svg></span>
+            <div><h3 style="margin:0;font-family:'Space Mono',monospace;font-size:12px;font-weight:400;letter-spacing:1px">queues</h3><p style="margin:2px 0 0;font-size:11.5px;line-height:1.4;color:#9FB4D4">Reliable background jobs</p></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="flex:none;width:38px;height:38px;border-radius:50%;border:1px dashed rgba(169,192,226,.5);display:flex;align-items:center;justify-content:center;color:#A9C0E2"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><polyline points="3 12 8 12 10 7 14 17 16 12 21 12"></polyline></svg></span>
+            <div><h3 style="margin:0;font-family:'Space Mono',monospace;font-size:12px;font-weight:400;letter-spacing:1px">realtime</h3><p style="margin:2px 0 0;font-size:11.5px;line-height:1.4;color:#9FB4D4">Live sync and realtime events</p></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="flex:none;width:38px;height:38px;border-radius:50%;border:1px dashed rgba(169,192,226,.5);display:flex;align-items:center;justify-content:center;color:#A9C0E2"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><polyline points="9 7 4 12 9 17"></polyline><polyline points="15 7 20 12 15 17"></polyline></svg></span>
+            <div><h3 style="margin:0;font-family:'Space Mono',monospace;font-size:12px;font-weight:400;letter-spacing:1px">api</h3><p style="margin:2px 0 0;font-size:11.5px;line-height:1.4;color:#9FB4D4">Auto-generated REST, fully typed</p></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="flex:none;width:38px;height:38px;border-radius:50%;border:1px dashed rgba(169,192,226,.5);display:flex;align-items:center;justify-content:center;color:#A9C0E2"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg></span>
+            <div><h3 style="margin:0;font-family:'Space Mono',monospace;font-size:12px;font-weight:400;letter-spacing:1px">auth</h3><p style="margin:2px 0 0;font-size:11.5px;line-height:1.4;color:#9FB4D4">Secure auth and access control</p></div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:14px"><i style="flex:1;height:1px;background:#2A4A7D"></i><span style="font-family:'Space Mono',monospace;font-size:11px;letter-spacing:2px;color:#9FB4D4">fig. 1 &mdash; the works</span><i style="flex:1;height:1px;background:#2A4A7D"></i></div>
+    </div>
+
+    <div>
+      <div style="font-family:'Space Mono',monospace;font-size:11.5px;letter-spacing:2.5px;color:var(--pc);margin-bottom:16px">self-hosted backend-as-a-service</div>
+      <h1 style="font-family:'Chakra Petch',sans-serif;font-size:38px;font-weight:600;line-height:1.1;letter-spacing:.2px;margin:0 0 16px;text-wrap:pretty">The whole backend, <em style="font-style:normal;color:var(--pc)">meshing.</em></h1>
+      <p style="font-size:16px;line-height:1.65;color:#C4D3EA;margin:0 0 24px;max-width:46ch">Database, APIs, realtime, queues, search, and AI in one self-hosted machine. Ships fully assembled &mdash; a single binary, every gear visible.</p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px">
+        <a href="#get-started" class="btn-primary" style="font-size:14px;font-weight:500;background:var(--pc);color:#2A1B04;text-decoration:none;border-radius:8px;padding:11px 20px">Get started</a>
+        <a href="#features" class="btn-ghost" style="font-size:14px;color:#E8EFF9;text-decoration:none;border:1px solid rgba(169,192,226,.5);border-radius:8px;padding:10px 20px">Open the case &rarr;</a>
+      </div>
+      <div style="font-family:'Space Mono',monospace;font-size:11.5px;letter-spacing:1px;color:#9FB4D4">single binary <b style="color:var(--pc);font-weight:400">&middot;</b> self-hosted <b style="color:var(--pc);font-weight:400">&middot;</b> no black boxes</div>
+    </div>
+  </div>
+
+  <div id="get-started" style="scroll-margin-top:78px;padding:46px 40px 52px;border-top:1px solid rgba(23,51,92,.18);background-color:#E7EBEE;background-image:linear-gradient(rgba(23,51,92,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(23,51,92,.06) 1px,transparent 1px);background-size:24px 24px">
+    <div style="font-family:'Space Mono',monospace;font-size:11.5px;letter-spacing:2.5px;color:var(--pc);margin-bottom:12px">get started</div>
+    <h2 style="font-family:'Chakra Petch',sans-serif;font-size:28px;font-weight:600;letter-spacing:.2px;margin:0 0 10px;color:#17335C">Three commands. No setup.</h2>
+    <p style="font-family:Barlow,sans-serif;font-size:15px;line-height:1.6;color:#46587A;margin:0 0 26px;max-width:62ch">Drop the binary on any box and run it. The first launch opens a setup wizard &mdash; pick an admin, and every gear is already turning.</p>
+    <div class="cog-install" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+
+      <div style="background:#0F2547;border:1px solid #2A4A7D;border-radius:10px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:8px;padding:11px 16px;border-bottom:1px solid #2A4A7D;background:rgba(255,255,255,.02)">
+          <span style="flex:none;width:10px;height:10px;border-radius:50%;background:#E8927C"></span>
+          <span style="flex:none;width:10px;height:10px;border-radius:50%;background:#F5C87A"></span>
+          <span style="flex:none;width:10px;height:10px;border-radius:50%;background:#6FBE8D"></span>
+          <span style="margin-left:8px;font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.5px;color:#9FB4D4">install &middot; one line</span>
+          <span style="margin-left:auto;font-family:'Space Mono',monospace;font-size:10.5px;letter-spacing:.5px;color:#5E769B">signature-verified</span>
+        </div>
+        <div style="padding:18px 20px;font-family:'Space Mono',monospace;font-size:12.5px;line-height:1.95;color:#E8EFF9">
+          <div><span style="color:var(--pc)">$</span> curl -fsSL <span style="color:#A9C0E2">https://get.cogworks.dev</span> | sh</div>
+          <div><span style="color:#6FBE8D">&#10003;</span> resolved <span style="color:#A9C0E2">v1.0.0</span></div>
+          <div><span style="color:#6FBE8D">&#10003;</span> cosign verify OK <span style="color:#9FB4D4">&middot;</span> sigstore</div>
+          <div><span style="color:#6FBE8D">&#10003;</span> installed <span style="color:#9FB4D4">&rarr;</span> <span style="color:#A9C0E2">/usr/local/bin/cogworks</span></div>
+          <div style="height:9px"></div>
+          <div><span style="color:var(--pc)">$</span> cogworks start</div>
+          <div style="color:#9FB4D4"># <span style="color:#9FB4D4">&rarr;</span> <span style="color:#A9C0E2">http://localhost:8090/_/</span>  setup wizard</div>
+        </div>
+      </div>
+
+      <div style="background:#0F2547;border:1px solid #2A4A7D;border-radius:10px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:8px;padding:11px 16px;border-bottom:1px solid #2A4A7D;background:rgba(255,255,255,.02)">
+          <span style="flex:none;width:10px;height:10px;border-radius:50%;background:#E8927C"></span>
+          <span style="flex:none;width:10px;height:10px;border-radius:50%;background:#F5C87A"></span>
+          <span style="flex:none;width:10px;height:10px;border-radius:50%;background:#6FBE8D"></span>
+          <span style="margin-left:8px;font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.5px;color:#9FB4D4">build from source</span>
+          <span style="margin-left:auto;font-family:'Space Mono',monospace;font-size:10.5px;letter-spacing:.5px;color:#5E769B">make</span>
+        </div>
+        <div style="padding:18px 20px;font-family:'Space Mono',monospace;font-size:12.5px;line-height:1.95;color:#E8EFF9">
+          <div><span style="color:var(--pc)">$</span> git clone <span style="color:#A9C0E2">github.com/go4cas/cogworks</span></div>
+          <div><span style="color:var(--pc)">$</span> cd cogworks &amp;&amp; make build <span style="color:#9FB4D4">&rarr;</span> <span style="color:#A9C0E2">./cogworks</span></div>
+          <div><span style="color:var(--pc)">$</span> ./cogworks start</div>
+          <div style="height:9px"></div>
+          <div><span style="color:#6FBE8D">&#10003;</span> one binary <span style="color:#9FB4D4">&middot;</span> 38 MB <span style="color:#9FB4D4">&middot;</span> zero deps</div>
+          <div style="color:#9FB4D4"># first run launches the setup wizard</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div style="padding:46px 40px 52px;border-top:1px solid #2A4A7D">
+    <div style="font-family:'Space Mono',monospace;font-size:11.5px;letter-spacing:2.5px;color:var(--pc);margin-bottom:12px">ships fully assembled</div>
+    <h2 style="font-family:'Chakra Petch',sans-serif;font-size:28px;font-weight:600;letter-spacing:.2px;margin:0 0 24px">One binary. All the gears.</h2>
+    <div class="cog-cols" style="display:grid;grid-template-columns:1fr 1fr;gap:52px;align-items:center">
+    <div style="background:#0F2547;border:1px solid #2A4A7D;border-radius:10px;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:8px;padding:11px 16px;border-bottom:1px solid #2A4A7D;background:rgba(255,255,255,.02)">
+        <span style="flex:none;width:10px;height:10px;border-radius:50%;background:#E8927C"></span>
+        <span style="flex:none;width:10px;height:10px;border-radius:50%;background:#F5C87A"></span>
+        <span style="flex:none;width:10px;height:10px;border-radius:50%;background:#6FBE8D"></span>
+        <span id="term-mode" style="margin-left:8px;font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.5px;color:#9FB4D4"></span>
+        <span id="term-dots" style="margin-left:auto"></span>
+      </div>
+      <div id="term-body" style="min-height:238px;padding:18px 22px;font-family:'Space Mono',monospace;font-size:13px;line-height:1.92;color:#E8EFF9"></div>
+    </div>
+    <div>
+      <p style="font-size:15px;line-height:1.65;color:#C4D3EA;margin:0 0 20px;max-width:44ch">From local development to global scale. Runs on macOS, Linux, and Windows. Deploy anywhere.</p>
+      <ul style="list-style:none;margin:0 0 20px;padding:0;display:flex;flex-direction:column;gap:9px">
+        <li style="display:flex;gap:10px;font-size:14px"><span style="color:var(--pc)">&#10003;</span> Single binary, easy to deploy</li>
+        <li style="display:flex;gap:10px;font-size:14px"><span style="color:var(--pc)">&#10003;</span> Lightweight and fast</li>
+        <li style="display:flex;gap:10px;font-size:14px"><span style="color:var(--pc)">&#10003;</span> Self-hosted &mdash; own your data</li>
+        <li style="display:flex;gap:10px;font-size:14px"><span style="color:var(--pc)">&#10003;</span> Developer first, production ready</li>
+        <li style="display:flex;gap:10px;font-size:14px"><span style="color:var(--pc)">&#10003;</span> Open source and extensible</li>
+      </ul>
+      <div style="font-family:'Space Mono',monospace;font-size:12px;color:#9FB4D4">macos <b style="color:var(--pc);font-weight:400">&middot;</b> linux <b style="color:var(--pc);font-weight:400">&middot;</b> windows</div>
+    </div>
+  </div>
+  </div>
+
+  <div id="features" style="padding:44px 40px 52px;border-top:1px solid #2A4A7D;scroll-margin-top:78px">
+    <div style="font-family:'Space Mono',monospace;font-size:11.5px;letter-spacing:2.5px;color:var(--pc);margin-bottom:20px">the gears</div>
+    <div class="cog-gears" id="gears" style="display:grid;grid-template-columns:232px minmax(0,1fr);gap:20px;align-items:stretch;height:322px"></div>
+  </div>
+
+  <footer style="display:flex;flex-direction:column;gap:14px;padding:22px 40px;border-top:1px solid #2A4A7D">
+    <div style="display:flex;align-items:center;gap:20px">
+      <span style="font-family:'Chakra Petch',sans-serif;font-size:14px;font-weight:500;margin-right:6px;color:var(--pc)">Cogworks</span>
+      <span style="font-family:'Space Mono',monospace;font-size:11.5px;color:#9FB4D4;margin-right:auto">The works, without the work.</span>
+      <a href="https://github.com/go4cas/cogworks" class="flink-lite" aria-label="GitHub" style="display:flex;align-items:center;color:#9FB4D4;text-decoration:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5A11.5 11.5 0 0 0 .5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.36-3.88-1.36-.53-1.34-1.28-1.7-1.28-1.7-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.24 2.76.12 3.05.74.81 1.18 1.84 1.18 3.1 0 4.43-2.69 5.4-5.26 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.2.67.8.56A11.5 11.5 0 0 0 23.5 12 11.5 11.5 0 0 0 12 .5Z"></path></svg></a>
+      <span style="font-size:12.5px;color:#9FB4D4">MIT license</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;font-family:'Space Mono',monospace;font-size:11px;letter-spacing:.3px;color:#6E86AB;border-top:1px solid rgba(42,74,125,.5);padding-top:12px">
+      <span>Inspired by</span>
+      <a href="https://vaultbase.dev/" target="_blank" rel="noopener" class="flink" style="color:#9FB4D4;text-decoration:none">vaultbase</a>
+      <a href="https://github.com/vaultbase-sh/vaultbase" target="_blank" rel="noopener" class="flink" aria-label="vaultbase on GitHub" style="display:flex;align-items:center;color:#9FB4D4;text-decoration:none"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5A11.5 11.5 0 0 0 .5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.36-3.88-1.36-.53-1.34-1.28-1.7-1.28-1.7-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.24 2.76.12 3.05.74.81 1.18 1.84 1.18 3.1 0 4.43-2.69 5.4-5.26 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.2.67.8.56A11.5 11.5 0 0 0 23.5 12 11.5 11.5 0 0 0 12 .5Z"></path></svg></a>
+      <span style="color:#3E5C8C">&middot;</span>
+      <span>by</span>
+      <a href="https://github.com/khalidsheet" target="_blank" rel="noopener" class="flink" style="color:#9FB4D4;text-decoration:none">@khalidsheet</a>
+    </div>
+  </footer>
+</div>
+
+<script src="./app.js"></script>
+</body>
+</html>
