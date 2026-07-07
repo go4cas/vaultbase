@@ -1,13 +1,13 @@
 /**
- * Bun macro: scans admin/dist at compile time, gzip-compresses each file,
- * and returns a base64-encoded map. Result is inlined into the binary.
+ * Bun macro: scans the admin build (`admin/dist`, the Quiver console) at
+ * compile time, gzip-compresses each file, and returns a base64-encoded map.
+ * Result is inlined into the binary.
  *
  * Saves ~70% on text assets (HTML/JS/CSS) vs raw base64.
  *
- * Path resolution: tries `<source-relative>/../../admin/dist` first, then
- * `<cwd>/admin/dist` as a fallback. Either should work — the fallback covers
- * any quirk where Bun macros resolve `import.meta.dir` differently than
- * runtime expects.
+ * Path resolution: tries `<source>/../../admin/dist` first, then cwd-relative
+ * — the fallback covers any quirk where Bun macros resolve `import.meta.dir`
+ * differently than runtime expects.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";

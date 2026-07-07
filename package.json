@@ -5,10 +5,10 @@
   "license": "MIT",
   "scripts": {
     "dev": "bun --watch src/index.ts",
-    "dev:admin": "cd admin && bun dev",
+    "dev:admin": "cd admin && bun run dev",
     "dev:docs": "cd site && bun run dev",
     "dev:landing": "cd landing && bun run dev",
-    "build:admin": "cd admin && bun run build",
+    "build:admin": "cd admin && bun install --frozen-lockfile && bun run build",
     "build:docs": "cd site && bun run build",
     "build:landing": "cd landing && bun run build",
     "patch:deps": "bun scripts/patch-imagescript.ts",

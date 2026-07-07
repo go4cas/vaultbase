@@ -11,7 +11,7 @@ Run your own JavaScript on record events. Hooks are authored in the admin UI (or
 
 A hook receives `ctx` with `record`, `existing` (prior row, on update/delete), `auth`, and `helpers`. **Before-hooks** run sequentially and can block (throw or `helpers.abort()` → `422`) or mutate `ctx.record` to change what's stored. **After-hooks** are fire-and-forget.
 
-```js title="beforeCreate on `orders`"
+```js title="beforeCreate on orders"
 // validate, enrich, and enqueue side effects
 if (!ctx.record.customer_id) ctx.helpers.abort("customer_id is required");
 ctx.record.ref = "ORD-" + ctx.helpers.uuid().slice(0, 8);

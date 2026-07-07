@@ -1,0 +1,130 @@
+/* Self-hosted brand fonts — no CDN, works offline and under the binary's CSP. */
+@import './fonts/fonts.css';
+@import "tailwindcss";
+
+@variant dark (&:where([data-mode=dark], [data-mode=dark] *));
+
+/* ── Cogworks design tokens — cyanotype navy + lime, product-grade ─────────
+   Surfaces step lighter as they rise (dark theme elevation). Mono is reserved
+   for code / IDs / data — everything else is Barlow. */
+@theme {
+  --color-brand:       #b6d14a;
+  --color-brand-hover: #c4dd63;
+  --color-brand-tint:  rgb(182 209 74 / 0.12);
+  --color-brand-ink:   #0a1729; /* text on lime */
+
+  --color-bg:            #0a1729; /* app background */
+  --color-surface:       #0f2038; /* cards / panels */
+  --color-surface-2:     #16294493; /* subtle fill */
+  --color-surface-raised:#152845; /* raised card (alias, legacy pages) */
+  --color-surface-hover: #1b3357; /* row / control hover */
+  --color-surface-inset: #0b1b31; /* recessed: inputs, code wells */
+
+  --color-fg:       #eaf1fb;
+  --color-fg-soft:  #aec1dc;
+  --color-fg-faint: #7089a8;
+
+  --color-line:        #223b60;
+  --color-line-strong: #32517d;
+
+  --color-ok:   #5fce93;
+  --color-warn: #f2c56a;
+  --color-bad:  #ec8a72;
+  --color-info: #74b1ea;
+
+  --radius-control: 0.5rem;
+  --radius-panel:   0.75rem;
+
+  --shadow-panel: 0 1px 2px 0 rgb(0 0 0 / 0.30), 0 1px 3px 0 rgb(0 0 0 / 0.18);
+  --shadow-float: 0 12px 28px -8px rgb(0 0 0 / 0.55);
+
+  --font-display: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
+  --font-ui:      'Barlow', ui-sans-serif, system-ui, sans-serif;
+  --font-mono:    'Space Mono', ui-monospace, SFMono-Regular, monospace;
+
+  --animate-toast-in:  toast-in  0.2s ease-out;
+  --animate-toast-out: toast-out 0.2s ease-in forwards;
+}
+
+@keyframes toast-in  { from { opacity: 0; transform: translateY(0.5rem); } to { opacity: 1; transform: translateY(0); } }
+@keyframes toast-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(0.5rem); } }
+
+/* ── Base ─────────────────────────────────────────────────────────────── */
+html, body { height: 100%; }
+body {
+  margin: 0;
+  color: var(--color-fg);
+  font-family: var(--font-ui);
+  background-color: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, .font-display { font-family: var(--font-display); letter-spacing: 0.1px; }
+
+* { scrollbar-width: thin; scrollbar-color: var(--color-line-strong) transparent; }
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-thumb { background: var(--color-line-strong); border-radius: 6px; }
+*::-webkit-scrollbar-track { background: transparent; }
+:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+
+/* ── Component layer — the shared vocabulary every page uses ───────────── */
+@layer components {
+  /* Buttons */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+    border-radius: var(--radius-control);
+    padding: 0.5rem 0.85rem;
+    font-size: 0.8125rem; font-weight: 600; line-height: 1;
+    white-space: nowrap; cursor: pointer;
+    transition: background-color .12s, border-color .12s, color .12s, opacity .12s;
+    border: 1px solid transparent;
+  }
+  .btn[aria-disabled="true"], .btn:disabled { cursor: not-allowed; opacity: 0.45; }
+  .btn-primary   { background: var(--color-brand); color: var(--color-brand-ink); }
+  .btn-primary:not([aria-disabled="true"]):hover { background: var(--color-brand-hover); }
+  .btn-secondary { background: var(--color-surface-2); border-color: var(--color-line-strong); color: var(--color-fg-soft); }
+  .btn-secondary:not([aria-disabled="true"]):hover { background: var(--color-surface-hover); color: var(--color-fg); }
+  .btn-ghost     { color: var(--color-fg-soft); }
+  .btn-ghost:not([aria-disabled="true"]):hover { background: var(--color-surface-hover); color: var(--color-fg); }
+  .btn-danger    { color: var(--color-bad); border-color: var(--color-line); }
+  .btn-danger:not([aria-disabled="true"]):hover { background: rgb(236 138 114 / 0.12); border-color: var(--color-bad); }
+  .btn-sm { padding: 0.3rem 0.55rem; font-size: 0.75rem; }
+  .btn-icon { padding: 0.4rem; }
+
+  /* Form controls */
+  .input, .select, .textarea {
+    width: 100%;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--color-line);
+    background: var(--color-surface-inset);
+    padding: 0.5rem 0.7rem;
+    font-size: 0.8125rem; color: var(--color-fg);
+    outline: none; transition: border-color .12s, background-color .12s;
+  }
+  .input::placeholder, .textarea::placeholder { color: var(--color-fg-faint); }
+  .input:focus, .select:focus, .textarea:focus { border-color: var(--color-brand); background: var(--color-surface); }
+  .select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237089a8' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.6rem center; padding-right: 1.8rem; }
+  .field-label { font-size: 0.75rem; font-weight: 600; color: var(--color-fg-soft); }
+
+  /* Surfaces */
+  .card { border-radius: var(--radius-panel); border: 1px solid var(--color-line); background: var(--color-surface); box-shadow: var(--shadow-panel); }
+  .card-pad { padding: 1.25rem; }
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--color-line); }
+  .card-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-fg-faint); }
+
+  /* Badges + status */
+  .badge { display: inline-flex; align-items: center; gap: 0.35rem; border-radius: 999px; border: 1px solid var(--color-line); padding: 0.1rem 0.5rem; font-size: 0.7rem; font-weight: 600; }
+  .dot { width: 0.45rem; height: 0.45rem; border-radius: 999px; flex: none; }
+
+  /* Div-grid table primitives (real <table> breaks arrow.js) */
+  .thead { position: sticky; top: 0; z-index: 1; background: var(--color-surface); border-bottom: 1px solid var(--color-line); font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-fg-faint); }
+  /* A scrollable body region inside a card so big datasets scroll, not the page. */
+  .tscroll { max-height: calc(100vh - 20rem); overflow-y: auto; }
+  .trow { border-bottom: 1px solid color-mix(in srgb, var(--color-line) 55%, transparent); transition: background-color .1s; }
+  .trow:hover { background: color-mix(in srgb, var(--color-surface-hover) 45%, transparent); }
+  .tcell { padding: 0.6rem 1rem; min-width: 0; }
+  .tcell-mono { font-family: var(--font-mono); font-size: 0.75rem; }
+
+  /* Mono helper for data/IDs/code */
+  .mono { font-family: var(--font-mono); }
+}

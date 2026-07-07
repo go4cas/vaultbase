@@ -39,6 +39,7 @@ import { makeAuditLogPlugin, auditLogMiddleware } from "./api/audit-log.ts";
 import { makeApiTokensPlugin } from "./api/api-tokens.ts";
 import { makeMcpPlugin } from "./api/mcp.ts";
 import { makeMcpAdminPlugin } from "./api/mcp-admin.ts";
+import { makeRealtimeAdminPlugin } from "./api/realtime-admin.ts";
 import { makeSqlPlugin } from "./api/sql.ts";
 import {
   startApiTokenUsageFlusher,
@@ -416,6 +417,7 @@ export function createServer(config: Config) {
   api.route("/api/v1", makeBackupPlugin(config.jwtSecret, config.dbPath));
   api.route("/api/v1", makeSecurityPlugin(config.jwtSecret, config.encryptionKey));
   api.route("/api/v1", makeMcpAdminPlugin(config.jwtSecret));
+  api.route("/api/v1", makeRealtimeAdminPlugin(config.jwtSecret));
   api.route("/api/v1", makeIndexesPlugin(config.jwtSecret));
   api.route("/api/v1", makeCsvPlugin(config.jwtSecret));
   api.route("/api/v1", makeMcpPlugin(config.jwtSecret));

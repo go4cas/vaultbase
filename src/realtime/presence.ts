@@ -157,6 +157,17 @@ export function presenceState(channel: string): Record<string, PresenceMeta[]> {
   return out;
 }
 
+/** Distinct presence channels with their member (key) counts, for the admin inspector. */
+export function presenceChannels(): Array<{ channel: string; members: number }> {
+  const rows = db()
+    .prepare(
+      `SELECT channel, COUNT(DISTINCT key) AS members
+       FROM cogworks_presence GROUP BY channel ORDER BY members DESC, channel`,
+    )
+    .all() as Array<{ channel: string; members: number }>;
+  return rows;
+}
+
 /** Keep this worker's rows fresh so the reaper doesn't cull live connections. */
 export function heartbeatLocalPresence(): void {
   try {

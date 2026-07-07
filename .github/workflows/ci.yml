@@ -25,7 +25,9 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
-      # No build/patch step: node_modules keeps its native GIF encoder, so the
-      # encoder-dependent image tests run for real here rather than skipping.
+      # Scope to src/ — the server suite. webadmin/ is a separate sub-project
+      # with its own Vitest/Playwright tests (run under its own toolchain), not
+      # bun test. No build/patch step: node_modules keeps its native GIF encoder,
+      # so the encoder-dependent image tests run for real here rather than skipping.
       - name: Test
-        run: bun test
+        run: bun test src

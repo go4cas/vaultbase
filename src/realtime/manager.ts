@@ -174,6 +174,24 @@ export function listSubsFor(ws: WSLike): string[] {
   return out;
 }
 
+/**
+ * Snapshot of live subscription state for the admin realtime inspector.
+ * Counts distinct connections across all topics on THIS worker.
+ */
+export function realtimeStats(): {
+  connections: number;
+  topics: Array<{ topic: string; subscribers: number }>;
+} {
+  const conns = new Set<string>();
+  const topics: Array<{ topic: string; subscribers: number }> = [];
+  for (const [topic, inner] of subs.entries()) {
+    topics.push({ topic, subscribers: inner.size });
+    for (const id of inner.keys()) conns.add(id);
+  }
+  topics.sort((a, b) => b.subscribers - a.subscribers || a.topic.localeCompare(b.topic));
+  return { connections: conns.size, topics };
+}
+
 export function disconnectAll(ws: WSLike): void {
   const id = connId(ws);
   for (const inner of subs.values()) {
